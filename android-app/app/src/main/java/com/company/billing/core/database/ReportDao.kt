@@ -33,8 +33,13 @@ interface ReportDao {
             s.billNumber, 
             strftime('%Y-%m-%d %H:%M:%S', datetime(s.createdAtEpochMs / 1000, 'unixepoch', 'localtime')) as date, 
             s.totalMinorUnits as totalAmount, 
-            CASE WHEN s.customerId = 'online' THEN 'Online Customer' ELSE 'Walk-in Customer' END as customerName
+            CASE 
+                WHEN s.customerId = 'online' THEN 'Online Customer' 
+                WHEN s.customerId IS NULL THEN 'Walk-in Customer'
+                ELSE COALESCE(c.name, 'Walk-in Customer')
+            END as customerName
         FROM sales s
+        LEFT JOIN customers c ON s.customerId = c.id
         WHERE (:fromEpochMs IS NULL OR s.createdAtEpochMs >= :fromEpochMs)
           AND (:toEpochMs IS NULL OR s.createdAtEpochMs <= :toEpochMs)
         ORDER BY s.createdAtEpochMs DESC
@@ -102,10 +107,15 @@ interface ReportDao {
 
     @Query("""
         SELECT 
-            CASE WHEN s.customerId = 'online' THEN 'Online Customer' ELSE 'Walk-in Customer' END as customerName, 
+            CASE 
+                WHEN s.customerId = 'online' THEN 'Online Customer' 
+                WHEN s.customerId IS NULL THEN 'Walk-in Customer'
+                ELSE COALESCE(c.name, 'Walk-in Customer')
+            END as customerName, 
             COUNT(s.id) as totalBills, 
             SUM(s.totalMinorUnits) as totalSpent
         FROM sales s
+        LEFT JOIN customers c ON s.customerId = c.id
         WHERE (:fromEpochMs IS NULL OR s.createdAtEpochMs >= :fromEpochMs)
           AND (:toEpochMs IS NULL OR s.createdAtEpochMs <= :toEpochMs)
         GROUP BY customerName

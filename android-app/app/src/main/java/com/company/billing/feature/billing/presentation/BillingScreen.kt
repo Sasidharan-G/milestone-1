@@ -68,8 +68,9 @@ fun BillingScreen(viewModel: BillingViewModel) {
 
                     // 1. Select Customer
                     val selectedCustomerName = when (selectedCustomerId) {
+                        null -> "Walk-in Customer"
                         "online" -> "Online Customer"
-                        else -> "Walk-in Customer"
+                        else -> customers.find { it.id == selectedCustomerId }?.name ?: "Walk-in Customer"
                     }
                     ExposedDropdownMenuBox(
                         expanded = expandedCustomer,
@@ -103,6 +104,15 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                     expandedCustomer = false
                                 }
                             )
+                            customers.forEach { customer ->
+                                DropdownMenuItem(
+                                    text = { Text(customer.name) },
+                                    onClick = {
+                                        viewModel.setCustomer(customer.id)
+                                        expandedCustomer = false
+                                    }
+                                )
+                            }
                         }
                     }
 

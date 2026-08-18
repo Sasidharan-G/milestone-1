@@ -438,9 +438,8 @@ fun DateRangePickerDialog(
     onConfirm: () -> Unit,
     dateRangePickerState: DateRangePickerState
 ) {
-    AlertDialog(
+    DatePickerDialog(
         onDismissRequest = onDismiss,
-        shape = RoundedCornerShape(24.dp),
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text("OK")
@@ -450,14 +449,11 @@ fun DateRangePickerDialog(
             TextButton(onClick = onDismiss) {
                 Text("Cancel")
             }
-        },
-        text = {
-            Box(modifier = Modifier.height(400.dp)) {
-                DateRangePicker(
-                    state = dateRangePickerState,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
         }
-    )
+    ) {
+        DateRangePicker(
+            state = dateRangePickerState,
+            modifier = Modifier.fillMaxWidth().weight(1f)
+        )
+    }
 }
