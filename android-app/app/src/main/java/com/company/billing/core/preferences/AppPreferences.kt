@@ -65,5 +65,14 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             }
         }
     }
+
+    private val themeModeKey = stringPreferencesKey("theme_mode")
+    val themeMode: Flow<String> = dataStore.data.map { it[themeModeKey] ?: "System" }
+
+    suspend fun saveThemeMode(mode: String) {
+        dataStore.edit {
+            it[themeModeKey] = mode
+        }
+    }
 }
 

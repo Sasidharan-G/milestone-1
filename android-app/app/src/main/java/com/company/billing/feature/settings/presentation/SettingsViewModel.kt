@@ -332,4 +332,16 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    val themeMode: StateFlow<String> = appPreferences.themeMode.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = "System"
+    )
+
+    fun saveThemeMode(mode: String) {
+        viewModelScope.launch {
+            appPreferences.saveThemeMode(mode)
+        }
+    }
 }

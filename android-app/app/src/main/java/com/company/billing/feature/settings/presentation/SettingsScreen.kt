@@ -345,7 +345,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                             Text(
                                 "Setup Guide:\n1. Register package com.company.billing in Google Cloud Console.\n2. Add your SHA-1 certificate fingerprint.\n3. Enable the Google Drive API in Google Cloud APIs library.",
                                 fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.outline
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
                     }
@@ -371,7 +371,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         Text(
                             "Choose whether the app layout forces a mobile stacked view, a tablet split view, or adapts automatically to screen size.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         var currentLayoutMode by remember { mutableStateOf("Auto") }
@@ -404,6 +404,66 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                 })
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Tablet Mode (Force Side-by-Side)")
+                            }
+                        }
+                    }
+                }
+            }
+
+            val themePreferencesCard: @Composable (Modifier) -> Unit = { modifier ->
+                val themeModePref by viewModel.themeMode.collectAsState()
+                
+                Card(
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("App Theme Preferences", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "Choose whether the app uses a light theme, dark theme, or matches the system setting dynamically.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        var currentThemeMode by remember { mutableStateOf("System") }
+                        
+                        LaunchedEffect(themeModePref) {
+                            currentThemeMode = themeModePref
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = currentThemeMode == "System", onClick = {
+                                    currentThemeMode = "System"
+                                    viewModel.saveThemeMode("System")
+                                })
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("System Default (Auto)")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = currentThemeMode == "Light", onClick = {
+                                    currentThemeMode = "Light"
+                                    viewModel.saveThemeMode("Light")
+                                })
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Light Mode")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = currentThemeMode == "Dark", onClick = {
+                                    currentThemeMode = "Dark"
+                                    viewModel.saveThemeMode("Dark")
+                                })
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Dark Mode")
                             }
                         }
                     }
@@ -551,7 +611,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         Text(
                             "Verify physical print output by dispatching a standard ESC/POS ticket payload to your connected hardware.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.outline,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
 
@@ -608,26 +668,12 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Staff User Management", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Button(
-                                onClick = { showAddDialog = true },
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Icon(Icons.Default.Add, contentDescription = null)
-                                Spacer(Modifier.width(4.dp))
-                                Text("Add User")
-                            }
-                        }
+                        Text("Staff User Management", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
                         Text(
                             "Create staff logins, assign specific screen permissions, and reset user passwords here.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
 
                         Column(
@@ -638,7 +684,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
                                     contentAlignment = Alignment.Center
                                 ) {
-                                    Text("No custom users created yet. Click 'Add User' above.", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text("No custom users created yet. Click 'Add User' below.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                             } else {
                                 users.forEach { user ->
@@ -664,13 +710,25 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                         ) {
                                             Column {
                                                 Text(user.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                                Text("ID/Username: ${user.username}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                Text("ID/Username: ${user.username}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                             }
                                             Icon(Icons.Default.Edit, contentDescription = "Edit User", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                                         }
                                     }
                                 }
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(4.dp))
+
+                        Button(
+                            onClick = { showAddDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Default.Add, contentDescription = null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Add User")
                         }
                     }
                 }
@@ -806,6 +864,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     printerPreferencesCard(Modifier.fillMaxWidth())
                     printerDiagnosticsCard(Modifier.fillMaxWidth())
                     layoutModeCard(Modifier.fillMaxWidth())
+                    themePreferencesCard(Modifier.fillMaxWidth())
                     googleDriveCard(Modifier.fillMaxWidth())
                     if (hasUserManagePermission) {
                         userManagementCard(Modifier.fillMaxWidth())
@@ -824,14 +883,16 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         layoutModeCard(Modifier.weight(1f))
-                        googleDriveCard(Modifier.weight(1f))
+                        themePreferencesCard(Modifier.weight(1f))
                     }
-                    if (hasUserManagePermission) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        googleDriveCard(Modifier.weight(1f))
+                        if (hasUserManagePermission) {
                             userManagementCard(Modifier.weight(1f))
+                        } else {
                             Spacer(Modifier.weight(1f))
                         }
                     }

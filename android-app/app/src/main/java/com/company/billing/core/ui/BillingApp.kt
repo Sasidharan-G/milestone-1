@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -49,9 +50,15 @@ fun BillingApp() {
     val navController = rememberNavController()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val layoutMode by settingsViewModel.layoutMode.collectAsState()
+    val themeMode by settingsViewModel.themeMode.collectAsState()
+    val useDarkTheme = when (themeMode) {
+        "Dark" -> true
+        "Light" -> false
+        else -> isSystemInDarkTheme()
+    }
 
     CompositionLocalProvider(LocalLayoutMode provides layoutMode) {
-        BillingTheme {
+        BillingTheme(darkTheme = useDarkTheme) {
             NavHost(navController = navController, startDestination = AppRoute.Login.path) {
                 composable(AppRoute.Login.path) {
                     val vm: LoginViewModel = hiltViewModel()
