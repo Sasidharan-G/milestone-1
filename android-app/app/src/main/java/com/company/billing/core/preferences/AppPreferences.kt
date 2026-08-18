@@ -30,5 +30,14 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             it[printerPaperWidthKey] = paperWidth
         }
     }
+
+    private val layoutModeKey = stringPreferencesKey("layout_mode")
+    val layoutMode: Flow<String> = dataStore.data.map { it[layoutModeKey] ?: "Auto" }
+
+    suspend fun saveLayoutMode(mode: String) {
+        dataStore.edit {
+            it[layoutModeKey] = mode
+        }
+    }
 }
 

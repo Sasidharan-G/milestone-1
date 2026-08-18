@@ -1,5 +1,7 @@
 package com.company.billing.feature.purchase.presentation
 
+import com.company.billing.core.ui.LocalLayoutMode
+
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -238,7 +240,12 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            val isMobile = maxWidth < 600.dp
+            val layoutMode = LocalLayoutMode.current
+            val isMobile = when (layoutMode) {
+                "Mobile" -> true
+                "Tablet" -> false
+                else -> maxWidth < 600.dp
+            }
             
             if (isMobile) {
                 var activeMobileTab by remember { mutableStateOf(0) }

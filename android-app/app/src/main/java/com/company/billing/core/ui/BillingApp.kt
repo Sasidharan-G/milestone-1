@@ -9,6 +9,10 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -32,66 +36,72 @@ import com.company.billing.feature.purchase.presentation.PurchaseViewModel
 import com.company.billing.feature.reports.presentation.ReportsScreen
 import com.company.billing.feature.reports.presentation.ReportsViewModel
 
+val LocalLayoutMode = staticCompositionLocalOf { "Auto" }
+
 @Composable
 fun BillingApp() {
     val navController = rememberNavController()
+    val settingsViewModel: SettingsViewModel = hiltViewModel()
+    val layoutMode by settingsViewModel.layoutMode.collectAsState()
 
-    MaterialTheme {
-        NavHost(navController = navController, startDestination = AppRoute.Login.path) {
-            composable(AppRoute.Login.path) {
-                val vm: LoginViewModel = hiltViewModel()
-                LoginScreen(viewModel = vm, onLoginSuccess = {
-                    navController.navigate(AppRoute.Home.path) {
-                        popUpTo(AppRoute.Login.path) { inclusive = true }
-                    }
-                })
-            }
-
-            composable(AppRoute.Home.path) {
-                HomeScreen(
-                    onNavigateTo = { route -> navController.navigate(route.path) },
-                    onLogout = {
-                        navController.navigate(AppRoute.Login.path) {
-                            popUpTo(AppRoute.Home.path) { inclusive = true }
+    CompositionLocalProvider(LocalLayoutMode provides layoutMode) {
+        MaterialTheme {
+            NavHost(navController = navController, startDestination = AppRoute.Login.path) {
+                composable(AppRoute.Login.path) {
+                    val vm: LoginViewModel = hiltViewModel()
+                    LoginScreen(viewModel = vm, onLoginSuccess = {
+                        navController.navigate(AppRoute.Home.path) {
+                            popUpTo(AppRoute.Login.path) { inclusive = true }
                         }
-                    }
-                )
-            }
+                    })
+                }
 
-            composable(AppRoute.Masters.path) {
-                val catVm: CategoryViewModel = hiltViewModel()
-                val prodVm: ProductViewModel = hiltViewModel()
-                val custVm: CustomerViewModel = hiltViewModel()
-                val suppVm: SupplierViewModel = hiltViewModel()
-                val expVm: ExpenseViewModel = hiltViewModel()
+                composable(AppRoute.Home.path) {
+                    HomeScreen(
+                        onNavigateTo = { route -> navController.navigate(route.path) },
+                        onLogout = {
+                            navController.navigate(AppRoute.Login.path) {
+                                popUpTo(AppRoute.Home.path) { inclusive = true }
+                            }
+                        }
+                    )
+                }
 
-                MasterScreens(
-                    categoryVm = catVm,
-                    productVm = prodVm,
-                    customerVm = custVm,
-                    supplierVm = suppVm,
-                    expenseVm = expVm
-                )
-            }
+                composable(AppRoute.Masters.path) {
+                    val catVm: CategoryViewModel = hiltViewModel()
+                    val prodVm: ProductViewModel = hiltViewModel()
+                    val custVm: CustomerViewModel = hiltViewModel()
+                    val suppVm: SupplierViewModel = hiltViewModel()
+                    val expVm: ExpenseViewModel = hiltViewModel()
 
-            composable(AppRoute.Billing.path) {
-                val vm: BillingViewModel = hiltViewModel()
-                BillingScreen(viewModel = vm)
-            }
+                    MasterScreens(
+                        categoryVm = catVm,
+                        productVm = prodVm,
+                        customerVm = custVm,
+                        supplierVm = suppVm,
+                        expenseVm = expVm
+                    )
+                }
 
-            composable(AppRoute.Purchases.path) {
-                val vm: PurchaseViewModel = hiltViewModel()
-                PurchaseScreen(viewModel = vm)
-            }
+                composable(AppRoute.Billing.path) {
+                    val vm: BillingViewModel = hiltViewModel()
+                    BillingScreen(viewModel = vm)
+                }
 
-            composable(AppRoute.Reports.path) {
-                val vm: ReportsViewModel = hiltViewModel()
-                ReportsScreen(viewModel = vm)
-            }
+                composable(AppRoute.Purchases.path) {
+                    val vm: PurchaseViewModel = hiltViewModel()
+                    PurchaseScreen(viewModel = vm)
+                }
 
-            composable(AppRoute.Settings.path) {
-                val vm: SettingsViewModel = hiltViewModel()
-                SettingsScreen(viewModel = vm)
+                composable(AppRoute.Reports.path) {
+                    val vm: ReportsViewModel = hiltViewModel()
+                    ReportsScreen(viewModel = vm)
+                }
+
+                composable(AppRoute.Settings.path) {
+                    val vm: SettingsViewModel = hiltViewModel()
+                    SettingsScreen(viewModel = vm)
+                }
             }
         }
     }
@@ -124,7 +134,12 @@ fun HomeScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            val isMobile = maxWidth < 600.dp
+            val layoutMode = LocalLayoutMode.current
+            val isMobile = when (layoutMode) {
+                "Mobile" -> true
+                "Tablet" -> false
+                else -> maxWidth < 600.dp
+            }
             
             if (isMobile) {
                 Column(

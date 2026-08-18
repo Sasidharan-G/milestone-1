@@ -1,5 +1,7 @@
 package com.company.billing.feature.reports.presentation
 
+import com.company.billing.core.ui.LocalLayoutMode
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -86,7 +88,12 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
         }
     ) { paddingValues ->
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            val isMobile = maxWidth < 600.dp
+            val layoutMode = LocalLayoutMode.current
+            val isMobile = when (layoutMode) {
+                "Mobile" -> true
+                "Tablet" -> false
+                else -> maxWidth < 600.dp
+            }
 
             Column(
                 modifier = Modifier.fillMaxSize()

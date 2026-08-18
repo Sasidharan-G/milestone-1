@@ -1,5 +1,7 @@
 package com.company.billing.feature.settings.presentation
 
+import com.company.billing.core.ui.LocalLayoutMode
+
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -23,6 +25,7 @@ import androidx.compose.ui.unit.sp
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel) {
     val printerType by viewModel.printerType.collectAsState()
+    val layoutModePref by viewModel.layoutMode.collectAsState()
     val printerDeviceId by viewModel.printerDeviceId.collectAsState()
     val printerPaperWidth by viewModel.printerPaperWidth.collectAsState()
     val bluetoothDevices by viewModel.bluetoothDevices.collectAsState()
@@ -107,7 +110,64 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
-            val isMobile = maxWidth < 600.dp
+            val layoutMode = LocalLayoutMode.current
+            val isMobile = when (layoutMode) {
+                "Mobile" -> true
+                "Tablet" -> false
+                else -> maxWidth < 600.dp
+            }
+
+            val layoutModeCard: @Composable (Modifier) -> Unit = { modifier ->
+                Card(
+                    modifier = modifier,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Display Layout Preferences", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "Choose whether the app layout forces a mobile stacked view, a tablet split view, or adapts automatically to screen size.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+
+                        var currentLayoutMode by remember { mutableStateOf("Auto") }
+                        
+                        LaunchedEffect(layoutModePref) {
+                            currentLayoutMode = layoutModePref
+                        }
+
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = currentLayoutMode == "Auto", onClick = {
+                                    currentLayoutMode = "Auto"
+                                    viewModel.saveLayoutMode("Auto")
+                                })
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Auto Detect (Responsive)")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = currentLayoutMode == "Mobile", onClick = {
+                                    currentLayoutMode = "Mobile"
+                                    viewModel.saveLayoutMode("Mobile")
+                                })
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Mobile Mode (Force Stacked)")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = currentLayoutMode == "Tablet", onClick = {
+                                    currentLayoutMode = "Tablet"
+                                    viewModel.saveLayoutMode("Tablet")
+                                })
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("Tablet Mode (Force Side-by-Side)")
+                            }
+                        }
+                    }
+                }
+            }
 
             val printerPreferencesCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
@@ -369,6 +429,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 if (isMobile) {
                     printerPreferencesCard(Modifier.fillMaxWidth())
                     printerDiagnosticsCard(Modifier.fillMaxWidth())
+                    layoutModeCard(Modifier.fillMaxWidth())
                     dbMaintenanceCard(Modifier.fillMaxWidth())
                 } else {
                     Row(
@@ -378,7 +439,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         printerPreferencesCard(Modifier.weight(1.5f).fillMaxHeight())
                         printerDiagnosticsCard(Modifier.weight(1.5f).fillMaxHeight())
                     }
-                    dbMaintenanceCard(Modifier.fillMaxWidth())
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        layoutModeCard(Modifier.weight(1f))
+                        dbMaintenanceCard(Modifier.weight(1f))
+                    }
                 }
             }
         }

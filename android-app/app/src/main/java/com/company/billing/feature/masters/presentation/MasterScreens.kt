@@ -1,5 +1,6 @@
 package com.company.billing.feature.masters.presentation
 
+import com.company.billing.core.ui.LocalLayoutMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -84,7 +85,12 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
     var message by remember { mutableStateOf("") }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val isMobile = maxWidth < 600.dp
+        val layoutMode = LocalLayoutMode.current
+        val isMobile = when (layoutMode) {
+            "Mobile" -> true
+            "Tablet" -> false
+            else -> maxWidth < 600.dp
+        }
         
         if (isMobile) {
             LazyColumn(
@@ -229,7 +235,12 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var expanded by remember { mutableStateOf(false) }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val isMobile = maxWidth < 600.dp
+        val layoutMode = LocalLayoutMode.current
+        val isMobile = when (layoutMode) {
+            "Mobile" -> true
+            "Tablet" -> false
+            else -> maxWidth < 600.dp
+        }
         
         if (isMobile) {
             LazyColumn(
@@ -442,7 +453,12 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
     var message by remember { mutableStateOf("") }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val isMobile = maxWidth < 600.dp
+        val layoutMode = LocalLayoutMode.current
+        val isMobile = when (layoutMode) {
+            "Mobile" -> true
+            "Tablet" -> false
+            else -> maxWidth < 600.dp
+        }
         
         if (isMobile) {
             LazyColumn(
@@ -583,7 +599,12 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
     var message by remember { mutableStateOf("") }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val isMobile = maxWidth < 600.dp
+        val layoutMode = LocalLayoutMode.current
+        val isMobile = when (layoutMode) {
+            "Mobile" -> true
+            "Tablet" -> false
+            else -> maxWidth < 600.dp
+        }
         
         if (isMobile) {
             LazyColumn(
@@ -724,7 +745,12 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
     var message by remember { mutableStateOf("") }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val isMobile = maxWidth < 600.dp
+        val layoutMode = LocalLayoutMode.current
+        val isMobile = when (layoutMode) {
+            "Mobile" -> true
+            "Tablet" -> false
+            else -> maxWidth < 600.dp
+        }
         
         if (isMobile) {
             LazyColumn(

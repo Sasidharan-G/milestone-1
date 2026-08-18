@@ -52,6 +52,18 @@ class SettingsViewModel @Inject constructor(
         initialValue = 32
     )
 
+    val layoutMode: StateFlow<String> = appPreferences.layoutMode.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = "Auto"
+    )
+
+    fun saveLayoutMode(mode: String) {
+        viewModelScope.launch {
+            appPreferences.saveLayoutMode(mode)
+        }
+    }
+
     private val _bluetoothDevices = MutableStateFlow<List<BluetoothDeviceInfo>>(emptyList())
     val bluetoothDevices: StateFlow<List<BluetoothDeviceInfo>> = _bluetoothDevices.asStateFlow()
 
