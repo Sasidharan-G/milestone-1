@@ -45,31 +45,6 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
     var message by remember { mutableStateOf("") }
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    val geminiApiKey by viewModel.geminiApiKey.collectAsState()
-    var isScanning by remember { mutableStateOf(false) }
-
-    val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
-    ) { uri ->
-        if (uri != null) {
-            isScanning = true
-            message = "Scanning invoice with AI..."
-            viewModel.parseInvoiceImage(
-                context = context,
-                imageUri = uri,
-                apiKey = geminiApiKey,
-                onSuccess = {
-                    isScanning = false
-                    message = "Invoice parsed successfully! Products matching complete."
-                },
-                onError = { err ->
-                    isScanning = false
-                    message = "Parsed successfully via simulation mode!"
-                }
-            )
-        }
-    }
-
     val purchaseTotal = lines.fold(Money.Zero) { sum, line -> sum + line.total }
 
     Scaffold(
@@ -92,20 +67,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Draft Purchase Order", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-                        Button(
-                            onClick = { launcher.launch("image/*") },
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                        ) {
-                            Text("Upload Invoice (AI)", fontSize = 12.sp)
-                        }
-                    }
+                    Text("Draft Purchase Order", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
 
                     // 1. Select Supplier
                     val selectedSupplierName = suppliers.find { it.id == selectedSupplierId }?.name ?: "Select Supplier"
@@ -370,29 +332,6 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                     purchaseHistoryColumn(Modifier.weight(1.5f).fillMaxHeight())
                 }
             }
-        }
-
-        if (isScanning) {
-            AlertDialog(
-                onDismissRequest = {},
-                shape = RoundedCornerShape(24.dp),
-                title = { Text("AI Scanning In Progress", fontWeight = FontWeight.Bold) },
-                text = {
-                    Row(
-                        modifier = Modifier.padding(vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        Text(
-                            "Reading products, quantities, and purchase prices from your invoice using Gemini AI...",
-                            fontSize = 14.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                },
-                confirmButton = {}
-            )
         }
     }
 }
