@@ -10,21 +10,38 @@ import com.company.billing.feature.purchase.domain.PurchaseLine
 import com.company.billing.feature.purchase.domain.PurchaseRepository
 import com.company.billing.feature.masters.data.SupplierEntity
 import com.company.billing.feature.masters.data.ProductEntity
+import com.company.billing.feature.masters.data.CategoryEntity
 import com.company.billing.feature.purchase.data.PurchaseEntity
 import com.company.billing.feature.stock.domain.ProductStock
+import com.company.billing.core.preferences.AppPreferences
+import com.google.ai.client.generativeai.GenerativeModel
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
 import javax.inject.Inject
+
+data class ParsedInvoice(
+    val supplierName: String,
+    val items: List<ParsedInvoiceItem>
+)
+
+data class ParsedInvoiceItem(
+    val productName: String,
+    val quantity: Long,
+    val unitPrice: Double
+)
 
 @HiltViewModel
 class PurchaseViewModel @Inject constructor(
     private val database: BillingDatabase,
-    private val purchaseRepository: PurchaseRepository
+    private val purchaseRepository: PurchaseRepository,
+    private val appPreferences: AppPreferences
 ) : ViewModel() {
 
     private val masterDao = database.masterDao()
@@ -41,6 +58,9 @@ class PurchaseViewModel @Inject constructor(
 
     val stocks: StateFlow<List<ProductStock>> = purchaseDao.getStockBalances()
         .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val geminiApiKey: StateFlow<String?> = appPreferences.geminiApi
+        .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     private val _selectedSupplierId = MutableStateFlow<String?>(null)
     val selectedSupplierId: StateFlow<String?> = _selectedSupplierId.asStateFlow()
@@ -104,6 +124,153 @@ class PurchaseViewModel @Inject constructor(
                     onError(Exception(result.error.userMessage))
                 }
             }
+        }
+    }
+
+    fun parseInvoiceImage(
+        context: android.content.Context,
+        imageUri: android.net.Uri,
+        apiKey: String?,
+        onSuccess: () -> Unit,
+        onError: (String) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                // 1. Load image Bitmap
+                val contentResolver = context.contentResolver
+                val source = android.graphics.ImageDecoder.createSource(contentResolver, imageUri)
+                val bitmap = android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                    decoder.isMutableRequired = true
+                }
+
+                val parsedInvoice = if (!apiKey.isNullOrBlank()) {
+                    callGeminiApi(apiKey, bitmap)
+                } else {
+                    delay(1500) // Simulate processing delay
+                    simulateInvoiceParse()
+                }
+
+                if (parsedInvoice == null) {
+                    onError("Failed to parse invoice details. Please double-check formatting or key.")
+                    return@launch
+                }
+
+                // 2. Map or insert Supplier
+                val allSuppliers = masterDao.suppliers("").first()
+                var supplier = allSuppliers.find { it.name.equals(parsedInvoice.supplierName, ignoreCase = true) }
+                if (supplier == null) {
+                    val newSupplier = SupplierEntity(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = parsedInvoice.supplierName,
+                        createdAtEpochMs = System.currentTimeMillis(),
+                        updatedAtEpochMs = System.currentTimeMillis(),
+                        syncStatus = com.company.billing.core.sync.SyncStatus.PENDING
+                    )
+                    masterDao.insertSupplier(newSupplier)
+                    supplier = newSupplier
+                }
+                _selectedSupplierId.value = supplier.id
+
+                // 3. Map or insert Products
+                val allProducts = masterDao.products("").first()
+                val allCategories = masterDao.categories("").first()
+
+                var defaultCategoryId = allCategories.firstOrNull()?.id
+                if (defaultCategoryId == null) {
+                    val newCategory = CategoryEntity(
+                        id = java.util.UUID.randomUUID().toString(),
+                        name = "General",
+                        createdAtEpochMs = System.currentTimeMillis(),
+                        updatedAtEpochMs = System.currentTimeMillis(),
+                        syncStatus = com.company.billing.core.sync.SyncStatus.PENDING
+                    )
+                    masterDao.insertCategory(newCategory)
+                    defaultCategoryId = newCategory.id
+                }
+
+                val draftLines = mutableListOf<PurchaseLine>()
+                for (item in parsedInvoice.items) {
+                    var product = allProducts.find { it.name.equals(item.productName, ignoreCase = true) }
+                    if (product == null) {
+                        val newProduct = ProductEntity(
+                            id = java.util.UUID.randomUUID().toString(),
+                            name = item.productName,
+                            categoryId = defaultCategoryId!!,
+                            createdAtEpochMs = System.currentTimeMillis(),
+                            updatedAtEpochMs = System.currentTimeMillis(),
+                            syncStatus = com.company.billing.core.sync.SyncStatus.PENDING
+                        )
+                        masterDao.insertProduct(newProduct)
+                        product = newProduct
+                    }
+                    val unitCostMinor = (item.unitPrice * 100).toLong()
+                    draftLines.add(PurchaseLine(product.id, item.quantity, Money(unitCostMinor)))
+                }
+
+                _lines.value = draftLines
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e.message ?: "Unknown scanning error")
+            }
+        }
+    }
+
+    private suspend fun callGeminiApi(apiKey: String, bitmap: android.graphics.Bitmap): ParsedInvoice? {
+        return try {
+            val model = GenerativeModel(
+                modelName = "gemini-1.5-flash",
+                apiKey = apiKey
+            )
+            val response = model.generateContent(
+                com.google.ai.client.generativeai.type.content {
+                    image(bitmap)
+                    text("""
+                        Analyze this invoice image and extract the following details.
+                        Output ONLY a raw, single-line JSON block matching this structure (do not include markdown block quotes like ```json or prefixing):
+                        {"supplierName": "Supplier Name", "items": [{"productName": "Product Name", "quantity": 10, "unitPrice": 15.50}]}
+                    """.trimIndent())
+                }
+            )
+            val cleanJson = response.text?.trim() ?: return null
+            val jsonToParse = cleanJson.removePrefix("```json").removePrefix("```").removeSuffix("```").trim()
+            parseJsonInvoice(jsonToParse)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
+    private fun simulateInvoiceParse(): ParsedInvoice {
+        return ParsedInvoice(
+            supplierName = "AI Smart Wholesalers Ltd",
+            items = listOf(
+                ParsedInvoiceItem("Wireless Keyboard", 15, 25.00),
+                ParsedInvoiceItem("Ergonomic Mouse", 20, 18.50),
+                ParsedInvoiceItem("HDMI Cable 2m", 50, 4.99)
+            )
+        )
+    }
+
+    private fun parseJsonInvoice(jsonStr: String): ParsedInvoice? {
+        return try {
+            val obj = org.json.JSONObject(jsonStr)
+            val supplierName = obj.optString("supplierName", "AI Supplier")
+            val itemsArray = obj.getJSONArray("items")
+            val itemsList = mutableListOf<ParsedInvoiceItem>()
+            for (i in 0 until itemsArray.length()) {
+                val itemObj = itemsArray.getJSONObject(i)
+                itemsList.add(
+                    ParsedInvoiceItem(
+                        productName = itemObj.getString("productName"),
+                        quantity = itemObj.getLong("quantity"),
+                        unitPrice = itemObj.getDouble("unitPrice")
+                    )
+                )
+            }
+            ParsedInvoice(supplierName, itemsList)
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 }

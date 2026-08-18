@@ -52,5 +52,18 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             }
         }
     }
+
+    private val geminiApiKey = stringPreferencesKey("gemini_api_key")
+    val geminiApi: Flow<String?> = dataStore.data.map { it[geminiApiKey] }
+
+    suspend fun saveGeminiApiKey(key: String?) {
+        dataStore.edit {
+            if (key != null) {
+                it[geminiApiKey] = key
+            } else {
+                it.remove(geminiApiKey)
+            }
+        }
+    }
 }
 

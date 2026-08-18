@@ -222,6 +222,18 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    val geminiApiKey: StateFlow<String?> = appPreferences.geminiApi.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    fun saveGeminiApiKey(key: String) {
+        viewModelScope.launch {
+            appPreferences.saveGeminiApiKey(if (key.isBlank()) null else key)
+        }
+    }
+
     fun backupToGoogleDrive() {
         viewModelScope.launch {
             _driveBackupStatus.value = "Uploading backup to Google Drive..."

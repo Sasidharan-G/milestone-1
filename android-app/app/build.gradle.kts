@@ -50,4 +50,5 @@ dependencies {
     }
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.11.0")
+    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 }

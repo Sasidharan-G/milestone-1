@@ -647,6 +647,42 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 }
             }
 
+            val aiSettingsCard: @Composable (Modifier) -> Unit = { modifier ->
+                var apiKey by remember { mutableStateOf("") }
+                val savedKey by viewModel.geminiApiKey.collectAsState()
+
+                LaunchedEffect(savedKey) {
+                    apiKey = savedKey.orEmpty()
+                }
+
+                Card(
+                    modifier = modifier,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Gemini AI Configuration", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "Add your Gemini API Key here to enable smart automatic parsing when uploading purchase bills and invoices.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                        OutlinedTextField(
+                            value = apiKey,
+                            onValueChange = {
+                                apiKey = it
+                                viewModel.saveGeminiApiKey(it)
+                            },
+                            label = { Text("Gemini API Key") },
+                            placeholder = { Text("AIzaSy...") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+
             val dbMaintenanceCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
                     modifier = modifier,
@@ -746,6 +782,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     printerDiagnosticsCard(Modifier.fillMaxWidth())
                     layoutModeCard(Modifier.fillMaxWidth())
                     googleDriveCard(Modifier.fillMaxWidth())
+                    aiSettingsCard(Modifier.fillMaxWidth())
                     if (hasUserManagePermission) {
                         userManagementCard(Modifier.fillMaxWidth())
                     }
@@ -765,8 +802,16 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         layoutModeCard(Modifier.weight(1f))
                         googleDriveCard(Modifier.weight(1f))
                     }
-                    if (hasUserManagePermission) {
-                        userManagementCard(Modifier.fillMaxWidth())
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        aiSettingsCard(Modifier.weight(1f))
+                        if (hasUserManagePermission) {
+                            userManagementCard(Modifier.weight(1f))
+                        } else {
+                            Spacer(Modifier.weight(1f))
+                        }
                     }
                     dbMaintenanceCard(Modifier.fillMaxWidth())
                 }

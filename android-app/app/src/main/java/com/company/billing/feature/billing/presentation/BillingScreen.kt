@@ -60,7 +60,10 @@ fun BillingScreen(viewModel: BillingViewModel) {
                     Text("Draft Sales Bill", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
 
                     // 1. Select Customer
-                    val selectedCustomerName = customers.find { it.id == selectedCustomerId }?.name ?: "Walk-in Customer"
+                    val selectedCustomerName = when (selectedCustomerId) {
+                        "online" -> "Online Customer"
+                        else -> "Walk-in Customer"
+                    }
                     ExposedDropdownMenuBox(
                         expanded = expandedCustomer,
                         onExpandedChange = { expandedCustomer = !expandedCustomer }
@@ -85,19 +88,14 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                     expandedCustomer = false
                                 }
                             )
-                            customers.forEach { customer ->
-                                DropdownMenuItem(
-                                    text = { Text(customer.name) },
-                                    onClick = {
-                                        viewModel.setCustomer(customer.id)
-                                        expandedCustomer = false
-                                    }
-                                )
-                            }
+                            DropdownMenuItem(
+                                text = { Text("Online Customer") },
+                                onClick = {
+                                    viewModel.setCustomer("online")
+                                    expandedCustomer = false
+                                }
+                            )
                         }
-                    }
-                    if (customers.isEmpty()) {
-                        Text("No customers found! Please create a customer in Masters screen first.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
                     }
 
                     HorizontalDivider()
