@@ -23,6 +23,8 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.company.billing.core.backup.data.BackupManager
 import com.company.billing.core.backup.domain.BackupResult
+import com.company.billing.core.backup.data.GoogleDriveBackupManager
+import com.company.billing.core.sync.SyncScheduler
 
 data class BluetoothDeviceInfo(val name: String, val address: String)
 
@@ -31,7 +33,9 @@ class SettingsViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val appPreferences: AppPreferences,
     private val printerManager: PrinterManager,
-    private val backupManager: BackupManager
+    private val backupManager: BackupManager,
+    private val googleDriveBackupManager: GoogleDriveBackupManager,
+    private val syncScheduler: SyncScheduler
 ) : ViewModel() {
 
     val printerType: StateFlow<String?> = appPreferences.printerType.stateIn(
@@ -63,6 +67,12 @@ class SettingsViewModel @Inject constructor(
             appPreferences.saveLayoutMode(mode)
         }
     }
+
+    val googleAccount: StateFlow<String?> = appPreferences.googleAccount.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
 
     private val _bluetoothDevices = MutableStateFlow<List<BluetoothDeviceInfo>>(emptyList())
     val bluetoothDevices: StateFlow<List<BluetoothDeviceInfo>> = _bluetoothDevices.asStateFlow()
@@ -181,6 +191,30 @@ class SettingsViewModel @Inject constructor(
             } else {
                 _restoreStatus.value = "Restore failed: Invalid checksum or corrupted backup file."
                 onFinished(false)
+            }
+        }
+    }
+
+    private val _driveBackupStatus = MutableStateFlow<String?>(null)
+    val driveBackupStatus: StateFlow<String?> = _driveBackupStatus.asStateFlow()
+
+    fun linkGoogleAccount(email: String?) {
+        viewModelScope.launch {
+            appPreferences.saveGoogleAccount(email)
+            if (email != null) {
+                syncScheduler.schedulePeriodicGoogleDriveBackup()
+            }
+        }
+    }
+
+    fun backupToGoogleDrive() {
+        viewModelScope.launch {
+            _driveBackupStatus.value = "Uploading backup to Google Drive..."
+            val success = googleDriveBackupManager.uploadBackupToDrive()
+            if (success) {
+                _driveBackupStatus.value = "Backup uploaded to Google Drive successfully!"
+            } else {
+                _driveBackupStatus.value = "Google Drive backup failed. Ensure you are signed in."
             }
         }
     }

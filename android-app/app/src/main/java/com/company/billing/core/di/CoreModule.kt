@@ -75,4 +75,5 @@ object CoreModule {
     @Provides @Singleton fun printerManager(btDriver: BluetoothPrinterDriver, usbDriver: UsbPrinterDriver): PrinterManager = PrinterManager(btDriver, usbDriver)
     @Provides @Singleton fun shareManager(@ApplicationContext context: Context) = ShareManager(context)
     @Provides @Singleton fun backupManager(@ApplicationContext context: Context, database: BillingDatabase) = BackupManager(context, database)
+    @Provides @Singleton fun googleDriveBackupManager(@ApplicationContext context: Context, appPreferences: AppPreferences, backupManager: BackupManager) = com.company.billing.core.backup.data.GoogleDriveBackupManager(context, appPreferences, backupManager)
 }

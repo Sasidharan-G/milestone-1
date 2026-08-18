@@ -39,5 +39,18 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             it[layoutModeKey] = mode
         }
     }
+
+    private val googleAccountKey = stringPreferencesKey("google_account")
+    val googleAccount: Flow<String?> = dataStore.data.map { it[googleAccountKey] }
+
+    suspend fun saveGoogleAccount(email: String?) {
+        dataStore.edit {
+            if (email != null) {
+                it[googleAccountKey] = email
+            } else {
+                it.remove(googleAccountKey)
+            }
+        }
+    }
 }
 

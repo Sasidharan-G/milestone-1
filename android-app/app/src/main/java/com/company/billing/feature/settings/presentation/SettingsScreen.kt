@@ -1,6 +1,12 @@
 package com.company.billing.feature.settings.presentation
 
 import com.company.billing.core.ui.LocalLayoutMode
+import com.google.android.gms.auth.api.signin.GoogleSignIn
+import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.Scope
+import com.google.android.gms.common.api.ApiException
+import com.google.api.services.drive.DriveScopes
+import androidx.compose.ui.platform.LocalContext
 
 import android.Manifest
 import android.os.Build
@@ -115,6 +121,125 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 "Mobile" -> true
                 "Tablet" -> false
                 else -> maxWidth < 600.dp
+            }
+
+            val googleDriveCard: @Composable (Modifier) -> Unit = { modifier ->
+                val googleAccount by viewModel.googleAccount.collectAsState()
+                val driveBackupStatus by viewModel.driveBackupStatus.collectAsState()
+                val context = LocalContext.current
+
+                val gso = remember {
+                    GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
+                        .requestEmail()
+                        .requestScopes(Scope(DriveScopes.DRIVE_APPDATA))
+                        .build()
+                }
+                val signInClient = remember { GoogleSignIn.getClient(context, gso) }
+                var errorMessage by remember { mutableStateOf("") }
+
+                val signInLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.StartActivityForResult()
+                ) { result ->
+                    val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
+                    try {
+                        val account = task.getResult(ApiException::class.java)
+                        viewModel.linkGoogleAccount(account?.email)
+                        errorMessage = ""
+                    } catch (e: ApiException) {
+                        e.printStackTrace()
+                        errorMessage = "Sign-In Failed (Code: ${e.statusCode}). Make sure the app's SHA-1 is registered in Google Cloud Console."
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                        errorMessage = "Sign-In Failed: ${e.message}"
+                    }
+                }
+
+                Card(
+                    modifier = modifier,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Text("Google Drive Auto-Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "Automatically backup your transaction database to your personal Google Drive account in a secure app-specific folder.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+
+                        if (!googleAccount.isNullOrBlank()) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text("Linked Account", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text(googleAccount!!, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                }
+                                Spacer(modifier = Modifier.width(8.dp))
+                                OutlinedButton(
+                                    onClick = {
+                                        signInClient.signOut().addOnCompleteListener {
+                                            viewModel.linkGoogleAccount(null)
+                                        }
+                                    },
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Disconnect")
+                                }
+                            }
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { viewModel.backupToGoogleDrive() },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Backup Now", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            Button(
+                                onClick = {
+                                    signInLauncher.launch(signInClient.signInIntent)
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Link Google Account", fontWeight = FontWeight.Bold)
+                            }
+                        }
+
+                        if (!driveBackupStatus.isNullOrBlank()) {
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = driveBackupStatus!!,
+                                    fontSize = 12.sp,
+                                    modifier = Modifier.padding(12.dp),
+                                    fontWeight = FontWeight.Medium
+                                )
+                            }
+                        }
+
+                        if (errorMessage.isNotBlank()) {
+                            Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text(
+                                "Setup Guide:\n1. Register package com.company.billing in Google Cloud Console.\n2. Add your SHA-1 certificate fingerprint.\n3. Enable the Google Drive API in Google Cloud APIs library.",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+                    }
+                }
             }
 
             val layoutModeCard: @Composable (Modifier) -> Unit = { modifier ->
@@ -430,6 +555,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     printerPreferencesCard(Modifier.fillMaxWidth())
                     printerDiagnosticsCard(Modifier.fillMaxWidth())
                     layoutModeCard(Modifier.fillMaxWidth())
+                    googleDriveCard(Modifier.fillMaxWidth())
                     dbMaintenanceCard(Modifier.fillMaxWidth())
                 } else {
                     Row(
@@ -444,8 +570,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         layoutModeCard(Modifier.weight(1f))
-                        dbMaintenanceCard(Modifier.weight(1f))
+                        googleDriveCard(Modifier.weight(1f))
                     }
+                    dbMaintenanceCard(Modifier.fillMaxWidth())
                 }
             }
         }
