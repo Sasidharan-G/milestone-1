@@ -245,8 +245,9 @@ fun BillingScreen(viewModel: BillingViewModel) {
 
                     Button(
                         onClick = {
-                            viewModel.save(onSuccess = {
-                                message = "Bill saved successfully: $it"
+                            viewModel.save(onSuccess = { billNum ->
+                                message = "Bill saved successfully: $billNum"
+                                viewModel.shareBill(billNum, false)
                             }, onError = {
                                 message = "Error: ${it.message}"
                             })

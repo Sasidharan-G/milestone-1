@@ -39,4 +39,12 @@ val migration5To6 = object : Migration(5, 6) {
         db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_users_username` ON `users` (`username`)")
     }
 }
+val migration6To7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `customers` ADD COLUMN `phone` TEXT")
+        db.execSQL("ALTER TABLE `customers` ADD COLUMN `address` TEXT")
+        db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `phone` TEXT")
+        db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `address` TEXT")
+    }
+}
 

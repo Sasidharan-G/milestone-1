@@ -13,6 +13,7 @@ import kotlinx.coroutines.flow.Flow
     @Query("SELECT * FROM products WHERE name LIKE '%' || :query || '%' ORDER BY name") fun products(query: String): Flow<List<ProductEntity>>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomer(item: CustomerEntity)
     @Query("SELECT * FROM customers WHERE name LIKE '%' || :query || '%' ORDER BY name") fun customers(query: String): Flow<List<CustomerEntity>>
+    @Query("SELECT * FROM customers WHERE id = :id") suspend fun getCustomerById(id: String): CustomerEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertSupplier(item: SupplierEntity)
     @Query("SELECT * FROM suppliers WHERE name LIKE '%' || :query || '%' ORDER BY name") fun suppliers(query: String): Flow<List<SupplierEntity>>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertExpense(item: ExpenseEntity)

@@ -13,10 +13,10 @@ data class CategoryEntity(@PrimaryKey val id: String, val name: String, val crea
 data class ProductEntity(@PrimaryKey val id: String, val name: String, val categoryId: String, val createdAtEpochMs: Long, val updatedAtEpochMs: Long, val syncStatus: SyncStatus)
 
 @Entity(tableName = "customers", indices = [Index("name")])
-data class CustomerEntity(@PrimaryKey val id: String, val name: String, val createdAtEpochMs: Long, val updatedAtEpochMs: Long, val syncStatus: SyncStatus)
+data class CustomerEntity(@PrimaryKey val id: String, val name: String, val phone: String? = null, val address: String? = null, val createdAtEpochMs: Long, val updatedAtEpochMs: Long, val syncStatus: SyncStatus)
 
 @Entity(tableName = "suppliers", indices = [Index("name")])
-data class SupplierEntity(@PrimaryKey val id: String, val name: String, val createdAtEpochMs: Long, val updatedAtEpochMs: Long, val syncStatus: SyncStatus)
+data class SupplierEntity(@PrimaryKey val id: String, val name: String, val phone: String? = null, val address: String? = null, val createdAtEpochMs: Long, val updatedAtEpochMs: Long, val syncStatus: SyncStatus)
 
 @Entity(tableName = "expenses")
 data class ExpenseEntity(@PrimaryKey val id: String, val amountMinorUnits: Long, val description: String, val createdAtEpochMs: Long, val updatedAtEpochMs: Long, val syncStatus: SyncStatus)

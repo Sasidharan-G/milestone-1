@@ -71,6 +71,24 @@ class ShareManager(private val context: Context) {
         }
     }
 
+    fun shareTextToWhatsApp(text: String, phoneNumber: String?): Boolean {
+        if (!phoneNumber.isNullOrBlank()) {
+            val formattedPhone = phoneNumber.filter { it.isDigit() }
+            val intent = Intent(Intent.ACTION_VIEW).apply {
+                data = Uri.parse("https://api.whatsapp.com/send?phone=$formattedPhone&text=${Uri.encode(text)}")
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            return try {
+                context.startActivity(intent)
+                true
+            } catch (e: Exception) {
+                // If it fails, fallback to general sharing
+                shareText(text)
+            }
+        }
+        return shareText(text, PACKAGE_WHATSAPP)
+    }
+
     private fun isAppInstalled(packageId: String): Boolean {
         return try {
             context.packageManager.getPackageInfo(packageId, 0)

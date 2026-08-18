@@ -474,6 +474,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 fun CustomerTabScreen(viewModel: CustomerViewModel) {
     val customers by viewModel.customers.collectAsState()
     var name by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
 
@@ -492,7 +494,9 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
             ) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(20.dp)),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -501,24 +505,48 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                 value = name,
                                 onValueChange = { name = it },
                                 label = { Text("Customer Name") },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = phone,
+                                onValueChange = { phone = it },
+                                label = { Text("Phone Number") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = address,
+                                onValueChange = { address = it },
+                                label = { Text("Address") },
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Button(
                                 onClick = {
                                     if (name.isNotBlank()) {
-                                        viewModel.addCustomer(name, onSuccess = {
-                                            name = ""
-                                            message = "Customer added successfully"
-                                        }, onError = {
-                                            message = "Error: ${it.message}"
-                                        })
+                                        viewModel.addCustomer(
+                                            name = name,
+                                            phone = phone.trim().takeIf { it.isNotBlank() },
+                                            address = address.trim().takeIf { it.isNotBlank() },
+                                            onSuccess = {
+                                                name = ""
+                                                phone = ""
+                                                address = ""
+                                                message = "Customer added successfully"
+                                            },
+                                            onError = {
+                                                message = "Error: ${it.message}"
+                                            }
+                                        )
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null)
-                               Spacer(Modifier.width(8.dp))
+                                Spacer(Modifier.width(8.dp))
                                 Text("Add Customer")
                             }
                             if (message.isNotBlank()) {
@@ -537,14 +565,28 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         },
                         label = { Text("Search Customers") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
                 }
 
                 items(customers) { customer ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Card(
+                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                if (!customer.phone.isNullOrBlank() || !customer.address.isNullOrBlank()) {
+                                    Text(
+                                        text = listOfNotNull(customer.phone, customer.address).joinToString(" | "),
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
                             Text(customer.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                         }
                     }
@@ -553,7 +595,9 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
         } else {
             Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(
-                    modifier = Modifier.weight(1.2f).fillMaxHeight(),
+                    modifier = Modifier.weight(1.2f).fillMaxHeight().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(20.dp)),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -562,21 +606,45 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             value = name,
                             onValueChange = { name = it },
                             label = { Text("Customer Name") },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = phone,
+                            onValueChange = { phone = it },
+                            label = { Text("Phone Number") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = address,
+                            onValueChange = { address = it },
+                            label = { Text("Address") },
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                         Button(
                             onClick = {
                                 if (name.isNotBlank()) {
-                                    viewModel.addCustomer(name, onSuccess = {
-                                        name = ""
-                                        message = "Customer added successfully"
-                                    }, onError = {
-                                        message = "Error: ${it.message}"
-                                    })
+                                    viewModel.addCustomer(
+                                        name = name,
+                                        phone = phone.trim().takeIf { it.isNotBlank() },
+                                        address = address.trim().takeIf { it.isNotBlank() },
+                                        onSuccess = {
+                                            name = ""
+                                            phone = ""
+                                            address = ""
+                                            message = "Customer added successfully"
+                                        },
+                                        onError = {
+                                            message = "Error: ${it.message}"
+                                        }
+                                    )
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -597,14 +665,28 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         },
                         label = { Text("Search Customers") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                     )
 
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(customers) { customer ->
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Card(
+                                modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            ) {
+                                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Column {
+                                        Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                        if (!customer.phone.isNullOrBlank() || !customer.address.isNullOrBlank()) {
+                                            Text(
+                                                text = listOfNotNull(customer.phone, customer.address).joinToString(" | "),
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    }
                                     Text(customer.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                 }
                             }
@@ -620,6 +702,8 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
 fun SupplierTabScreen(viewModel: SupplierViewModel) {
     val suppliers by viewModel.suppliers.collectAsState()
     var name by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
+    var address by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
 
@@ -638,7 +722,9 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
             ) {
                 item {
                     Card(
-                        modifier = Modifier.fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(20.dp)),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -647,21 +733,45 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                 value = name,
                                 onValueChange = { name = it },
                                 label = { Text("Supplier Name") },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = phone,
+                                onValueChange = { phone = it },
+                                label = { Text("Phone Number") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = address,
+                                onValueChange = { address = it },
+                                label = { Text("Address") },
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Button(
                                 onClick = {
                                     if (name.isNotBlank()) {
-                                        viewModel.addSupplier(name, onSuccess = {
-                                            name = ""
-                                            message = "Supplier added successfully"
-                                        }, onError = {
-                                            message = "Error: ${it.message}"
-                                        })
+                                        viewModel.addSupplier(
+                                            name = name,
+                                            phone = phone.trim().takeIf { it.isNotBlank() },
+                                            address = address.trim().takeIf { it.isNotBlank() },
+                                            onSuccess = {
+                                                name = ""
+                                                phone = ""
+                                                address = ""
+                                                message = "Supplier added successfully"
+                                            },
+                                            onError = {
+                                                message = "Error: ${it.message}"
+                                            }
+                                        )
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -683,14 +793,28 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                         },
                         label = { Text("Search Suppliers") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
                     )
                 }
 
                 items(suppliers) { supplier ->
-                    Card(modifier = Modifier.fillMaxWidth()) {
-                        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                            Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                    Card(
+                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column {
+                                Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                if (!supplier.phone.isNullOrBlank() || !supplier.address.isNullOrBlank()) {
+                                    Text(
+                                        text = listOfNotNull(supplier.phone, supplier.address).joinToString(" | "),
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.outline
+                                    )
+                                }
+                            }
                             Text(supplier.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                         }
                     }
@@ -699,7 +823,9 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
         } else {
             Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(
-                    modifier = Modifier.weight(1.2f).fillMaxHeight(),
+                    modifier = Modifier.weight(1.2f).fillMaxHeight().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(20.dp)),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -708,21 +834,45 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             value = name,
                             onValueChange = { name = it },
                             label = { Text("Supplier Name") },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = phone,
+                            onValueChange = { phone = it },
+                            label = { Text("Phone Number") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = address,
+                            onValueChange = { address = it },
+                            label = { Text("Address") },
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                         Button(
                             onClick = {
                                 if (name.isNotBlank()) {
-                                    viewModel.addSupplier(name, onSuccess = {
-                                        name = ""
-                                        message = "Supplier added successfully"
-                                    }, onError = {
-                                        message = "Error: ${it.message}"
-                                    })
+                                    viewModel.addSupplier(
+                                        name = name,
+                                        phone = phone.trim().takeIf { it.isNotBlank() },
+                                        address = address.trim().takeIf { it.isNotBlank() },
+                                        onSuccess = {
+                                            name = ""
+                                            phone = ""
+                                            address = ""
+                                            message = "Supplier added successfully"
+                                        },
+                                        onError = {
+                                            message = "Error: ${it.message}"
+                                        }
+                                    )
                                 }
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
@@ -743,14 +893,28 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                         },
                         label = { Text("Search Suppliers") },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                     )
 
                     LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(suppliers) { supplier ->
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Card(
+                                modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            ) {
+                                Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Column {
+                                        Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                        if (!supplier.phone.isNullOrBlank() || !supplier.address.isNullOrBlank()) {
+                                            Text(
+                                                text = listOfNotNull(supplier.phone, supplier.address).joinToString(" | "),
+                                                fontSize = 12.sp,
+                                                color = MaterialTheme.colorScheme.outline
+                                            )
+                                        }
+                                    }
                                     Text(supplier.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                 }
                             }

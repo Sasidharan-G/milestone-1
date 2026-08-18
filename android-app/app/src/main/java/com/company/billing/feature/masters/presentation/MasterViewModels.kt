@@ -103,12 +103,14 @@ class CustomerViewModel @Inject constructor(
 
     fun updateSearch(query: String) { searchQuery.value = query }
 
-    fun addCustomer(name: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+    fun addCustomer(name: String, phone: String?, address: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
                 val customer = CustomerEntity(
                     id = newRecordId(),
                     name = name,
+                    phone = phone,
+                    address = address,
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
                     syncStatus = SyncStatus.LOCAL_ONLY
@@ -136,12 +138,14 @@ class SupplierViewModel @Inject constructor(
 
     fun updateSearch(query: String) { searchQuery.value = query }
 
-    fun addSupplier(name: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+    fun addSupplier(name: String, phone: String?, address: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
                 val supplier = SupplierEntity(
                     id = newRecordId(),
                     name = name,
+                    phone = phone,
+                    address = address,
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
                     syncStatus = SyncStatus.LOCAL_ONLY

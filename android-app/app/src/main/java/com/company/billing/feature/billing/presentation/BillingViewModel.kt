@@ -122,8 +122,13 @@ class BillingViewModel @Inject constructor(
                 appendLine("Thank you for your business!")
             }.toString()
 
-            val pkg = if (isWhatsapp) ShareManager.PACKAGE_WHATSAPP else null
-            shareManager.shareText(summary, pkg)
+            if (isWhatsapp) {
+                val customer = sale.customerId?.let { masterDao.getCustomerById(it) }
+                val phone = customer?.phone
+                shareManager.shareTextToWhatsApp(summary, phone)
+            } else {
+                shareManager.shareText(summary, null)
+            }
         }
     }
 }
