@@ -8,6 +8,7 @@ import com.company.billing.core.database.migration1To2
 import com.company.billing.core.database.migration2To3
 import com.company.billing.core.database.migration3To4
 import com.company.billing.core.database.migration4To5
+import com.company.billing.core.database.migration5To6
 import com.company.billing.core.auth.AuthRepository
 import com.company.billing.core.auth.DefaultAuthRepository
 import com.company.billing.core.auth.OfflineCredentialStore
@@ -52,13 +53,13 @@ private val Context.billingDataStore by preferencesDataStore("billing_preference
 @Module
 @InstallIn(SingletonComponent::class)
 object CoreModule {
-    @Provides @Singleton fun database(@ApplicationContext context: Context): BillingDatabase = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db").addMigrations(migration1To2, migration2To3, migration3To4, migration4To5).build()
+    @Provides @Singleton fun database(@ApplicationContext context: Context): BillingDatabase = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db").addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6).build()
     @Provides @Singleton fun api(): BillingApi = Retrofit.Builder().baseUrl("https://REQUIRES_CLIENT_CONFIRMATION.invalid/").addConverterFactory(MoshiConverterFactory.create()).build().create(BillingApi::class.java)
     @Provides @Singleton fun preferences(@ApplicationContext context: Context) = AppPreferences(context.billingDataStore)
     @Provides @Singleton fun sessionStore(@ApplicationContext context: Context) = SessionStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialStore(@ApplicationContext context: Context) = OfflineCredentialStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialVerifier() = OfflineCredentialVerifier()
-    @Provides @Singleton fun authRepository(api: BillingApi, sessions: SessionStore, credentials: OfflineCredentialStore, verifier: OfflineCredentialVerifier): AuthRepository = DefaultAuthRepository(api, sessions, credentials, verifier)
+    @Provides @Singleton fun authRepository(api: BillingApi, sessions: SessionStore, credentials: OfflineCredentialStore, verifier: OfflineCredentialVerifier, database: BillingDatabase): AuthRepository = DefaultAuthRepository(api, sessions, credentials, verifier, database)
     @Provides @Singleton fun logger(): AppLogger = AndroidLogger()
     @Provides @Singleton fun syncScheduler(@ApplicationContext context: Context) = SyncScheduler(context)
     @Provides @Singleton fun syncManager(database: BillingDatabase, syncScheduler: SyncScheduler) = SyncManager(database, syncScheduler)

@@ -33,4 +33,10 @@ val migration4To5 = object : Migration(4, 5) {
         db.execSQL("ALTER TABLE `expenses` ADD COLUMN `description` TEXT NOT NULL DEFAULT ''")
     }
 }
+val migration5To6 = object : Migration(5, 6) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `users` (`id` TEXT NOT NULL, `username` TEXT NOT NULL, `displayName` TEXT NOT NULL, `salt` TEXT NOT NULL, `verifier` TEXT NOT NULL, `permissions` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_users_username` ON `users` (`username`)")
+    }
+}
 

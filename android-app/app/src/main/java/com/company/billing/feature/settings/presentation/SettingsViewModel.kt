@@ -35,7 +35,10 @@ class SettingsViewModel @Inject constructor(
     private val printerManager: PrinterManager,
     private val backupManager: BackupManager,
     private val googleDriveBackupManager: GoogleDriveBackupManager,
-    private val syncScheduler: SyncScheduler
+    private val syncScheduler: SyncScheduler,
+    private val database: com.company.billing.core.database.BillingDatabase,
+    private val sessionStore: com.company.billing.core.auth.SessionStore,
+    private val verifier: com.company.billing.core.auth.OfflineCredentialVerifier
 ) : ViewModel() {
 
     val printerType: StateFlow<String?> = appPreferences.printerType.stateIn(
@@ -60,6 +63,18 @@ class SettingsViewModel @Inject constructor(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = "Auto"
+    )
+
+    val activeSession: StateFlow<com.company.billing.core.auth.Session?> = sessionStore.activeSession.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    val usersList: StateFlow<List<com.company.billing.core.auth.UserEntity>> = database.userDao().getAllUsersFlow().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
     )
 
     fun saveLayoutMode(mode: String) {
@@ -216,6 +231,55 @@ class SettingsViewModel @Inject constructor(
             } else {
                 _driveBackupStatus.value = "Google Drive backup failed. Ensure you are signed in."
             }
+        }
+    }
+
+    fun createUser(username: String, displayName: String, password: CharArray, permissions: Set<com.company.billing.core.security.Permission>) {
+        viewModelScope.launch {
+            val cred = verifier.create(username, password, java.util.UUID.randomUUID().toString(), displayName)
+            val saltStr = android.util.Base64.encodeToString(cred.salt, android.util.Base64.NO_WRAP)
+            val verifierStr = android.util.Base64.encodeToString(cred.verifier, android.util.Base64.NO_WRAP)
+
+            val userEntity = com.company.billing.core.auth.UserEntity(
+                id = cred.userId,
+                username = username,
+                displayName = displayName,
+                salt = saltStr,
+                verifier = verifierStr,
+                permissions = permissions.joinToString(",") { it.name }
+            )
+            database.userDao().insertUser(userEntity)
+        }
+    }
+
+    fun updateUserCredentials(userId: String, newPassword: CharArray?, permissions: Set<com.company.billing.core.security.Permission>) {
+        viewModelScope.launch {
+            val userDao = database.userDao()
+            val existing = userDao.getUserById(userId) ?: return@launch
+
+            val updatedUser = if (newPassword != null && newPassword.isNotEmpty()) {
+                val cred = verifier.create(existing.username, newPassword, existing.id, existing.displayName)
+                val saltStr = android.util.Base64.encodeToString(cred.salt, android.util.Base64.NO_WRAP)
+                val verifierStr = android.util.Base64.encodeToString(cred.verifier, android.util.Base64.NO_WRAP)
+                existing.copy(
+                    salt = saltStr,
+                    verifier = verifierStr,
+                    permissions = permissions.joinToString(",") { it.name }
+                )
+            } else {
+                existing.copy(
+                    permissions = permissions.joinToString(",") { it.name }
+                )
+            }
+            userDao.updateUser(updatedUser)
+        }
+    }
+
+    fun deleteUser(userId: String) {
+        viewModelScope.launch {
+            val userDao = database.userDao()
+            val existing = userDao.getUserById(userId) ?: return@launch
+            userDao.deleteUser(existing)
         }
     }
 

@@ -17,7 +17,10 @@ import com.company.billing.feature.purchase.data.PurchaseDao
 import com.company.billing.feature.purchase.data.PurchaseEntity
 import com.company.billing.feature.purchase.data.PurchaseItemEntity
 
-@Database(entities = [SyncQueueEntity::class, CategoryEntity::class, ProductEntity::class, CustomerEntity::class, SupplierEntity::class, ExpenseEntity::class, SaleEntity::class, SaleItemEntity::class, StockMovementEntity::class, PurchaseEntity::class, PurchaseItemEntity::class], version = 5, exportSchema = true)
+import com.company.billing.core.auth.UserEntity
+import com.company.billing.core.auth.UserDao
+
+@Database(entities = [SyncQueueEntity::class, CategoryEntity::class, ProductEntity::class, CustomerEntity::class, SupplierEntity::class, ExpenseEntity::class, SaleEntity::class, SaleItemEntity::class, StockMovementEntity::class, PurchaseEntity::class, PurchaseItemEntity::class, UserEntity::class], version = 6, exportSchema = true)
 @TypeConverters(SyncStatusConverter::class)
 abstract class BillingDatabase : RoomDatabase() {
     abstract fun syncQueueDao(): SyncQueueDao
@@ -25,4 +28,5 @@ abstract class BillingDatabase : RoomDatabase() {
     abstract fun saleDao(): SaleDao
     abstract fun purchaseDao(): PurchaseDao
     abstract fun reportDao(): ReportDao
+    abstract fun userDao(): UserDao
 }

@@ -13,6 +13,9 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import com.company.billing.core.security.Permission
+import com.company.billing.core.auth.Session
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -57,9 +60,13 @@ fun BillingApp() {
                 }
 
                 composable(AppRoute.Home.path) {
+                    val vm: com.company.billing.feature.home.HomeViewModel = hiltViewModel()
+                    val session by vm.activeSession.collectAsState()
                     HomeScreen(
+                        session = session,
                         onNavigateTo = { route -> navController.navigate(route.path) },
                         onLogout = {
+                            vm.logout()
                             navController.navigate(AppRoute.Login.path) {
                                 popUpTo(AppRoute.Home.path) { inclusive = true }
                             }
@@ -107,20 +114,55 @@ fun BillingApp() {
     }
 }
 
+data class DashboardItem(
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector,
+    val route: AppRoute
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
+    session: Session?,
     onNavigateTo: (AppRoute) -> Unit,
     onLogout: () -> Unit
 ) {
+    val permissions = session?.permissions ?: emptySet()
+    
+    val showMasters = permissions.any { it == Permission.CATEGORY_VIEW || it == Permission.PRODUCT_VIEW || it == Permission.USER_MANAGE }
+    val showSales = permissions.any { it == Permission.SALE_CREATE || it == Permission.SALE_VIEW }
+    val showPurchases = permissions.any { it == Permission.PURCHASE_CREATE || it == Permission.PURCHASE_VIEW }
+    val showReports = permissions.any { it == Permission.REPORT_SALES || it == Permission.REPORT_STOCK || it == Permission.REPORT_PROFIT }
+    val showSettings = permissions.any { it == Permission.SETTINGS_VIEW || it == Permission.USER_MANAGE }
+
+    val dashboardItems = remember(showMasters, showSales, showPurchases, showReports) {
+        buildList {
+            if (showMasters) {
+                add(DashboardItem("Master Data", "Manage Categories, Products, Customers, Suppliers, Expenses", Icons.Default.Menu, AppRoute.Masters))
+            }
+            if (showSales) {
+                add(DashboardItem("Sales Invoicing", "Draft bills, invoice products and log sales ledger", Icons.Default.ShoppingCart, AppRoute.Billing))
+            }
+            if (showPurchases) {
+                add(DashboardItem("Purchases & Stock", "Record stock inward, manage supplier invoices & ledger", Icons.Default.AddCircle, AppRoute.Purchases))
+            }
+            if (showReports) {
+                add(DashboardItem("Reports Engine", "Analyze Sales, Stock, Profits, Purchases & Expenses", Icons.Default.List, AppRoute.Reports))
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
                 title = { Text("Client Billing System", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 actions = {
-                    IconButton(onClick = { onNavigateTo(AppRoute.Settings) }) {
-                        Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onPrimary)
+                    if (showSettings) {
+                        IconButton(onClick = { onNavigateTo(AppRoute.Settings) }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onPrimary)
+                        }
                     }
                     IconButton(onClick = onLogout) {
                         Icon(Icons.Default.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.onPrimary)
@@ -156,37 +198,15 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
                     
-                    DashboardCard(
-                        title = "Master Data",
-                        subtitle = "Manage Categories, Products, Customers, Suppliers, Expenses",
-                        icon = Icons.Default.Menu,
-                        modifier = Modifier.fillMaxWidth().height(130.dp),
-                        onClick = { onNavigateTo(AppRoute.Masters) }
-                    )
-
-                    DashboardCard(
-                        title = "Sales Invoicing",
-                        subtitle = "Draft bills, invoice products and log sales ledger",
-                        icon = Icons.Default.ShoppingCart,
-                        modifier = Modifier.fillMaxWidth().height(130.dp),
-                        onClick = { onNavigateTo(AppRoute.Billing) }
-                    )
-
-                    DashboardCard(
-                        title = "Purchases & Stock",
-                        subtitle = "Record stock inward, manage supplier invoices & ledger",
-                        icon = Icons.Default.AddCircle,
-                        modifier = Modifier.fillMaxWidth().height(130.dp),
-                        onClick = { onNavigateTo(AppRoute.Purchases) }
-                    )
-
-                    DashboardCard(
-                        title = "Reports Engine",
-                        subtitle = "Analyze Sales, Stock, Profits, Purchases & Expenses",
-                        icon = Icons.Default.List,
-                        modifier = Modifier.fillMaxWidth().height(130.dp),
-                        onClick = { onNavigateTo(AppRoute.Reports) }
-                    )
+                    dashboardItems.forEach { item ->
+                        DashboardCard(
+                            title = item.title,
+                            subtitle = item.subtitle,
+                            icon = item.icon,
+                            modifier = Modifier.fillMaxWidth().height(130.dp),
+                            onClick = { onNavigateTo(item.route) }
+                        )
+                    }
                 }
             } else {
                 Column(
@@ -202,46 +222,24 @@ fun HomeScreen(
                         color = MaterialTheme.colorScheme.primary
                     )
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        DashboardCard(
-                            title = "Master Data",
-                            subtitle = "Manage Categories, Products, Customers, Suppliers, Expenses",
-                            icon = Icons.Default.Menu,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            onClick = { onNavigateTo(AppRoute.Masters) }
-                        )
-
-                        DashboardCard(
-                            title = "Sales Invoicing",
-                            subtitle = "Draft bills, invoice products and log sales ledger",
-                            icon = Icons.Default.ShoppingCart,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            onClick = { onNavigateTo(AppRoute.Billing) }
-                        )
-                    }
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth().weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        DashboardCard(
-                            title = "Purchases & Stock",
-                            subtitle = "Record stock inward, manage supplier invoices & ledger",
-                            icon = Icons.Default.AddCircle,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            onClick = { onNavigateTo(AppRoute.Purchases) }
-                        )
-
-                        DashboardCard(
-                            title = "Reports Engine",
-                            subtitle = "Analyze Sales, Stock, Profits, Purchases & Expenses",
-                            icon = Icons.Default.List,
-                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                            onClick = { onNavigateTo(AppRoute.Reports) }
-                        )
+                    dashboardItems.chunked(2).forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth().weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            rowItems.forEach { item ->
+                                DashboardCard(
+                                    title = item.title,
+                                    subtitle = item.subtitle,
+                                    icon = item.icon,
+                                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                                    onClick = { onNavigateTo(item.route) }
+                                )
+                            }
+                            if (rowItems.size < 2) {
+                                Spacer(modifier = Modifier.weight(1f))
+                            }
+                        }
                     }
                 }
             }

@@ -1,6 +1,10 @@
 package com.company.billing.feature.settings.presentation
 
 import com.company.billing.core.ui.LocalLayoutMode
+import com.company.billing.core.auth.UserEntity
+import com.company.billing.core.security.Permission
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Edit
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
@@ -15,6 +19,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
@@ -116,6 +121,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            val session by viewModel.activeSession.collectAsState()
+            val hasUserManagePermission = session?.permissions?.contains(com.company.billing.core.security.Permission.USER_MANAGE) == true
+
             val layoutMode = LocalLayoutMode.current
             val isMobile = when (layoutMode) {
                 "Mobile" -> true
@@ -546,6 +554,99 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 }
             }
 
+            val userManagementCard: @Composable (Modifier) -> Unit = { modifier ->
+                val users by viewModel.usersList.collectAsState()
+
+                var showAddDialog by remember { mutableStateOf(false) }
+                var showEditDialog by remember { mutableStateOf(false) }
+                var selectedUser by remember { mutableStateOf<com.company.billing.core.auth.UserEntity?>(null) }
+
+                Card(
+                    modifier = modifier,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Staff User Management", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Button(
+                                onClick = { showAddDialog = true },
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(Modifier.width(4.dp))
+                                Text("Add User")
+                            }
+                        }
+
+                        Text(
+                            "Create staff logins, assign specific screen permissions, and reset user passwords here.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+
+                        Column(
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            if (users.isEmpty()) {
+                                Box(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text("No custom users created yet. Click 'Add User' above.", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                                }
+                            } else {
+                                users.forEach { user ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth().clickable {
+                                            selectedUser = user
+                                            showEditDialog = true
+                                        },
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column {
+                                                Text(user.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                Text("ID/Username: ${user.username}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                            }
+                                            Icon(Icons.Default.Edit, contentDescription = "Edit User", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Render dialogs for adding/editing users
+                if (showAddDialog) {
+                    AddUserDialog(onDismiss = { showAddDialog = false }, onCreate = { u, d, p, perms ->
+                        viewModel.createUser(u, d, p, perms)
+                        showAddDialog = false
+                    })
+                }
+
+                if (showEditDialog && selectedUser != null) {
+                    EditUserDialog(user = selectedUser!!, onDismiss = { showEditDialog = false }, onSave = { pass, perms ->
+                        viewModel.updateUserCredentials(selectedUser!!.id, pass, perms)
+                        showEditDialog = false
+                    }, onDelete = {
+                        viewModel.deleteUser(selectedUser!!.id)
+                        showEditDialog = false
+                    })
+                }
+            }
+
             val dbMaintenanceCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
                     modifier = modifier,
@@ -645,6 +746,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     printerDiagnosticsCard(Modifier.fillMaxWidth())
                     layoutModeCard(Modifier.fillMaxWidth())
                     googleDriveCard(Modifier.fillMaxWidth())
+                    if (hasUserManagePermission) {
+                        userManagementCard(Modifier.fillMaxWidth())
+                    }
                     dbMaintenanceCard(Modifier.fillMaxWidth())
                 } else {
                     Row(
@@ -661,9 +765,204 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         layoutModeCard(Modifier.weight(1f))
                         googleDriveCard(Modifier.weight(1f))
                     }
+                    if (hasUserManagePermission) {
+                        userManagementCard(Modifier.fillMaxWidth())
+                    }
                     dbMaintenanceCard(Modifier.fillMaxWidth())
                 }
             }
         }
     }
+}
+
+@Composable
+fun AddUserDialog(
+    onDismiss: () -> Unit,
+    onCreate: (username: String, displayName: String, password: CharArray, permissions: Set<Permission>) -> Unit
+) {
+    var username by remember { mutableStateOf("") }
+    var displayName by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
+
+    var accessMasters by remember { mutableStateOf(true) }
+    var accessSales by remember { mutableStateOf(true) }
+    var accessPurchases by remember { mutableStateOf(false) }
+    var accessReports by remember { mutableStateOf(false) }
+    var accessSettings by remember { mutableStateOf(false) }
+
+    var errorMsg by remember { mutableStateOf("") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Create Staff Account") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+            ) {
+                OutlinedTextField(value = username, onValueChange = { username = it.trim().lowercase() }, label = { Text("Username / Login ID") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = displayName, onValueChange = { displayName = it }, label = { Text("Full Display Name") }, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Initial Password") }, modifier = Modifier.fillMaxWidth())
+
+                Spacer(Modifier.height(8.dp))
+                Text("Role Permissions Access:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it })
+                    Text("Master Lists (Products/Customers/Suppliers)", fontSize = 13.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessSales, onCheckedChange = { accessSales = it })
+                    Text("Sales Billing & Invoicing Screen", fontSize = 13.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it })
+                    Text("Purchases & Inward Stock Screen", fontSize = 13.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessReports, onCheckedChange = { accessReports = it })
+                    Text("Reports & Stock Analytics Screen", fontSize = 13.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it })
+                    Text("App Printer & Data Settings Screen", fontSize = 13.sp)
+                }
+
+                if (errorMsg.isNotBlank()) {
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = {
+                if (username.isBlank() || displayName.isBlank() || password.isBlank()) {
+                    errorMsg = "Please fill in all fields"
+                } else {
+                    val pSet = buildSet {
+                        if (accessMasters) {
+                            addAll(listOf(Permission.CATEGORY_VIEW, Permission.CATEGORY_CREATE, Permission.CATEGORY_EDIT, Permission.PRODUCT_VIEW, Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT))
+                        }
+                        if (accessSales) {
+                            addAll(listOf(Permission.SALE_CREATE, Permission.SALE_VIEW))
+                        }
+                        if (accessPurchases) {
+                            addAll(listOf(Permission.PURCHASE_CREATE, Permission.PURCHASE_VIEW))
+                        }
+                        if (accessReports) {
+                            addAll(listOf(Permission.REPORT_SALES, Permission.REPORT_STOCK, Permission.REPORT_PROFIT))
+                        }
+                        if (accessSettings) {
+                            addAll(listOf(Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT, Permission.BACKUP_CREATE))
+                        }
+                    }
+                    onCreate(username, displayName, password.toCharArray(), pSet)
+                }
+            }) {
+                Text("Create")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun EditUserDialog(
+    user: UserEntity,
+    onDismiss: () -> Unit,
+    onSave: (newPassword: CharArray?, permissions: Set<Permission>) -> Unit,
+    onDelete: () -> Unit
+) {
+    var newPassword by remember { mutableStateOf("") }
+    val initialPerms = remember(user.permissions) { user.toPermissionsSet() }
+
+    var accessMasters by remember { mutableStateOf(initialPerms.contains(Permission.PRODUCT_VIEW)) }
+    var accessSales by remember { mutableStateOf(initialPerms.contains(Permission.SALE_CREATE)) }
+    var accessPurchases by remember { mutableStateOf(initialPerms.contains(Permission.PURCHASE_CREATE)) }
+    var accessReports by remember { mutableStateOf(initialPerms.contains(Permission.REPORT_SALES)) }
+    var accessSettings by remember { mutableStateOf(initialPerms.contains(Permission.SETTINGS_VIEW)) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit User: ${user.displayName}") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
+            ) {
+                Text("Username: ${user.username}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = { newPassword = it },
+                    label = { Text("Reset Password (Leave blank to keep current)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(8.dp))
+                Text("Role Permissions Access:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it })
+                    Text("Master Lists (Products/Customers/Suppliers)", fontSize = 13.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessSales, onCheckedChange = { accessSales = it })
+                    Text("Sales Billing & Invoicing Screen", fontSize = 13.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it })
+                    Text("Purchases & Inward Stock Screen", fontSize = 13.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessReports, onCheckedChange = { accessReports = it })
+                    Text("Reports & Stock Analytics Screen", fontSize = 13.sp)
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it })
+                    Text("App Printer & Data Settings Screen", fontSize = 13.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = onDelete,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete User")
+                }
+                Button(onClick = {
+                    val pSet = buildSet {
+                        if (accessMasters) {
+                            addAll(listOf(Permission.CATEGORY_VIEW, Permission.CATEGORY_CREATE, Permission.CATEGORY_EDIT, Permission.PRODUCT_VIEW, Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT))
+                        }
+                        if (accessSales) {
+                            addAll(listOf(Permission.SALE_CREATE, Permission.SALE_VIEW))
+                        }
+                        if (accessPurchases) {
+                            addAll(listOf(Permission.PURCHASE_CREATE, Permission.PURCHASE_VIEW))
+                        }
+                        if (accessReports) {
+                            addAll(listOf(Permission.REPORT_SALES, Permission.REPORT_STOCK, Permission.REPORT_PROFIT))
+                        }
+                        if (accessSettings) {
+                            addAll(listOf(Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT, Permission.BACKUP_CREATE))
+                        }
+                    }
+                    val passArray = if (newPassword.isBlank()) null else newPassword.toCharArray()
+                    onSave(passArray, pSet)
+                }) {
+                    Text("Save")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
