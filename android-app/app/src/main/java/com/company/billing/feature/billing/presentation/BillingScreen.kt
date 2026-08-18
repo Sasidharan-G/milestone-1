@@ -96,6 +96,9 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             }
                         }
                     }
+                    if (customers.isEmpty()) {
+                        Text("No customers found! Please create a customer in Masters screen first.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
 
                     HorizontalDivider()
 
@@ -130,6 +133,9 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             }
                         }
                     }
+                    if (products.isEmpty()) {
+                        Text("No products found! Please create a product in Masters screen first.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
@@ -150,14 +156,21 @@ fun BillingScreen(viewModel: BillingViewModel) {
 
                     Button(
                         onClick = {
-                            val qty = quantityText.toLongOrNull() ?: 1L
+                            val qty = quantityText.toLongOrNull()
                             val priceDouble = priceText.toDoubleOrNull()
-                            if (selectedProductId.isNotBlank() && qty > 0 && priceDouble != null && selectedProduct != null) {
+                            if (selectedProductId.isBlank() || selectedProduct == null) {
+                                message = "Validation Error: Please select a product first"
+                            } else if (qty == null || qty <= 0) {
+                                message = "Validation Error: Quantity must be a valid number greater than 0"
+                            } else if (priceDouble == null || priceDouble <= 0.0) {
+                                message = "Validation Error: Unit price must be a valid number greater than 0"
+                            } else {
                                 val priceMoney = Money((priceDouble * 100).toLong())
                                 viewModel.addLine(selectedProductId, selectedProduct.name, qty, priceMoney)
                                 selectedProductId = ""
                                 quantityText = "1"
                                 priceText = ""
+                                message = "Product added successfully to invoice"
                             }
                         },
                         modifier = Modifier.fillMaxWidth()

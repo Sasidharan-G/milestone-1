@@ -88,6 +88,9 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                             }
                         }
                     }
+                    if (suppliers.isEmpty()) {
+                        Text("No suppliers found! Please create a supplier in Masters screen first.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
 
                     HorizontalDivider()
 
@@ -122,6 +125,9 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                             }
                         }
                     }
+                    if (products.isEmpty()) {
+                        Text("No products found! Please create a product in Masters screen first.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    }
 
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         OutlinedTextField(
@@ -142,13 +148,20 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
 
                     Button(
                         onClick = {
-                            val qty = quantityText.toLongOrNull() ?: 1L
+                            val qty = quantityText.toLongOrNull()
                             val costDouble = costText.toDoubleOrNull()
-                            if (selectedProductId.isNotBlank() && qty > 0 && costDouble != null) {
+                            if (selectedProductId.isBlank()) {
+                                message = "Validation Error: Please select a product first"
+                            } else if (qty == null || qty <= 0) {
+                                message = "Validation Error: Quantity must be a valid number greater than 0"
+                            } else if (costDouble == null || costDouble <= 0.0) {
+                                message = "Validation Error: Unit cost must be a valid number greater than 0"
+                            } else {
                                 viewModel.addLine(selectedProductId, qty, Money((costDouble * 100).toLong()))
                                 selectedProductId = ""
                                 quantityText = "1"
                                 costText = ""
+                                message = "Product added successfully to draft purchase order"
                             }
                         },
                         modifier = Modifier.fillMaxWidth()
