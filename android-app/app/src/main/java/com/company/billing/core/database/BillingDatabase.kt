@@ -1,0 +1,28 @@
+package com.company.billing.core.database
+
+import androidx.room.Database
+import androidx.room.RoomDatabase
+import androidx.room.TypeConverters
+import com.company.billing.feature.masters.data.CategoryEntity
+import com.company.billing.feature.masters.data.CustomerEntity
+import com.company.billing.feature.masters.data.ExpenseEntity
+import com.company.billing.feature.masters.data.MasterDao
+import com.company.billing.feature.masters.data.ProductEntity
+import com.company.billing.feature.masters.data.SupplierEntity
+import com.company.billing.feature.billing.data.SaleDao
+import com.company.billing.feature.billing.data.SaleEntity
+import com.company.billing.feature.billing.data.SaleItemEntity
+import com.company.billing.feature.billing.data.StockMovementEntity
+import com.company.billing.feature.purchase.data.PurchaseDao
+import com.company.billing.feature.purchase.data.PurchaseEntity
+import com.company.billing.feature.purchase.data.PurchaseItemEntity
+
+@Database(entities = [SyncQueueEntity::class, CategoryEntity::class, ProductEntity::class, CustomerEntity::class, SupplierEntity::class, ExpenseEntity::class, SaleEntity::class, SaleItemEntity::class, StockMovementEntity::class, PurchaseEntity::class, PurchaseItemEntity::class], version = 5, exportSchema = true)
+@TypeConverters(SyncStatusConverter::class)
+abstract class BillingDatabase : RoomDatabase() {
+    abstract fun syncQueueDao(): SyncQueueDao
+    abstract fun masterDao(): MasterDao
+    abstract fun saleDao(): SaleDao
+    abstract fun purchaseDao(): PurchaseDao
+    abstract fun reportDao(): ReportDao
+}

@@ -1,0 +1,20 @@
+package com.company.billing.feature.masters.data
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import kotlinx.coroutines.flow.Flow
+
+@Dao interface MasterDao {
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCategory(item: CategoryEntity)
+    @Query("SELECT * FROM categories WHERE name LIKE '%' || :query || '%' ORDER BY name") fun categories(query: String): Flow<List<CategoryEntity>>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertProduct(item: ProductEntity)
+    @Query("SELECT * FROM products WHERE name LIKE '%' || :query || '%' ORDER BY name") fun products(query: String): Flow<List<ProductEntity>>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomer(item: CustomerEntity)
+    @Query("SELECT * FROM customers WHERE name LIKE '%' || :query || '%' ORDER BY name") fun customers(query: String): Flow<List<CustomerEntity>>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertSupplier(item: SupplierEntity)
+    @Query("SELECT * FROM suppliers WHERE name LIKE '%' || :query || '%' ORDER BY name") fun suppliers(query: String): Flow<List<SupplierEntity>>
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertExpense(item: ExpenseEntity)
+    @Query("SELECT * FROM expenses ORDER BY createdAtEpochMs DESC") fun expenses(): Flow<List<ExpenseEntity>>
+}

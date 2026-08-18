@@ -1,0 +1,16 @@
+.gradle/
+**/build/
+local.properties
+.idea/
+*.iml
+.env
+server/coverage/
+server/dist/
+*.keystore
+*.jks
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+.DS_Store
+*.log
