@@ -218,4 +218,42 @@ class SettingsViewModel @Inject constructor(
             }
         }
     }
+
+    private val _driveBackupsList = MutableStateFlow<List<com.google.api.services.drive.model.File>>(emptyList())
+    val driveBackupsList: StateFlow<List<com.google.api.services.drive.model.File>> = _driveBackupsList.asStateFlow()
+
+    fun fetchDriveBackups() {
+        viewModelScope.launch {
+            _driveBackupStatus.value = "Fetching backups from Google Drive..."
+            val files = googleDriveBackupManager.listBackupsFromDrive()
+            // Sort by createdTime descending
+            _driveBackupsList.value = files.sortedByDescending { it.createdTime?.value ?: 0L }
+            if (files.isEmpty()) {
+                _driveBackupStatus.value = "No backups found in Google Drive."
+            } else {
+                _driveBackupStatus.value = "Loaded ${files.size} backups."
+            }
+        }
+    }
+
+    fun restoreFromGoogleDrive(fileId: String, onFinished: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            _driveBackupStatus.value = "Downloading database from Google Drive..."
+            val bytes = googleDriveBackupManager.downloadBackupFromDrive(fileId)
+            if (bytes == null) {
+                _driveBackupStatus.value = "Download failed from Google Drive."
+                onFinished(false)
+                return@launch
+            }
+            _driveBackupStatus.value = "Restoring database backup..."
+            val success = backupManager.restoreBackup(bytes)
+            if (success) {
+                _driveBackupStatus.value = "Database restored successfully from Google Drive!"
+                onFinished(true)
+            } else {
+                _driveBackupStatus.value = "Restore failed: Invalid checksum or corrupted backup file."
+                onFinished(false)
+            }
+        }
+    }
 }

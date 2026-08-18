@@ -180,15 +180,29 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     Text(googleAccount!!, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
-                                OutlinedButton(
-                                    onClick = {
-                                        signInClient.signOut().addOnCompleteListener {
-                                            viewModel.linkGoogleAccount(null)
-                                        }
-                                    },
-                                    shape = RoundedCornerShape(8.dp)
+                                Column(
+                                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                                    horizontalAlignment = Alignment.End
                                 ) {
-                                    Text("Disconnect")
+                                    OutlinedButton(
+                                        onClick = {
+                                            signInClient.signOut().addOnCompleteListener {
+                                                signInLauncher.launch(signInClient.signInIntent)
+                                            }
+                                        },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Switch Account")
+                                    }
+                                    TextButton(
+                                        onClick = {
+                                            signInClient.signOut().addOnCompleteListener {
+                                                viewModel.linkGoogleAccount(null)
+                                            }
+                                        }
+                                    ) {
+                                        Text("Disconnect", color = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
 
@@ -202,6 +216,81 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text("Backup Now", fontWeight = FontWeight.Bold)
+                                }
+
+                                var showBackupsDialog by remember { mutableStateOf(false) }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        viewModel.fetchDriveBackups()
+                                        showBackupsDialog = true
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Restore Cloud", fontWeight = FontWeight.Bold)
+                                }
+
+                                if (showBackupsDialog) {
+                                    val backupsList by viewModel.driveBackupsList.collectAsState()
+                                    AlertDialog(
+                                        onDismissRequest = { showBackupsDialog = false },
+                                        title = { Text("Restore from Google Drive") },
+                                        text = {
+                                            Column(
+                                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                                                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState())
+                                            ) {
+                                                if (backupsList.isEmpty()) {
+                                                    Text("No backup files found. Click fetch to reload.")
+                                                } else {
+                                                    backupsList.forEach { file ->
+                                                        val formattedTime = remember(file.createdTime) {
+                                                            if (file.createdTime != null) {
+                                                                java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault())
+                                                                    .format(java.util.Date(file.createdTime.value))
+                                                            } else {
+                                                                "Unknown Date"
+                                                            }
+                                                        }
+                                                        val sizeKb = (file.getSize() ?: 0L) / 1024
+                                                        Card(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                                            onClick = {
+                                                                viewModel.restoreFromGoogleDrive(file.id) { success ->
+                                                                    if (success) {
+                                                                        showBackupsDialog = false
+                                                                    }
+                                                                }
+                                                            }
+                                                        ) {
+                                                            Column(modifier = Modifier.padding(12.dp)) {
+                                                                Text(file.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween
+                                                                ) {
+                                                                    Text(formattedTime, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                                    Text("${sizeKb} KB", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                                }
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        },
+                                        confirmButton = {
+                                            TextButton(onClick = { viewModel.fetchDriveBackups() }) {
+                                                Text("Refresh")
+                                            }
+                                        },
+                                        dismissButton = {
+                                            TextButton(onClick = { showBackupsDialog = false }) {
+                                                Text("Close")
+                                            }
+                                        }
+                                    )
                                 }
                             }
                         } else {

@@ -49,15 +49,11 @@ class GoogleDriveBackupManager(
             }
             val zipBytes = backupResult.zipBytes
 
-            // 4. Construct file metadata for AppData folder
             val fileMetadata = File().apply {
                 name = "billing_backup_${System.currentTimeMillis()}.zip"
                 parents = Collections.singletonList("appDataFolder")
             }
-
             val mediaContent = ByteArrayContent("application/zip", zipBytes)
-
-            // 5. Upload file to Google Drive
             val driveFile = driveService.files().create(fileMetadata, mediaContent)
                 .setFields("id")
                 .execute()
@@ -66,6 +62,50 @@ class GoogleDriveBackupManager(
         } catch (e: Exception) {
             e.printStackTrace()
             false
+        }
+    }
+
+    suspend fun listBackupsFromDrive(): List<File> = withContext(Dispatchers.IO) {
+        try {
+            val signInAccount = GoogleSignIn.getLastSignedInAccount(context) ?: return@withContext emptyList()
+            val credential = GoogleAccountCredential.usingOAuth2(context, Collections.singleton(DriveScopes.DRIVE_APPDATA)).apply {
+                selectedAccount = signInAccount.account
+            }
+            val driveService = Drive.Builder(
+                com.google.api.client.http.javanet.NetHttpTransport(),
+                GsonFactory.getDefaultInstance(),
+                credential
+            ).setApplicationName("Client Billing System").build()
+
+            val result = driveService.files().list()
+                .setSpaces("appDataFolder")
+                .setFields("files(id, name, createdTime, size)")
+                .execute()
+            result.files ?: emptyList()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
+    suspend fun downloadBackupFromDrive(fileId: String): ByteArray? = withContext(Dispatchers.IO) {
+        try {
+            val signInAccount = GoogleSignIn.getLastSignedInAccount(context) ?: return@withContext null
+            val credential = GoogleAccountCredential.usingOAuth2(context, Collections.singleton(DriveScopes.DRIVE_APPDATA)).apply {
+                selectedAccount = signInAccount.account
+            }
+            val driveService = Drive.Builder(
+                com.google.api.client.http.javanet.NetHttpTransport(),
+                GsonFactory.getDefaultInstance(),
+                credential
+            ).setApplicationName("Client Billing System").build()
+
+            val outputStream = java.io.ByteArrayOutputStream()
+            driveService.files().get(fileId).executeMediaAndDownloadTo(outputStream)
+            outputStream.toByteArray()
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
         }
     }
 }
