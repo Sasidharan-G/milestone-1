@@ -1,6 +1,8 @@
 package com.company.billing.core.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -117,60 +119,116 @@ fun HomeScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(24.dp),
-            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            Text(
-                text = "Welcome to your Business Dashboard",
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
-            )
+            val isMobile = maxWidth < 600.dp
+            
+            if (isMobile) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .verticalScroll(rememberScrollState())
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Welcome to your Business Dashboard",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    
+                    DashboardCard(
+                        title = "Master Data",
+                        subtitle = "Manage Categories, Products, Customers, Suppliers, Expenses",
+                        icon = Icons.Default.Menu,
+                        modifier = Modifier.fillMaxWidth().height(130.dp),
+                        onClick = { onNavigateTo(AppRoute.Masters) }
+                    )
 
-            Row(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                DashboardCard(
-                    title = "Master Data",
-                    subtitle = "Manage Categories, Products, Customers, Suppliers, Expenses",
-                    icon = Icons.Default.Menu,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onNavigateTo(AppRoute.Masters) }
-                )
+                    DashboardCard(
+                        title = "Sales Invoicing",
+                        subtitle = "Draft bills, invoice products and log sales ledger",
+                        icon = Icons.Default.ShoppingCart,
+                        modifier = Modifier.fillMaxWidth().height(130.dp),
+                        onClick = { onNavigateTo(AppRoute.Billing) }
+                    )
 
-                DashboardCard(
-                    title = "Sales Invoicing",
-                    subtitle = "Draft bills, invoice products and log sales ledger",
-                    icon = Icons.Default.ShoppingCart,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onNavigateTo(AppRoute.Billing) }
-                )
-            }
+                    DashboardCard(
+                        title = "Purchases & Stock",
+                        subtitle = "Record stock inward, manage supplier invoices & ledger",
+                        icon = Icons.Default.AddCircle,
+                        modifier = Modifier.fillMaxWidth().height(130.dp),
+                        onClick = { onNavigateTo(AppRoute.Purchases) }
+                    )
 
-            Row(
-                modifier = Modifier.fillMaxWidth().weight(1f),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                DashboardCard(
-                    title = "Purchases & Stock",
-                    subtitle = "Record stock inward, manage supplier invoices & ledger",
-                    icon = Icons.Default.AddCircle,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onNavigateTo(AppRoute.Purchases) }
-                )
+                    DashboardCard(
+                        title = "Reports Engine",
+                        subtitle = "Analyze Sales, Stock, Profits, Purchases & Expenses",
+                        icon = Icons.Default.List,
+                        modifier = Modifier.fillMaxWidth().height(130.dp),
+                        onClick = { onNavigateTo(AppRoute.Reports) }
+                    )
+                }
+            } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(24.dp),
+                    verticalArrangement = Arrangement.spacedBy(24.dp)
+                ) {
+                    Text(
+                        text = "Welcome to your Business Dashboard",
+                        fontSize = 22.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
 
-                DashboardCard(
-                    title = "Reports Engine",
-                    subtitle = "Analyze Sales, Stock, Profits, Purchases & Expenses",
-                    icon = Icons.Default.List,
-                    modifier = Modifier.weight(1f),
-                    onClick = { onNavigateTo(AppRoute.Reports) }
-                )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        DashboardCard(
+                            title = "Master Data",
+                            subtitle = "Manage Categories, Products, Customers, Suppliers, Expenses",
+                            icon = Icons.Default.Menu,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onClick = { onNavigateTo(AppRoute.Masters) }
+                        )
+
+                        DashboardCard(
+                            title = "Sales Invoicing",
+                            subtitle = "Draft bills, invoice products and log sales ledger",
+                            icon = Icons.Default.ShoppingCart,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onClick = { onNavigateTo(AppRoute.Billing) }
+                        )
+                    }
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth().weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        DashboardCard(
+                            title = "Purchases & Stock",
+                            subtitle = "Record stock inward, manage supplier invoices & ledger",
+                            icon = Icons.Default.AddCircle,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onClick = { onNavigateTo(AppRoute.Purchases) }
+                        )
+
+                        DashboardCard(
+                            title = "Reports Engine",
+                            subtitle = "Analyze Sales, Stock, Profits, Purchases & Expenses",
+                            icon = Icons.Default.List,
+                            modifier = Modifier.weight(1f).fillMaxHeight(),
+                            onClick = { onNavigateTo(AppRoute.Reports) }
+                        )
+                    }
+                }
             }
         }
     }
@@ -186,7 +244,6 @@ fun DashboardCard(
 ) {
     Card(
         modifier = modifier
-            .fillMaxHeight()
             .clickable { onClick() },
         shape = RoundedCornerShape(16.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
@@ -194,7 +251,7 @@ fun DashboardCard(
     ) {
         Column(
             modifier = Modifier
-                .padding(24.dp)
+                .padding(16.dp)
                 .fillMaxSize(),
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
@@ -202,17 +259,17 @@ fun DashboardCard(
             Icon(
                 imageVector = icon,
                 contentDescription = null,
-                modifier = Modifier.size(48.dp),
+                modifier = Modifier.size(36.dp),
                 tint = MaterialTheme.colorScheme.primary
             )
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(modifier = Modifier.height(8.dp))
             Text(
                 text = title,
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.primary
             )
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = subtitle,
                 fontSize = 12.sp,

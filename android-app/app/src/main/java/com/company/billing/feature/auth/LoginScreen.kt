@@ -47,7 +47,8 @@ fun LoginScreen(
     ) {
         Card(
             modifier = Modifier
-                .width(400.dp)
+                .fillMaxWidth()
+                .widthIn(max = 400.dp)
                 .padding(16.dp),
             shape = RoundedCornerShape(16.dp),
             elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)

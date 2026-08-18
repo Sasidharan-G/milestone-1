@@ -49,13 +49,9 @@ fun BillingScreen(viewModel: BillingViewModel) {
             )
         }
     ) { paddingValues ->
-        Row(
-            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Left Column: Invoice Drafting Form
+        val draftInvoiceCard: @Composable (Modifier) -> Unit = { modifier ->
             Card(
-                modifier = Modifier.weight(1.5f).fillMaxHeight(),
+                modifier = modifier,
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -247,11 +243,10 @@ fun BillingScreen(viewModel: BillingViewModel) {
                     }
                 }
             }
+        }
 
-            // Right Column: Sales History
-            Column(
-                modifier = Modifier.weight(1.5f).fillMaxHeight()
-            ) {
+        val salesHistoryColumn: @Composable (Modifier) -> Unit = { modifier ->
+            Column(modifier = modifier) {
                 Text("Sales History", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -284,6 +279,47 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            val isMobile = maxWidth < 600.dp
+            
+            if (isMobile) {
+                var activeMobileTab by remember { mutableStateOf(0) }
+                Column(modifier = Modifier.fillMaxSize()) {
+                    TabRow(
+                        selectedTabIndex = activeMobileTab,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Tab(
+                            selected = activeMobileTab == 0,
+                            onClick = { activeMobileTab = 0 },
+                            text = { Text("Draft Invoice", fontWeight = FontWeight.SemiBold) }
+                        )
+                        Tab(
+                            selected = activeMobileTab == 1,
+                            onClick = { activeMobileTab = 1 },
+                            text = { Text("Sales History", fontWeight = FontWeight.SemiBold) }
+                        )
+                    }
+                    Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                        if (activeMobileTab == 0) {
+                            draftInvoiceCard(Modifier.fillMaxSize())
+                        } else {
+                            salesHistoryColumn(Modifier.fillMaxSize())
+                        }
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    draftInvoiceCard(Modifier.weight(1.5f).fillMaxHeight())
+                    salesHistoryColumn(Modifier.weight(1.5f).fillMaxHeight())
                 }
             }
         }

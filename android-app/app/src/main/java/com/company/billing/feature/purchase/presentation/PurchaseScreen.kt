@@ -48,13 +48,9 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
             )
         }
     ) { paddingValues ->
-        Row(
-            modifier = Modifier.fillMaxSize().padding(paddingValues).padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            // Left Column: Draft Purchase
+        val draftPurchaseCard: @Composable (Modifier) -> Unit = { modifier ->
             Card(
-                modifier = Modifier.weight(1.5f).fillMaxHeight(),
+                modifier = modifier,
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -214,11 +210,10 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                     }
                 }
             }
+        }
 
-            // Right Column: Purchase History
-            Column(
-                modifier = Modifier.weight(1.5f).fillMaxHeight()
-            ) {
+        val purchaseHistoryColumn: @Composable (Modifier) -> Unit = { modifier ->
+            Column(modifier = modifier) {
                 Text("Purchase History", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -238,6 +233,47 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            val isMobile = maxWidth < 600.dp
+            
+            if (isMobile) {
+                var activeMobileTab by remember { mutableStateOf(0) }
+                Column(modifier = Modifier.fillMaxSize()) {
+                    TabRow(
+                        selectedTabIndex = activeMobileTab,
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                        contentColor = MaterialTheme.colorScheme.primary
+                    ) {
+                        Tab(
+                            selected = activeMobileTab == 0,
+                            onClick = { activeMobileTab = 0 },
+                            text = { Text("New Order", fontWeight = FontWeight.SemiBold) }
+                        )
+                        Tab(
+                            selected = activeMobileTab == 1,
+                            onClick = { activeMobileTab = 1 },
+                            text = { Text("Purchase History", fontWeight = FontWeight.SemiBold) }
+                        )
+                    }
+                    Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+                        if (activeMobileTab == 0) {
+                            draftPurchaseCard(Modifier.fillMaxSize())
+                        } else {
+                            purchaseHistoryColumn(Modifier.fillMaxSize())
+                        }
+                    }
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    draftPurchaseCard(Modifier.weight(1.5f).fillMaxHeight())
+                    purchaseHistoryColumn(Modifier.weight(1.5f).fillMaxHeight())
                 }
             }
         }

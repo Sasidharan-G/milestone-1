@@ -102,25 +102,20 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             )
         }
     ) { paddingValues ->
-        Column(
+        BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(16.dp)
-                .verticalScroll(androidx.compose.foundation.rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().height(480.dp),
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // Left Column: Configure Settings Card
+            val isMobile = maxWidth < 600.dp
+
+            val printerPreferencesCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
-                    modifier = Modifier.weight(1.5f).fillMaxHeight(),
+                    modifier = modifier,
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp).fillMaxSize(),
+                        modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text("Printer Driver Preferences", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -201,8 +196,6 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                             )
                         }
 
-                        Spacer(modifier = Modifier.weight(1f))
-
                         Button(
                             onClick = {
                                 viewModel.saveSettings(selectedType, selectedDeviceId, selectedPaperWidth)
@@ -219,14 +212,15 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         }
                     }
                 }
+            }
 
-                // Right Column: Diagnostic Printing Console
+            val printerDiagnosticsCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
-                    modifier = Modifier.weight(1.5f).fillMaxHeight(),
+                    modifier = modifier,
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp).fillMaxSize(),
+                        modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -278,64 +272,113 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 }
             }
 
-            // 3. Database Maintenance Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp).fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+            val dbMaintenanceCard: @Composable (Modifier) -> Unit = { modifier ->
+                Card(
+                    modifier = modifier,
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
-                    Text("Database Maintenance & Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    Text(
-                        "Create a local, transaction-safe compressed backup archive of your billing database. You can restore this backup on this or other devices to recover transactions.",
-                        fontSize = 13.sp,
-                        color = MaterialTheme.colorScheme.outline
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    Column(
+                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Button(
-                            onClick = {
-                                createBackupLauncher.launch("billing_backup_${System.currentTimeMillis()}.zip")
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp)
-                        ) {
-                            Text("Create Backup Archive", fontWeight = FontWeight.Bold)
-                        }
+                        Text("Database Maintenance & Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "Create a local, transaction-safe compressed backup archive of your billing database. You can restore this backup on this or other devices to recover transactions.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
 
-                        Button(
-                            onClick = {
-                                restoreLauncher.launch("application/zip")
-                            },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                        ) {
-                            Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
-                        }
-                    }
+                        if (isMobile) {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = {
+                                        createBackupLauncher.launch("billing_backup_${System.currentTimeMillis()}.zip")
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Create Backup Archive", fontWeight = FontWeight.Bold)
+                                }
 
-                    if (!backupStatus.isNullOrBlank() || !restoreStatus.isNullOrBlank()) {
-                        val statusMsg = backupStatus ?: restoreStatus
-                        Card(
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
+                                Button(
+                                    onClick = {
+                                        restoreLauncher.launch("application/zip")
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                                ) {
+                                    Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
                             Row(
-                                modifier = Modifier.padding(12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
-                                Text("Maintenance: $statusMsg", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                Button(
+                                    onClick = {
+                                        createBackupLauncher.launch("billing_backup_${System.currentTimeMillis()}.zip")
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp)
+                                ) {
+                                    Text("Create Backup Archive", fontWeight = FontWeight.Bold)
+                                }
+
+                                Button(
+                                    onClick = {
+                                        restoreLauncher.launch("application/zip")
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(8.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                                ) {
+                                    Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        if (!backupStatus.isNullOrBlank() || !restoreStatus.isNullOrBlank()) {
+                            val statusMsg = backupStatus ?: restoreStatus
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(12.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.secondary)
+                                    Text("Maintenance: $statusMsg", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                }
                             }
                         }
                     }
+                }
+            }
+
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                if (isMobile) {
+                    printerPreferencesCard(Modifier.fillMaxWidth())
+                    printerDiagnosticsCard(Modifier.fillMaxWidth())
+                    dbMaintenanceCard(Modifier.fillMaxWidth())
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().height(480.dp),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        printerPreferencesCard(Modifier.weight(1.5f).fillMaxHeight())
+                        printerDiagnosticsCard(Modifier.weight(1.5f).fillMaxHeight())
+                    }
+                    dbMaintenanceCard(Modifier.fillMaxWidth())
                 }
             }
         }
