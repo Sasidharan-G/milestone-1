@@ -19,6 +19,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.company.billing.core.common.Money
+import androidx.compose.foundation.border
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.material.icons.filled.Info
@@ -81,7 +82,13 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
     ) { paddingValues ->
         val draftPurchaseCard: @Composable (Modifier) -> Unit = { modifier ->
             Card(
-                modifier = modifier,
+                modifier = modifier.border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(20.dp)
+                ),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -90,10 +97,10 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Draft Purchase Order", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Draft Purchase Order", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                         Button(
                             onClick = { launcher.launch("image/*") },
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                         ) {
                             Text("Upload Invoice (AI)", fontSize = 12.sp)
@@ -113,6 +120,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                             label = { Text("Supplier") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSupplier) },
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(
@@ -150,6 +158,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                             label = { Text("Product") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProduct) },
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(
@@ -177,6 +186,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                             onValueChange = { quantityText = it },
                             label = { Text("Qty") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
@@ -184,6 +194,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                             onValueChange = { costText = it },
                             label = { Text("Unit Cost") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(2f)
                         )
                     }
@@ -206,6 +217,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                                 message = "Product added successfully to draft purchase order"
                             }
                         },
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
@@ -220,7 +232,17 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                     LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(lines) { line ->
                             val prodName = products.find { it.id == line.productId }?.name ?: "Unknown Product"
-                            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            ) {
                                 Row(
                                     modifier = Modifier.padding(8.dp).fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -257,7 +279,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("Save & Add to Stock", fontWeight = FontWeight.Bold)
                     }
@@ -277,7 +299,17 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                     items(purchases) { purchase ->
                         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(purchase.createdAtEpochMs))
                         val supplierName = suppliers.find { it.id == purchase.supplierId }?.name ?: "Unknown Supplier"
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
                             Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Order ID: ${purchase.id.take(8)}...", fontWeight = FontWeight.Bold, fontSize = 14.sp)
@@ -343,14 +375,20 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
         if (isScanning) {
             AlertDialog(
                 onDismissRequest = {},
-                title = { Text("AI Scanning In Progress") },
+                shape = RoundedCornerShape(24.dp),
+                title = { Text("AI Scanning In Progress", fontWeight = FontWeight.Bold) },
                 text = {
                     Row(
+                        modifier = Modifier.padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
-                        Text("Reading products, quantities, and purchase prices from your invoice...", fontSize = 14.sp)
+                        Text(
+                            "Reading products, quantities, and purchase prices from your invoice using Gemini AI...",
+                            fontSize = 14.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 },
                 confirmButton = {}

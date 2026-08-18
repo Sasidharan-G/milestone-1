@@ -2,6 +2,10 @@ package com.company.billing.feature.masters.presentation
 
 import com.company.billing.core.ui.LocalLayoutMode
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -48,23 +52,44 @@ fun MasterScreens(
         Column(
             modifier = Modifier
                 .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
-            ScrollableTabRow(
-                selectedTabIndex = activeTab,
-                containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                contentColor = MaterialTheme.colorScheme.primary
+            // Pill tabs selector
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
                 tabs.forEachIndexed { index, title ->
-                    Tab(
-                        selected = activeTab == index,
-                        onClick = { activeTab = index },
-                        text = { Text(title, fontWeight = FontWeight.SemiBold) }
-                    )
+                    val isSelected = activeTab == index
+                    val containerColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    val borderModifier = if (isSelected) Modifier else Modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f), RoundedCornerShape(50.dp))
+                    
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(50.dp))
+                            .background(containerColor)
+                            .clickable { activeTab = index }
+                            .then(borderModifier)
+                            .padding(horizontal = 18.dp, vertical = 8.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = title,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            color = contentColor
+                        )
+                    }
                 }
             }
 
-            Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+            Box(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 4.dp)) {
                 when (activeTab) {
                     0 -> CategoryTabScreen(categoryVm)
                     1 -> ProductTabScreen(productVm)

@@ -2,6 +2,7 @@ package com.company.billing.feature.billing.presentation
 
 import com.company.billing.core.ui.LocalLayoutMode
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -53,11 +54,17 @@ fun BillingScreen(viewModel: BillingViewModel) {
     ) { paddingValues ->
         val draftInvoiceCard: @Composable (Modifier) -> Unit = { modifier ->
             Card(
-                modifier = modifier,
+                modifier = modifier.border(
+                    width = 1.dp,
+                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(20.dp)
+                ),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Draft Sales Bill", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Draft Sales Bill", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
 
                     // 1. Select Customer
                     val selectedCustomerName = when (selectedCustomerId) {
@@ -75,6 +82,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             label = { Text("Customer") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCustomer) },
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(
@@ -114,6 +122,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             label = { Text("Product") },
                             trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProduct) },
                             colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.menuAnchor().fillMaxWidth()
                         )
                         ExposedDropdownMenu(
@@ -141,6 +150,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             onValueChange = { quantityText = it },
                             label = { Text("Qty") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
@@ -148,6 +158,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             onValueChange = { priceText = it },
                             label = { Text("Unit Price") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(2f)
                         )
                     }
@@ -171,6 +182,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                 message = "Product added successfully to invoice"
                             }
                         },
+                        shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null)
@@ -184,7 +196,17 @@ fun BillingScreen(viewModel: BillingViewModel) {
                     Text("Bill Items", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         items(lines) { line ->
-                            Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)) {
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            ) {
                                 Row(
                                     modifier = Modifier.padding(8.dp).fillMaxWidth(),
                                     horizontalArrangement = Arrangement.SpaceBetween,
@@ -221,7 +243,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        shape = RoundedCornerShape(8.dp)
+                        shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("Generate & Save Bill", fontWeight = FontWeight.Bold)
                     }
@@ -239,14 +261,14 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                         onClick = { viewModel.shareBill(billNum, true) },
                                         modifier = Modifier.weight(1f),
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                                        shape = RoundedCornerShape(8.dp)
+                                        shape = RoundedCornerShape(12.dp)
                                     ) {
                                         Text("WhatsApp Share", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
                                     OutlinedButton(
                                         onClick = { viewModel.shareBill(billNum, false) },
                                         modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(8.dp)
+                                        shape = RoundedCornerShape(12.dp)
                                     ) {
                                         Text("Share General", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                     }
@@ -266,7 +288,17 @@ fun BillingScreen(viewModel: BillingViewModel) {
                     items(sales) { sale ->
                         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(sale.createdAtEpochMs))
                         val customerName = customers.find { it.id == sale.customerId }?.name ?: "Walk-in"
-                        Card(modifier = Modifier.fillMaxWidth()) {
+                        Card(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        ) {
                             Column(modifier = Modifier.padding(16.dp).fillMaxWidth()) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                     Text(sale.billNumber, fontWeight = FontWeight.Bold, fontSize = 14.sp)

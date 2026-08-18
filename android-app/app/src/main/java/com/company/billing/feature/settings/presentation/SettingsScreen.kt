@@ -16,6 +16,7 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -163,7 +164,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 }
 
                 Card(
-                    modifier = modifier,
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
@@ -198,7 +205,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                                 signInLauncher.launch(signInClient.signInIntent)
                                             }
                                         },
-                                        shape = RoundedCornerShape(8.dp)
+                                        shape = RoundedCornerShape(12.dp)
                                     ) {
                                         Text("Switch Account")
                                     }
@@ -315,8 +322,14 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
                         if (!driveBackupStatus.isNullOrBlank()) {
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                modifier = Modifier.fillMaxWidth()
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
                             ) {
                                 Text(
                                     text = driveBackupStatus!!,
@@ -341,7 +354,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
             val layoutModeCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
-                    modifier = modifier,
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
@@ -393,7 +412,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
             val printerPreferencesCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
-                    modifier = modifier,
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
@@ -449,9 +474,10 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     readOnly = true,
                                     value = activeDeviceName,
                                     onValueChange = {},
-                                    label = { Text("Paired Bluetooth Printer") },
+                                    label = { Text("Bluetooth Device") },
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                                    shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.menuAnchor().fillMaxWidth()
                                 )
                                 ExposedDropdownMenu(
@@ -473,7 +499,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                             OutlinedTextField(
                                 value = selectedDeviceId,
                                 onValueChange = { selectedDeviceId = it },
-                                label = { Text("USB Device Name (e.g. /dev/bus/usb/001/002)") },
+                                label = { Text("USB Target Name / Path") },
+                                shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                         }
@@ -484,7 +511,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                 message = "Settings saved successfully!"
                             },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(12.dp)
                         ) {
                             Text("Save Hardware Preferences", fontWeight = FontWeight.Bold)
                         }
@@ -498,7 +525,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
             val printerDiagnosticsCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
-                    modifier = modifier,
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
@@ -528,7 +561,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     message = result
                                 }
                             },
-                            shape = RoundedCornerShape(8.dp),
+                            shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                             modifier = Modifier.fillMaxWidth().padding(top = 24.dp)
                         ) {
@@ -562,7 +595,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 var selectedUser by remember { mutableStateOf<com.company.billing.core.auth.UserEntity?>(null) }
 
                 Card(
-                    modifier = modifier,
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
@@ -577,7 +616,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                             Text("Staff User Management", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             Button(
                                 onClick = { showAddDialog = true },
-                                shape = RoundedCornerShape(8.dp)
+                                shape = RoundedCornerShape(12.dp)
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null)
                                 Spacer(Modifier.width(4.dp))
@@ -604,11 +643,19 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                             } else {
                                 users.forEach { user ->
                                     Card(
-                                        modifier = Modifier.fillMaxWidth().clickable {
-                                            selectedUser = user
-                                            showEditDialog = true
-                                        },
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .border(
+                                                width = 1.dp,
+                                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                                shape = RoundedCornerShape(12.dp)
+                                            )
+                                            .clickable {
+                                                selectedUser = user
+                                                showEditDialog = true
+                                            },
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                     ) {
                                         Row(
                                             modifier = Modifier.padding(12.dp).fillMaxWidth(),
@@ -656,7 +703,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 }
 
                 Card(
-                    modifier = modifier,
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
@@ -677,6 +730,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                             },
                             label = { Text("Gemini API Key") },
                             placeholder = { Text("AIzaSy...") },
+                            shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
@@ -685,7 +739,13 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
             val dbMaintenanceCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
-                    modifier = modifier,
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
@@ -706,7 +766,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                         createBackupLauncher.launch("billing_backup_${System.currentTimeMillis()}.zip")
                                     },
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp)
+                                    shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Text("Create Backup Archive", fontWeight = FontWeight.Bold)
                                 }
@@ -716,7 +776,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                         restoreLauncher.launch("application/zip")
                                     },
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(12.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                                 ) {
                                     Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
@@ -732,7 +792,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                         createBackupLauncher.launch("billing_backup_${System.currentTimeMillis()}.zip")
                                     },
                                     modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp)
+                                    shape = RoundedCornerShape(12.dp)
                                 ) {
                                     Text("Create Backup Archive", fontWeight = FontWeight.Bold)
                                 }
@@ -742,7 +802,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                         restoreLauncher.launch("application/zip")
                                     },
                                     modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp),
+                                    shape = RoundedCornerShape(12.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                                 ) {
                                     Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
@@ -753,8 +813,14 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         if (!backupStatus.isNullOrBlank() || !restoreStatus.isNullOrBlank()) {
                             val statusMsg = backupStatus ?: restoreStatus
                             Card(
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                modifier = Modifier.fillMaxWidth()
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    )
                             ) {
                                 Row(
                                     modifier = Modifier.padding(12.dp),

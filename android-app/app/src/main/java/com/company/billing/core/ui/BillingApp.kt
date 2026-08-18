@@ -38,6 +38,9 @@ import com.company.billing.feature.purchase.presentation.PurchaseScreen
 import com.company.billing.feature.purchase.presentation.PurchaseViewModel
 import com.company.billing.feature.reports.presentation.ReportsScreen
 import com.company.billing.feature.reports.presentation.ReportsViewModel
+import com.company.billing.core.ui.theme.BillingTheme
+import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 
 val LocalLayoutMode = staticCompositionLocalOf { "Auto" }
 
@@ -48,7 +51,7 @@ fun BillingApp() {
     val layoutMode by settingsViewModel.layoutMode.collectAsState()
 
     CompositionLocalProvider(LocalLayoutMode provides layoutMode) {
-        MaterialTheme {
+        BillingTheme {
             NavHost(navController = navController, startDestination = AppRoute.Login.path) {
                 composable(AppRoute.Login.path) {
                     val vm: LoginViewModel = hiltViewModel()
@@ -174,6 +177,7 @@ fun HomeScreen(
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
+                .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
             val layoutMode = LocalLayoutMode.current
@@ -193,9 +197,14 @@ fun HomeScreen(
                 ) {
                     Text(
                         text = "Welcome to your Business Dashboard",
-                        fontSize = 22.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+                    Text(
+                        text = "Manage sales, stocks and master lists in one tap",
+                        fontSize = 12.sp,
+                        color = MaterialTheme.colorScheme.outline
                     )
                     
                     dashboardItems.forEach { item ->
@@ -203,7 +212,7 @@ fun HomeScreen(
                             title = item.title,
                             subtitle = item.subtitle,
                             icon = item.icon,
-                            modifier = Modifier.fillMaxWidth().height(130.dp),
+                            modifier = Modifier.fillMaxWidth().height(120.dp),
                             onClick = { onNavigateTo(item.route) }
                         )
                     }
@@ -215,12 +224,19 @@ fun HomeScreen(
                         .padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(24.dp)
                 ) {
-                    Text(
-                        text = "Welcome to your Business Dashboard",
-                        fontSize = 22.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
+                    Column {
+                        Text(
+                            text = "Welcome to your Business Dashboard",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onBackground
+                        )
+                        Text(
+                            text = "Manage sales, stocks and master lists in one tap",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.outline
+                        )
+                    }
 
                     dashboardItems.chunked(2).forEach { rowItems ->
                         Row(
@@ -257,10 +273,15 @@ fun DashboardCard(
 ) {
     Card(
         modifier = modifier
-            .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+            .clickable { onClick() }
+            .border(
+                width = 1.dp,
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(20.dp)
+            ),
+        shape = RoundedCornerShape(20.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
         Column(
             modifier = Modifier
@@ -269,24 +290,34 @@ fun DashboardCard(
             verticalArrangement = Arrangement.Center,
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                modifier = Modifier.size(36.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
-            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .background(
+                        color = MaterialTheme.colorScheme.primaryContainer,
+                        shape = RoundedCornerShape(12.dp)
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            Spacer(modifier = Modifier.height(12.dp))
             Text(
                 text = title,
-                fontSize = 16.sp,
+                fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary
+                color = MaterialTheme.colorScheme.onSurface
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = subtitle,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
         }

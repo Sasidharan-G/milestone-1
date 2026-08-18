@@ -13,6 +13,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -96,8 +98,40 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
             }
 
             Column(
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
             ) {
+                // Top KPI Statistics Summary Cards
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    KpiCard(
+                        title = "Total Sales",
+                        value = "$2,840.50",
+                        trend = "+12.5%",
+                        isPositive = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    KpiCard(
+                        title = "Purchase Cost",
+                        value = "$1,950.00",
+                        trend = "+8.1%",
+                        isPositive = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                    KpiCard(
+                        title = "Net Profit",
+                        value = "$890.50",
+                        trend = "+20.4%",
+                        isPositive = true,
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+
                 ScrollableTabRow(
                     selectedTabIndex = activeReportTab,
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
@@ -128,7 +162,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                         ) {
                             Button(
                                 onClick = { showDatePicker = true },
-                                shape = RoundedCornerShape(8.dp),
+                                shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
                             ) {
                                 Icon(Icons.Default.DateRange, contentDescription = null)
@@ -150,36 +184,36 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            OutlinedButton(
-                                onClick = {
-                                    try {
-                                        documentBytes = viewModel.exportPdf()
-                                        val filename = "${selectedType.name.lowercase()}_report.pdf"
-                                        pdfLauncher.launch(filename)
-                                    } catch (e: Exception) {
-                                        // handle error
-                                    }
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Export PDF")
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    try {
-                                        documentBytes = viewModel.exportExcel()
-                                        val filename = "${selectedType.name.lowercase()}_report.csv"
-                                        excelLauncher.launch(filename)
-                                    } catch (e: Exception) {
-                                        // handle error
-                                    }
-                                },
-                                shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.weight(1f)
-                            ) {
-                                Text("Export Excel")
-                            }
+                             OutlinedButton(
+                                 onClick = {
+                                     try {
+                                         documentBytes = viewModel.exportPdf()
+                                         val filename = "${selectedType.name.lowercase()}_report.pdf"
+                                         pdfLauncher.launch(filename)
+                                     } catch (e: Exception) {
+                                         // handle error
+                                     }
+                                 },
+                                 shape = RoundedCornerShape(12.dp),
+                                 modifier = Modifier.weight(1f)
+                             ) {
+                                 Text("Export PDF")
+                             }
+                             OutlinedButton(
+                                 onClick = {
+                                     try {
+                                         documentBytes = viewModel.exportExcel()
+                                         val filename = "${selectedType.name.lowercase()}_report.csv"
+                                         excelLauncher.launch(filename)
+                                     } catch (e: Exception) {
+                                         // handle error
+                                     }
+                                 },
+                                 shape = RoundedCornerShape(12.dp),
+                                 modifier = Modifier.weight(1f)
+                             ) {
+                                 Text("Export Excel")
+                             }
                         }
                     }
                 } else {
@@ -189,15 +223,15 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Button(
-                                onClick = { showDatePicker = true },
-                                shape = RoundedCornerShape(8.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
-                            ) {
-                                Icon(Icons.Default.DateRange, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Filter Dates")
-                            }
+                             Button(
+                                 onClick = { showDatePicker = true },
+                                 shape = RoundedCornerShape(12.dp),
+                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
+                             ) {
+                                 Icon(Icons.Default.DateRange, contentDescription = null)
+                                 Spacer(Modifier.width(8.dp))
+                                 Text("Filter Dates")
+                             }
                             Spacer(Modifier.width(12.dp))
                             
                             val fromMs = viewModel.fromEpochMs.collectAsState().value
@@ -246,7 +280,8 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                 // Disclaimer for Profit costing method
                 if (selectedType == ReportType.PROFIT) {
                     Card(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f), RoundedCornerShape(16.dp)),
+                        shape = RoundedCornerShape(16.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
                     ) {
                         Row(
@@ -286,7 +321,11 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             val scrollState = rememberScrollState()
                             Column(modifier = Modifier.fillMaxSize().horizontalScroll(scrollState)) {
                                 // Headers
-                                Row(modifier = Modifier.background(MaterialTheme.colorScheme.primaryContainer)) {
+                                Row(
+                                    modifier = Modifier
+                                        .background(MaterialTheme.colorScheme.primaryContainer)
+                                        .border(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f))
+                                ) {
                                     report.columns.forEach { col ->
                                         Text(
                                             text = col,
@@ -337,6 +376,61 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
     }
 }
 
+@Composable
+fun KpiCard(
+    title: String,
+    value: String,
+    trend: String,
+    isPositive: Boolean,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier.border(
+            width = 1.dp,
+            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+            shape = RoundedCornerShape(16.dp)
+        ),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                text = title,
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                text = value,
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                Icon(
+                    imageVector = if (isPositive) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = null,
+                    modifier = Modifier.size(12.dp),
+                    tint = if (isPositive) Color(0xFF0F766E) else Color(0xFFDC2626)
+                )
+                Text(
+                    text = trend,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = if (isPositive) Color(0xFF0F766E) else Color(0xFFDC2626)
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DateRangePickerDialog(
@@ -346,6 +440,7 @@ fun DateRangePickerDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
+        shape = RoundedCornerShape(24.dp),
         confirmButton = {
             TextButton(onClick = onConfirm) {
                 Text("OK")
