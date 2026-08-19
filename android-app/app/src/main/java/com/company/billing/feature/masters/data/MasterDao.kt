@@ -2,6 +2,8 @@ package com.company.billing.feature.masters.data
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.Update
+import androidx.room.Delete
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
@@ -29,4 +31,19 @@ import kotlinx.coroutines.flow.Flow
     @Query("SELECT * FROM supplier_credits WHERE supplierId = :supplierId ORDER BY dateEpochMs DESC") fun getSupplierCredits(supplierId: String): Flow<List<SupplierCreditEntity>>
     @Query("SELECT SUM(amountMinorUnits) FROM supplier_credits WHERE supplierId = :supplierId") fun getSupplierCreditBalance(supplierId: String): Flow<Long?>
     @Query("SELECT SUM(amountMinorUnits) FROM supplier_credits") fun getTotalSupplierCreditsPayable(): Flow<Long?>
+
+    @Update suspend fun updateCategory(item: CategoryEntity)
+    @Delete suspend fun deleteCategory(item: CategoryEntity)
+
+    @Update suspend fun updateProduct(item: ProductEntity)
+    @Delete suspend fun deleteProduct(item: ProductEntity)
+
+    @Update suspend fun updateCustomer(item: CustomerEntity)
+    @Delete suspend fun deleteCustomer(item: CustomerEntity)
+
+    @Update suspend fun updateSupplier(item: SupplierEntity)
+    @Delete suspend fun deleteSupplier(item: SupplierEntity)
+
+    @Update suspend fun updateExpense(item: ExpenseEntity)
+    @Delete suspend fun deleteExpense(item: ExpenseEntity)
 }

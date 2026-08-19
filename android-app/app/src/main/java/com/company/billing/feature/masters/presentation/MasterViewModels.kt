@@ -54,6 +54,34 @@ class CategoryViewModel @Inject constructor(
             }
         }
     }
+
+    fun updateCategory(category: CategoryEntity, newName: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val updated = category.copy(
+                    name = newName,
+                    updatedAtEpochMs = System.currentTimeMillis()
+                )
+                dao.updateCategory(updated)
+                syncManager.enqueueCategory(updated, "UPDATE")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun deleteCategory(category: CategoryEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                dao.deleteCategory(category)
+                syncManager.enqueueCategory(category, "DELETE")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
 }
 
 @HiltViewModel
@@ -102,6 +130,47 @@ class ProductViewModel @Inject constructor(
             }
         }
     }
+
+    fun updateProduct(
+        product: ProductEntity,
+        newName: String,
+        newCategoryId: String,
+        newPurchasePriceMinorUnits: Long,
+        newSalePriceMinorUnits: Long,
+        newUnitType: String,
+        onSuccess: () -> Unit,
+        onError: (Throwable) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val updated = product.copy(
+                    name = newName,
+                    categoryId = newCategoryId,
+                    purchasePriceMinorUnits = newPurchasePriceMinorUnits,
+                    salePriceMinorUnits = newSalePriceMinorUnits,
+                    unitType = newUnitType,
+                    updatedAtEpochMs = System.currentTimeMillis()
+                )
+                dao.updateProduct(updated)
+                syncManager.enqueueProduct(updated, "UPDATE")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun deleteProduct(product: ProductEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                dao.deleteProduct(product)
+                syncManager.enqueueProduct(product, "DELETE")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
 }
 
 @HiltViewModel
@@ -131,6 +200,36 @@ class CustomerViewModel @Inject constructor(
                 )
                 dao.insertCustomer(customer)
                 syncManager.enqueueCustomer(customer, "INSERT")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun updateCustomer(customer: CustomerEntity, newName: String, newPhone: String?, newAddress: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val updated = customer.copy(
+                    name = newName,
+                    phone = newPhone,
+                    address = newAddress,
+                    updatedAtEpochMs = System.currentTimeMillis()
+                )
+                dao.updateCustomer(updated)
+                syncManager.enqueueCustomer(updated, "UPDATE")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun deleteCustomer(customer: CustomerEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                dao.deleteCustomer(customer)
+                syncManager.enqueueCustomer(customer, "DELETE")
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -209,6 +308,36 @@ class SupplierViewModel @Inject constructor(
         }
     }
 
+    fun updateSupplier(supplier: SupplierEntity, newName: String, newPhone: String?, newAddress: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val updated = supplier.copy(
+                    name = newName,
+                    phone = newPhone,
+                    address = newAddress,
+                    updatedAtEpochMs = System.currentTimeMillis()
+                )
+                dao.updateSupplier(updated)
+                syncManager.enqueueSupplier(updated, "UPDATE")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun deleteSupplier(supplier: SupplierEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                dao.deleteSupplier(supplier)
+                syncManager.enqueueSupplier(supplier, "DELETE")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
     fun addSupplierCredit(supplierId: String, amountMinorUnits: Long, terms: String, dueDateEpochMs: Long, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
@@ -258,6 +387,35 @@ class ExpenseViewModel @Inject constructor(
                 )
                 dao.insertExpense(expense)
                 syncManager.enqueueExpense(expense, "INSERT")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun updateExpense(expense: ExpenseEntity, newAmountMinorUnits: Long, newDescription: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val updated = expense.copy(
+                    amountMinorUnits = newAmountMinorUnits,
+                    description = newDescription,
+                    updatedAtEpochMs = System.currentTimeMillis()
+                )
+                dao.updateExpense(updated)
+                syncManager.enqueueExpense(updated, "UPDATE")
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun deleteExpense(expense: ExpenseEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                dao.deleteExpense(expense)
+                syncManager.enqueueExpense(expense, "DELETE")
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)

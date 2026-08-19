@@ -32,6 +32,9 @@ import com.company.billing.feature.masters.data.CustomerEntity
 import com.company.billing.feature.masters.data.SupplierEntity
 import com.company.billing.feature.masters.data.CustomerCreditEntity
 import com.company.billing.feature.masters.data.SupplierCreditEntity
+import com.company.billing.feature.masters.data.CategoryEntity
+import com.company.billing.feature.masters.data.ProductEntity
+import com.company.billing.feature.masters.data.ExpenseEntity
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
 
@@ -211,6 +214,35 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
 
+    var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
+    var deletingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    if (editingCategory != null) {
+        CategoryEditDialog(
+            category = editingCategory!!,
+            viewModel = viewModel,
+            onDismiss = { editingCategory = null }
+        )
+    }
+
+    if (deletingCategory != null) {
+        DeleteConfirmationDialog(
+            title = "Delete Category",
+            message = "Are you sure you want to delete category \"${deletingCategory!!.name}\"? This action cannot be undone.",
+            onConfirm = {
+                val cat = deletingCategory!!
+                deletingCategory = null
+                viewModel.deleteCategory(cat, onSuccess = {
+                    android.widget.Toast.makeText(context, "Category deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
+                }, onError = {
+                    android.widget.Toast.makeText(context, "Cannot delete category: It might be referenced by products.", android.widget.Toast.LENGTH_LONG).show()
+                })
+            },
+            onDismiss = { deletingCategory = null }
+        )
+    }
+
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val layoutMode = LocalLayoutMode.current
         val isMobile = when (layoutMode) {
@@ -300,9 +332,16 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
-                            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(category.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                Text(category.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Text(category.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { editingCategory = category }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Edit Category", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { deletingCategory = category }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete Category", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
                             }
                         }
                     }
@@ -384,9 +423,16 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
-                                    Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Text(category.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                        Text(category.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Text(category.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, modifier = Modifier.weight(1f))
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(onClick = { editingCategory = category }) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit Category", tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                            IconButton(onClick = { deletingCategory = category }) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete Category", tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -412,6 +458,36 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
+
+    var editingProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    var deletingProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    if (editingProduct != null) {
+        ProductEditDialog(
+            product = editingProduct!!,
+            categories = categories,
+            viewModel = viewModel,
+            onDismiss = { editingProduct = null }
+        )
+    }
+
+    if (deletingProduct != null) {
+        DeleteConfirmationDialog(
+            title = "Delete Product",
+            message = "Are you sure you want to delete product \"${deletingProduct!!.name}\"? This action cannot be undone.",
+            onConfirm = {
+                val prod = deletingProduct!!
+                deletingProduct = null
+                viewModel.deleteProduct(prod, onSuccess = {
+                    android.widget.Toast.makeText(context, "Product deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
+                }, onError = {
+                    android.widget.Toast.makeText(context, "Cannot delete product: It might be referenced by bills.", android.widget.Toast.LENGTH_LONG).show()
+                })
+            },
+            onDismiss = { deletingProduct = null }
+        )
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val layoutMode = LocalLayoutMode.current
@@ -594,8 +670,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
-                            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Column {
+                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                     Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                     val purText = Money(product.purchasePriceMinorUnits).toString()
@@ -603,7 +679,14 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     val unitLabel = if (product.unitType == "KG") "Kg" else "Piece"
                                     Text("$unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                Text(product.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { editingProduct = product }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Edit Product", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { deletingProduct = product }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete Product", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
                             }
                         }
                     }
@@ -777,8 +860,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
-                                    Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                        Column {
+                                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                             Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                             val purText = Money(product.purchasePriceMinorUnits).toString()
@@ -786,7 +869,14 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                             val unitLabel = if (product.unitType == "KG") "Kg" else "Piece"
                                             Text("$unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
-                                        Text(product.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(onClick = { editingProduct = product }) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit Product", tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                            IconButton(onClick = { deletingProduct = product }) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete Product", tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -807,6 +897,35 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var selectedCustomerForCredit by remember { mutableStateOf<CustomerEntity?>(null) }
+
+    var editingCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
+    var deletingCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    if (editingCustomer != null) {
+        CustomerEditDialog(
+            customer = editingCustomer!!,
+            viewModel = viewModel,
+            onDismiss = { editingCustomer = null }
+        )
+    }
+
+    if (deletingCustomer != null) {
+        DeleteConfirmationDialog(
+            title = "Delete Customer",
+            message = "Are you sure you want to delete customer \"${deletingCustomer!!.name}\"? This action cannot be undone.",
+            onConfirm = {
+                val cust = deletingCustomer!!
+                deletingCustomer = null
+                viewModel.deleteCustomer(cust, onSuccess = {
+                    android.widget.Toast.makeText(context, "Customer deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
+                }, onError = {
+                    android.widget.Toast.makeText(context, "Cannot delete customer: It might be referenced by bills.", android.widget.Toast.LENGTH_LONG).show()
+                })
+            },
+            onDismiss = { deletingCustomer = null }
+        )
+    }
 
     if (selectedCustomerForCredit != null) {
         CustomerCreditDetailDialog(
@@ -931,14 +1050,24 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedCustomerForCredit = customer }
                                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
-                            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f).clickable { selectedCustomerForCredit = customer }) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                        if (isOverLimit) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.Warning,
+                                                contentDescription = "Credit Limit Exceeded",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
                                     if (bal != 0L) {
                                         Text(
                                             text = "Outstanding Balance: ${Money(bal)}",
@@ -955,15 +1084,13 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                         )
                                     }
                                 }
-                                if (isOverLimit) {
-                                    Icon(
-                                        imageVector = Icons.Default.Warning,
-                                        contentDescription = "Credit Limit Exceeded",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                } else {
-                                    Text(customer.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { editingCustomer = customer }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Edit Customer", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { deletingCustomer = customer }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete Customer", tint = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                         }
@@ -1072,14 +1199,24 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { selectedCustomerForCredit = customer }
                                         .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
-                                    Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column(modifier = Modifier.weight(1f).clickable { selectedCustomerForCredit = customer }) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                                if (isOverLimit) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Icon(
+                                                        imageVector = Icons.Default.Warning,
+                                                        contentDescription = "Credit Limit Exceeded",
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
                                             if (bal != 0L) {
                                                 Text(
                                                     text = "Outstanding Balance: ${Money(bal)}",
@@ -1096,15 +1233,13 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                                 )
                                             }
                                         }
-                                        if (isOverLimit) {
-                                            Icon(
-                                                imageVector = Icons.Default.Warning,
-                                                contentDescription = "Credit Limit Exceeded",
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        } else {
-                                            Text(customer.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(onClick = { editingCustomer = customer }) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit Customer", tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                            IconButton(onClick = { deletingCustomer = customer }) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete Customer", tint = MaterialTheme.colorScheme.error)
+                                            }
                                         }
                                     }
                                 }
@@ -1126,6 +1261,35 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var selectedSupplierForCredit by remember { mutableStateOf<SupplierEntity?>(null) }
+
+    var editingSupplier by remember { mutableStateOf<SupplierEntity?>(null) }
+    var deletingSupplier by remember { mutableStateOf<SupplierEntity?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    if (editingSupplier != null) {
+        SupplierEditDialog(
+            supplier = editingSupplier!!,
+            viewModel = viewModel,
+            onDismiss = { editingSupplier = null }
+        )
+    }
+
+    if (deletingSupplier != null) {
+        DeleteConfirmationDialog(
+            title = "Delete Supplier",
+            message = "Are you sure you want to delete supplier \"${deletingSupplier!!.name}\"? This action cannot be undone.",
+            onConfirm = {
+                val supp = deletingSupplier!!
+                deletingSupplier = null
+                viewModel.deleteSupplier(supp, onSuccess = {
+                    android.widget.Toast.makeText(context, "Supplier deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
+                }, onError = {
+                    android.widget.Toast.makeText(context, "Cannot delete supplier: It might be referenced by bills.", android.widget.Toast.LENGTH_LONG).show()
+                })
+            },
+            onDismiss = { deletingSupplier = null }
+        )
+    }
 
     if (selectedSupplierForCredit != null) {
         SupplierCreditDetailDialog(
@@ -1254,14 +1418,24 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clickable { selectedSupplierForCredit = supplier }
                                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
-                            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f).clickable { selectedSupplierForCredit = supplier }) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                        if (isOverdue) {
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Icon(
+                                                imageVector = Icons.Default.Warning,
+                                                contentDescription = "Repayment Overdue",
+                                                tint = MaterialTheme.colorScheme.error,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                        }
+                                    }
                                     if (bal != 0L) {
                                         Text(
                                             text = "Outstanding Balance: ${Money(bal)}",
@@ -1278,15 +1452,13 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                         )
                                     }
                                 }
-                                if (isOverdue) {
-                                    Icon(
-                                        imageVector = Icons.Default.Warning,
-                                        contentDescription = "Repayment Overdue",
-                                        tint = MaterialTheme.colorScheme.error,
-                                        modifier = Modifier.size(20.dp)
-                                    )
-                                } else {
-                                    Text(supplier.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { editingSupplier = supplier }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Edit Supplier", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { deletingSupplier = supplier }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete Supplier", tint = MaterialTheme.colorScheme.error)
+                                    }
                                 }
                             }
                         }
@@ -1399,14 +1571,24 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                 Card(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .clickable { selectedSupplierForCredit = supplier }
                                         .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
-                                    Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column(modifier = Modifier.weight(1f).clickable { selectedSupplierForCredit = supplier }) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                                if (isOverdue) {
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Icon(
+                                                        imageVector = Icons.Default.Warning,
+                                                        contentDescription = "Repayment Overdue",
+                                                        tint = MaterialTheme.colorScheme.error,
+                                                        modifier = Modifier.size(16.dp)
+                                                    )
+                                                }
+                                            }
                                             if (bal != 0L) {
                                                 Text(
                                                     text = "Outstanding Balance: ${Money(bal)}",
@@ -1423,15 +1605,13 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                                 )
                                             }
                                         }
-                                        if (isOverdue) {
-                                            Icon(
-                                                imageVector = Icons.Default.Warning,
-                                                contentDescription = "Repayment Overdue",
-                                                tint = MaterialTheme.colorScheme.error,
-                                                modifier = Modifier.size(20.dp)
-                                            )
-                                        } else {
-                                            Text(supplier.syncStatus.name, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(onClick = { editingSupplier = supplier }) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit Supplier", tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                            IconButton(onClick = { deletingSupplier = supplier }) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete Supplier", tint = MaterialTheme.colorScheme.error)
+                                            }
                                         }
                                     }
                                 }
@@ -1450,6 +1630,35 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
     var description by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+
+    var editingExpense by remember { mutableStateOf<ExpenseEntity?>(null) }
+    var deletingExpense by remember { mutableStateOf<ExpenseEntity?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    if (editingExpense != null) {
+        ExpenseEditDialog(
+            expense = editingExpense!!,
+            viewModel = viewModel,
+            onDismiss = { editingExpense = null }
+        )
+    }
+
+    if (deletingExpense != null) {
+        DeleteConfirmationDialog(
+            title = "Delete Expense",
+            message = "Are you sure you want to delete this expense? This action cannot be undone.",
+            onConfirm = {
+                val exp = deletingExpense!!
+                deletingExpense = null
+                viewModel.deleteExpense(exp, onSuccess = {
+                    android.widget.Toast.makeText(context, "Expense deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
+                }, onError = {
+                    android.widget.Toast.makeText(context, "Error: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
+                })
+            },
+            onDismiss = { deletingExpense = null }
+        )
+    }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
         val layoutMode = LocalLayoutMode.current
@@ -1545,12 +1754,21 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
-                            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column {
+                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(expense.description, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                     Text(dateStr, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                 }
-                                Text(Money(expense.amountMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(Money(expense.amountMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    IconButton(onClick = { editingExpense = expense }) {
+                                        Icon(Icons.Default.Edit, contentDescription = "Edit Expense", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                    IconButton(onClick = { deletingExpense = expense }) {
+                                        Icon(Icons.Default.Delete, contentDescription = "Delete Expense", tint = MaterialTheme.colorScheme.error)
+                                    }
+                                }
                             }
                         }
                     }
@@ -1637,12 +1855,21 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
-                                    Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                        Column {
+                                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Column(modifier = Modifier.weight(1f)) {
                                             Text(expense.description, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                             Text(dateStr, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                         }
-                                        Text(Money(expense.amountMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Text(Money(expense.amountMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
+                                            Spacer(modifier = Modifier.width(8.dp))
+                                            IconButton(onClick = { editingExpense = expense }) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit Expense", tint = MaterialTheme.colorScheme.primary)
+                                            }
+                                            IconButton(onClick = { deletingExpense = expense }) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Delete Expense", tint = MaterialTheme.colorScheme.error)
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -2467,4 +2694,466 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
             }
         }
     }
+}
+
+@Composable
+fun DeleteConfirmationDialog(
+    title: String,
+    message: String,
+    onConfirm: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(title, fontWeight = FontWeight.Bold) },
+        text = { Text(message) },
+        confirmButton = {
+            Button(
+                onClick = onConfirm,
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
+                Text("Delete")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun CategoryEditDialog(
+    category: CategoryEntity,
+    viewModel: CategoryViewModel,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(category.name) }
+    var error by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Category", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Category Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                if (error.isNotBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isBlank()) {
+                        error = "Name cannot be empty"
+                    } else {
+                        viewModel.updateCategory(category, name, onSuccess = {
+                            android.widget.Toast.makeText(context, "Category updated successfully", android.widget.Toast.LENGTH_SHORT).show()
+                            onDismiss()
+                        }, onError = {
+                            error = "Error updating category: ${it.message}"
+                        })
+                    }
+                },
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProductEditDialog(
+    product: ProductEntity,
+    categories: List<CategoryEntity>,
+    viewModel: ProductViewModel,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(product.name) }
+    var selectedCategoryId by remember { mutableStateOf(product.categoryId) }
+    var purchasePrice by remember { mutableStateOf(Money(product.purchasePriceMinorUnits).toString()) }
+    var salePrice by remember { mutableStateOf(Money(product.salePriceMinorUnits).toString()) }
+    var unitType by remember { mutableStateOf(product.unitType) }
+    
+    var catExpanded by remember { mutableStateOf(false) }
+    var unitExpanded by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Product", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Product Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                
+                ExposedDropdownMenuBox(
+                    expanded = catExpanded,
+                    onExpandedChange = { catExpanded = it }
+                ) {
+                    val currentCatName = categories.find { it.id == selectedCategoryId }?.name ?: "Select Category"
+                    OutlinedTextField(
+                        value = currentCatName,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Category") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = catExpanded,
+                        onDismissRequest = { catExpanded = false }
+                    ) {
+                        categories.forEach { cat ->
+                            DropdownMenuItem(
+                                text = { Text(cat.name) },
+                                onClick = {
+                                    selectedCategoryId = cat.id
+                                    catExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                
+                OutlinedTextField(
+                    value = purchasePrice,
+                    onValueChange = { purchasePrice = it },
+                    label = { Text("Purchase Price") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                
+                OutlinedTextField(
+                    value = salePrice,
+                    onValueChange = { salePrice = it },
+                    label = { Text("Sale Price") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                
+                ExposedDropdownMenuBox(
+                    expanded = unitExpanded,
+                    onExpandedChange = { unitExpanded = it }
+                ) {
+                    OutlinedTextField(
+                        value = unitType,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Unit Type") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
+                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+                    ExposedDropdownMenu(
+                        expanded = unitExpanded,
+                        onDismissRequest = { unitExpanded = false }
+                    ) {
+                        listOf("PIECE", "KG").forEach { type ->
+                            DropdownMenuItem(
+                                text = { Text(type) },
+                                onClick = {
+                                    unitType = type
+                                    unitExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+                
+                if (error.isNotBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val pPrice = purchasePrice.toDoubleOrNull()?.let { (it * 100).toLong() }
+                    val sPrice = salePrice.toDoubleOrNull()?.let { (it * 100).toLong() }
+                    if (name.isBlank() || selectedCategoryId.isBlank() || pPrice == null || sPrice == null) {
+                        error = "Please fill in all fields correctly"
+                    } else {
+                        viewModel.updateProduct(
+                            product = product,
+                            newName = name,
+                            newCategoryId = selectedCategoryId,
+                            newPurchasePriceMinorUnits = pPrice,
+                            newSalePriceMinorUnits = sPrice,
+                            newUnitType = unitType,
+                            onSuccess = {
+                                android.widget.Toast.makeText(context, "Product updated successfully", android.widget.Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            },
+                            onError = {
+                                error = "Error: ${it.message}"
+                            }
+                        )
+                    }
+                },
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun CustomerEditDialog(
+    customer: CustomerEntity,
+    viewModel: CustomerViewModel,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(customer.name) }
+    var phone by remember { mutableStateOf(customer.phone ?: "") }
+    var address by remember { mutableStateOf(customer.address ?: "") }
+    var error by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Customer", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Customer Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it },
+                    label = { Text("Phone Number") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    label = { Text("Address") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                if (error.isNotBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isBlank()) {
+                        error = "Name cannot be empty"
+                    } else {
+                        viewModel.updateCustomer(
+                            customer = customer,
+                            newName = name,
+                            newPhone = phone.takeIf { it.isNotBlank() },
+                            newAddress = address.takeIf { it.isNotBlank() },
+                            onSuccess = {
+                                android.widget.Toast.makeText(context, "Customer updated successfully", android.widget.Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            },
+                            onError = {
+                                error = "Error: ${it.message}"
+                            }
+                        )
+                    }
+                },
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun SupplierEditDialog(
+    supplier: SupplierEntity,
+    viewModel: SupplierViewModel,
+    onDismiss: () -> Unit
+) {
+    var name by remember { mutableStateOf(supplier.name) }
+    var phone by remember { mutableStateOf(supplier.phone ?: "") }
+    var address by remember { mutableStateOf(supplier.address ?: "") }
+    var error by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Supplier", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Supplier Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { phone = it },
+                    label = { Text("Phone Number") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = address,
+                    onValueChange = { address = it },
+                    label = { Text("Address") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                if (error.isNotBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    if (name.isBlank()) {
+                        error = "Name cannot be empty"
+                    } else {
+                        viewModel.updateSupplier(
+                            supplier = supplier,
+                            newName = name,
+                            newPhone = phone.takeIf { it.isNotBlank() },
+                            newAddress = address.takeIf { it.isNotBlank() },
+                            onSuccess = {
+                                android.widget.Toast.makeText(context, "Supplier updated successfully", android.widget.Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            },
+                            onError = {
+                                error = "Error: ${it.message}"
+                            }
+                        )
+                    }
+                },
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+
+@Composable
+fun ExpenseEditDialog(
+    expense: ExpenseEntity,
+    viewModel: ExpenseViewModel,
+    onDismiss: () -> Unit
+) {
+    var amount by remember { mutableStateOf(Money(expense.amountMinorUnits).toString()) }
+    var description by remember { mutableStateOf(expense.description) }
+    var error by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Edit Expense", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedTextField(
+                    value = amount,
+                    onValueChange = { amount = it },
+                    label = { Text("Amount") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                OutlinedTextField(
+                    value = description,
+                    onValueChange = { description = it },
+                    label = { Text("Description") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+                if (error.isNotBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val amt = amount.toDoubleOrNull()?.let { (it * 100).toLong() }
+                    if (amt == null || description.isBlank()) {
+                        error = "Please fill in all fields correctly"
+                    } else {
+                        viewModel.updateExpense(
+                            expense = expense,
+                            newAmountMinorUnits = amt,
+                            newDescription = description,
+                            onSuccess = {
+                                android.widget.Toast.makeText(context, "Expense updated successfully", android.widget.Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            },
+                            onError = {
+                                error = "Error: ${it.message}"
+                            }
+                        )
+                    }
+                },
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Update")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
 }
