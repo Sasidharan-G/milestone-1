@@ -60,4 +60,9 @@ dependencies {
     implementation("io.github.jan-tennert.supabase:storage-kt")
     implementation("io.ktor:ktor-client-android:3.0.0")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // Security Dependencies
+    implementation("androidx.biometric:biometric:1.2.0-alpha05")
+    implementation("com.scottyab:rootbeer-lib:0.1.2")
+    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
 }

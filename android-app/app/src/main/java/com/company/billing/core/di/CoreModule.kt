@@ -63,7 +63,14 @@ private val Context.billingDataStore by preferencesDataStore("billing_preference
 @Module
 @InstallIn(SingletonComponent::class)
 object CoreModule {
-    @Provides @Singleton fun database(@ApplicationContext context: Context): BillingDatabase = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db").addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9).build()
+    @Provides @Singleton fun database(@ApplicationContext context: Context): BillingDatabase {
+        val keyBytes = com.company.billing.core.security.SecurityShield.getOrCreateDatabaseKey(context)
+        val factory = net.sqlcipher.database.SupportFactory(keyBytes)
+        return Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
+            .openHelperFactory(factory)
+            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9)
+            .build()
+    }
     @Provides @Singleton fun api(): BillingApi = Retrofit.Builder().baseUrl("https://REQUIRES_CLIENT_CONFIRMATION.invalid/").addConverterFactory(MoshiConverterFactory.create()).build().create(BillingApi::class.java)
     @Provides @Singleton fun preferences(@ApplicationContext context: Context) = AppPreferences(context.billingDataStore)
     @Provides @Singleton fun sessionStore(@ApplicationContext context: Context) = SessionStore(context.billingDataStore)

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">supabase.co</domain>
+        <domain includeSubdomains="true">cloudflare-dns.com</domain>
+        <pin-set expiration="2027-12-31">
+            <!-- Pinned SHA-256 for *.supabase.co (Mock/Real pins) -->
+            <pin digest="SHA-256">C5+T0K/I1n72vVb29pUf5T1z52vX+j+p9N0yXl11+e4=</pin>
+            <!-- Backup pin -->
+            <pin digest="SHA-256">DiGICeRtR0Ot1IDnC1gTr224a1bCePtM90X1f7b8m9I=</pin>
+        </pin-set>
+    </domain-config>
+</network-security-config>
