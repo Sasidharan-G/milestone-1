@@ -35,4 +35,22 @@ class SyncScheduler(private val context: Context) {
             backupRequest
         )
     }
+
+    fun schedulePeriodicSupabaseBackup() {
+        val constraints = Constraints.Builder()
+            .setRequiredNetworkType(NetworkType.CONNECTED)
+            .build()
+
+        val backupRequest = PeriodicWorkRequestBuilder<com.company.billing.core.backup.data.SupabaseBackupWorker>(
+            24, TimeUnit.HOURS
+        )
+            .setConstraints(constraints)
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "supabase-backup",
+            ExistingPeriodicWorkPolicy.KEEP,
+            backupRequest
+        )
+    }
 }

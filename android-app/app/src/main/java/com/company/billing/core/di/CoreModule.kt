@@ -10,6 +10,8 @@ import com.company.billing.core.database.migration3To4
 import com.company.billing.core.database.migration4To5
 import com.company.billing.core.database.migration5To6
 import com.company.billing.core.database.migration6To7
+import com.company.billing.core.database.migration7To8
+import com.company.billing.core.database.migration8To9
 import com.company.billing.core.auth.AuthRepository
 import com.company.billing.core.auth.DefaultAuthRepository
 import com.company.billing.core.auth.OfflineCredentialStore
@@ -48,19 +50,34 @@ import dagger.hilt.components.SingletonComponent
 import retrofit2.Retrofit
 import retrofit2.converter.moshi.MoshiConverterFactory
 import javax.inject.Singleton
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.createSupabaseClient
+import io.github.jan.supabase.postgrest.Postgrest
+import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.storage.Storage
+import com.company.billing.core.network.SupabaseConfig
+import com.company.billing.core.backup.data.SupabaseBackupManager
 
 private val Context.billingDataStore by preferencesDataStore("billing_preferences")
 
 @Module
 @InstallIn(SingletonComponent::class)
 object CoreModule {
-    @Provides @Singleton fun database(@ApplicationContext context: Context): BillingDatabase = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db").addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7).build()
+    @Provides @Singleton fun database(@ApplicationContext context: Context): BillingDatabase = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db").addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9).build()
     @Provides @Singleton fun api(): BillingApi = Retrofit.Builder().baseUrl("https://REQUIRES_CLIENT_CONFIRMATION.invalid/").addConverterFactory(MoshiConverterFactory.create()).build().create(BillingApi::class.java)
     @Provides @Singleton fun preferences(@ApplicationContext context: Context) = AppPreferences(context.billingDataStore)
     @Provides @Singleton fun sessionStore(@ApplicationContext context: Context) = SessionStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialStore(@ApplicationContext context: Context) = OfflineCredentialStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialVerifier() = OfflineCredentialVerifier()
-    @Provides @Singleton fun authRepository(api: BillingApi, sessions: SessionStore, credentials: OfflineCredentialStore, verifier: OfflineCredentialVerifier, database: BillingDatabase): AuthRepository = DefaultAuthRepository(api, sessions, credentials, verifier, database)
+    @Provides @Singleton fun supabaseClient(): SupabaseClient = createSupabaseClient(
+        supabaseUrl = SupabaseConfig.URL,
+        supabaseKey = SupabaseConfig.ANON_KEY
+    ) {
+        install(Auth)
+        install(Postgrest)
+        install(Storage)
+    }
+    @Provides @Singleton fun authRepository(supabase: SupabaseClient, sessions: SessionStore, credentials: OfflineCredentialStore, verifier: OfflineCredentialVerifier, database: BillingDatabase): AuthRepository = DefaultAuthRepository(supabase, sessions, credentials, verifier, database)
     @Provides @Singleton fun logger(): AppLogger = AndroidLogger()
     @Provides @Singleton fun syncScheduler(@ApplicationContext context: Context) = SyncScheduler(context)
     @Provides @Singleton fun syncManager(database: BillingDatabase, syncScheduler: SyncScheduler) = SyncManager(database, syncScheduler)
@@ -78,4 +95,5 @@ object CoreModule {
     @Provides @Singleton fun shareManager(@ApplicationContext context: Context) = ShareManager(context)
     @Provides @Singleton fun backupManager(@ApplicationContext context: Context, database: BillingDatabase) = BackupManager(context, database)
     @Provides @Singleton fun googleDriveBackupManager(@ApplicationContext context: Context, appPreferences: AppPreferences, backupManager: BackupManager) = com.company.billing.core.backup.data.GoogleDriveBackupManager(context, appPreferences, backupManager)
+    @Provides @Singleton fun supabaseBackupManager(@ApplicationContext context: Context, supabase: SupabaseClient, backupManager: BackupManager) = SupabaseBackupManager(context, supabase, backupManager)
 }

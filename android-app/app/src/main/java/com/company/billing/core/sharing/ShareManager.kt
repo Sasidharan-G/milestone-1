@@ -2,11 +2,20 @@ package com.company.billing.core.sharing
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.pdf.PdfDocument
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.company.billing.core.common.Money
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 class ShareManager(private val context: Context) {
 
@@ -109,5 +118,188 @@ class ShareManager(private val context: Context) {
         } catch (e: IOException) {
             null
         }
+    }
+
+    fun generatePdfInvoice(
+        sale: com.company.billing.feature.billing.data.SaleEntity,
+        items: List<com.company.billing.feature.billing.data.SaleItemEntity>,
+        productsMap: Map<String, com.company.billing.feature.masters.data.ProductEntity>,
+        customerName: String,
+        shopName: String,
+        ownerName: String,
+        gstNumber: String,
+        shopAddress: String,
+        shopPhone: String
+    ): ByteArray {
+        val pdfDocument = PdfDocument()
+        val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4
+        val page = pdfDocument.startPage(pageInfo)
+        val canvas = page.canvas
+
+        val paint = Paint()
+        
+        // 1. Draw header (Shop Details)
+        paint.color = Color.BLACK
+        paint.textAlign = Paint.Align.CENTER
+        
+        // Shop Name
+        paint.textSize = 20f
+        paint.isFakeBoldText = true
+        var y = 60f
+        canvas.drawText(shopName.ifBlank { "Client Billing System" }, 297.5f, y, paint)
+        
+        // Address & Phone
+        paint.textSize = 10f
+        paint.isFakeBoldText = false
+        if (shopAddress.isNotBlank()) {
+            y += 18f
+            canvas.drawText(shopAddress, 297.5f, y, paint)
+        }
+        if (shopPhone.isNotBlank()) {
+            y += 16f
+            canvas.drawText("Phone: $shopPhone", 297.5f, y, paint)
+        }
+        
+        // Owner Name & GST
+        if (ownerName.isNotBlank() || gstNumber.isNotBlank()) {
+            y += 16f
+            val details = listOfNotNull(
+                if (ownerName.isNotBlank()) "Proprietor: $ownerName" else null,
+                if (gstNumber.isNotBlank()) "GSTIN: $gstNumber" else null
+            ).joinToString("  |  ")
+            canvas.drawText(details, 297.5f, y, paint)
+        }
+        
+        // Divider
+        y += 18f
+        paint.strokeWidth = 1f
+        canvas.drawLine(40f, y, 555f, y, paint)
+        
+        // 2. Bill & Customer Metadata
+        y += 25f
+        paint.textAlign = Paint.Align.LEFT
+        paint.textSize = 11f
+        
+        // Left Column: Bill details
+        val sdf = SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault())
+        val dateStr = sdf.format(Date(sale.createdAtEpochMs))
+        canvas.drawText("Bill No: ${sale.billNumber}", 40f, y, paint)
+        y += 18f
+        canvas.drawText("Date: $dateStr", 40f, y, paint)
+        
+        // Right Column: Customer details
+        val custY = y - 18f
+        canvas.drawText("To: $customerName", 350f, custY, paint)
+        
+        // Divider
+        y += 22f
+        canvas.drawLine(40f, y, 555f, y, paint)
+        
+        // 3. Table Headers
+        y += 25f
+        paint.isFakeBoldText = true
+        canvas.drawText("S.No", 40f, y, paint)
+        canvas.drawText("Item Description", 80f, y, paint)
+        paint.textAlign = Paint.Align.RIGHT
+        canvas.drawText("Qty", 360f, y, paint)
+        canvas.drawText("Rate", 450f, y, paint)
+        canvas.drawText("Total", 550f, y, paint)
+        
+        // Table Header Divider
+        y += 10f
+        paint.strokeWidth = 1.5f
+        canvas.drawLine(40f, y, 555f, y, paint)
+        paint.strokeWidth = 1f
+        paint.isFakeBoldText = false
+        
+        // 4. Draw Rows
+        var serial = 1
+        for (item in items) {
+            y += 22f
+            
+            val product = productsMap[item.productId]
+            val productName = product?.name ?: "Unknown Product"
+            val unitType = product?.unitType ?: "PIECE"
+            
+            val qtyStr = if (unitType == "KG") {
+                String.format(Locale.US, "%.3f Kg", item.quantity / 1000.0)
+            } else {
+                "${item.quantity} Pcs"
+            }
+            
+            val rateStr = Money(item.unitPriceMinorUnits).toString()
+            val totalStr = Money(item.lineTotalMinorUnits).toString()
+            
+            paint.textAlign = Paint.Align.LEFT
+            canvas.drawText(serial.toString(), 40f, y, paint)
+            canvas.drawText(productName, 80f, y, paint)
+            
+            paint.textAlign = Paint.Align.RIGHT
+            canvas.drawText(qtyStr, 360f, y, paint)
+            canvas.drawText(rateStr, 450f, y, paint)
+            canvas.drawText(totalStr, 550f, y, paint)
+            
+            serial++
+        }
+        
+        // Table End Divider
+        y += 15f
+        canvas.drawLine(40f, y, 555f, y, paint)
+        
+        // 5. Totals
+        y += 25f
+        paint.textAlign = Paint.Align.RIGHT
+        
+        val hasGst = gstNumber.isNotBlank()
+        val grandTotalMinor = sale.totalMinorUnits
+        val subtotalMinor = if (hasGst) (grandTotalMinor * 100 / 118) else grandTotalMinor
+        val cgstMinor = if (hasGst) ((grandTotalMinor - subtotalMinor) / 2) else 0L
+        val sgstMinor = if (hasGst) (grandTotalMinor - subtotalMinor - cgstMinor) else 0L
+        
+        if (hasGst) {
+            canvas.drawText("Subtotal: ", 450f, y, paint)
+            canvas.drawText(Money(subtotalMinor).toString(), 550f, y, paint)
+            
+            y += 20f
+            canvas.drawText("CGST (9%): ", 450f, y, paint)
+            canvas.drawText(Money(cgstMinor).toString(), 550f, y, paint)
+            
+            y += 20f
+            canvas.drawText("SGST (9%): ", 450f, y, paint)
+            canvas.drawText(Money(sgstMinor).toString(), 550f, y, paint)
+            
+            y += 25f
+        }
+        
+        paint.isFakeBoldText = true
+        paint.textSize = 13f
+        canvas.drawText("Grand Total: ", 450f, y, paint)
+        canvas.drawText(Money(grandTotalMinor).toString(), 550f, y, paint)
+        
+        // 6. Terms & Footer
+        y += 40f
+        paint.textAlign = Paint.Align.LEFT
+        paint.textSize = 9f
+        paint.isFakeBoldText = true
+        canvas.drawText("Terms & Conditions:", 40f, y, paint)
+        paint.isFakeBoldText = false
+        y += 14f
+        canvas.drawText("1. Goods once sold will not be taken back or exchanged.", 40f, y, paint)
+        y += 14f
+        canvas.drawText("2. We are not responsible for any damage after goods leave the store.", 40f, y, paint)
+        
+        y += 30f
+        paint.textAlign = Paint.Align.CENTER
+        paint.isFakeBoldText = false
+        paint.textSize = 10f
+        canvas.drawText("Thank you for your business!", 297.5f, y, paint)
+        
+        pdfDocument.finishPage(page)
+        
+        val outputStream = ByteArrayOutputStream()
+        pdfDocument.writeTo(outputStream)
+        pdfDocument.close()
+        
+        return outputStream.toByteArray()
     }
 }

@@ -15,6 +15,11 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import java.io.File
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.Image
 import com.company.billing.core.security.Permission
 import com.company.billing.core.auth.Session
 import androidx.compose.ui.Alignment
@@ -51,6 +56,8 @@ fun BillingApp() {
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val layoutMode by settingsViewModel.layoutMode.collectAsState()
     val themeMode by settingsViewModel.themeMode.collectAsState()
+    val shopName by settingsViewModel.shopName.collectAsState()
+    val shopLogoPath by settingsViewModel.shopLogoPath.collectAsState()
     val useDarkTheme = when (themeMode) {
         "Dark" -> true
         "Light" -> false
@@ -74,6 +81,8 @@ fun BillingApp() {
                     val session by vm.activeSession.collectAsState()
                     HomeScreen(
                         session = session,
+                        shopName = shopName,
+                        shopLogoPath = shopLogoPath,
                         onNavigateTo = { route -> navController.navigate(route.path) },
                         onLogout = {
                             vm.logout()
@@ -128,13 +137,17 @@ data class DashboardItem(
     val title: String,
     val subtitle: String,
     val icon: ImageVector,
-    val route: AppRoute
+    val route: AppRoute,
+    val backgroundColor: Color,
+    val textColor: Color
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     session: Session?,
+    shopName: String,
+    shopLogoPath: String,
     onNavigateTo: (AppRoute) -> Unit,
     onLogout: () -> Unit
 ) {
@@ -146,19 +159,32 @@ fun HomeScreen(
     val showReports = permissions.any { it == Permission.REPORT_SALES || it == Permission.REPORT_STOCK || it == Permission.REPORT_PROFIT }
     val showSettings = permissions.any { it == Permission.SETTINGS_VIEW || it == Permission.USER_MANAGE }
 
-    val dashboardItems = remember(showMasters, showSales, showPurchases, showReports) {
+    val isDark = isSystemInDarkTheme()
+    val dashboardItems = remember(showMasters, showSales, showPurchases, showReports, isDark) {
+        val masterBg = if (isDark) Color(0xFF1A237E) else Color(0xFFE3F2FD)
+        val masterText = if (isDark) Color(0xFFE3F2FD) else Color(0xFF0D47A1)
+
+        val salesBg = if (isDark) Color(0xFF004D40) else Color(0xFFE0F2F1)
+        val salesText = if (isDark) Color(0xFFE0F2F1) else Color(0xFF004D40)
+
+        val purchasesBg = if (isDark) Color(0xFF1B5E20) else Color(0xFFE8F5E9)
+        val purchasesText = if (isDark) Color(0xFFE8F5E9) else Color(0xFF1B5E20)
+
+        val reportsBg = if (isDark) Color(0xFF4A148C) else Color(0xFFF3E5F5)
+        val reportsText = if (isDark) Color(0xFFF3E5F5) else Color(0xFF4A148C)
+
         buildList {
             if (showMasters) {
-                add(DashboardItem("Master Data", "Manage Categories, Products, Customers, Suppliers, Expenses", Icons.Default.Menu, AppRoute.Masters))
+                add(DashboardItem("Master Data", "Manage Categories, Products, Customers, Suppliers, Expenses", Icons.Default.Menu, AppRoute.Masters, masterBg, masterText))
             }
             if (showSales) {
-                add(DashboardItem("Sales Invoicing", "Draft bills, invoice products and log sales ledger", Icons.Default.ShoppingCart, AppRoute.Billing))
+                add(DashboardItem("Sales Invoicing", "Draft bills, invoice products and log sales ledger", Icons.Default.ShoppingCart, AppRoute.Billing, salesBg, salesText))
             }
             if (showPurchases) {
-                add(DashboardItem("Purchases & Stock", "Record stock inward, manage supplier invoices & ledger", Icons.Default.AddCircle, AppRoute.Purchases))
+                add(DashboardItem("Purchases & Stock", "Record stock inward, manage supplier invoices & ledger", Icons.Default.AddCircle, AppRoute.Purchases, purchasesBg, purchasesText))
             }
             if (showReports) {
-                add(DashboardItem("Reports Engine", "Analyze Sales, Stock, Profits, Purchases & Expenses", Icons.Default.List, AppRoute.Reports))
+                add(DashboardItem("Reports Engine", "Analyze Sales, Stock, Profits, Purchases & Expenses", Icons.Default.List, AppRoute.Reports, reportsBg, reportsText))
             }
         }
     }
@@ -166,7 +192,39 @@ fun HomeScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Client Billing System", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        if (shopLogoPath.isNotEmpty()) {
+                            val logoFile = File(shopLogoPath)
+                            if (logoFile.exists()) {
+                                val bitmap = remember(shopLogoPath) {
+                                    try { BitmapFactory.decodeFile(logoFile.absolutePath) } catch (ignored: Exception) { null }
+                                }
+                                if (bitmap != null) {
+                                    Card(
+                                        shape = RoundedCornerShape(18.dp),
+                                        modifier = Modifier.size(36.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                    ) {
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = "Shop logo branding",
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        Text(
+                            text = shopName.ifBlank { "Client Billing System" },
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 actions = {
                     if (showSettings) {
@@ -211,7 +269,7 @@ fun HomeScreen(
                     Text(
                         text = "Manage sales, stocks and master lists in one tap",
                         fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.outline
+                        color = MaterialTheme.colorScheme.onBackground
                     )
                     
                     dashboardItems.forEach { item ->
@@ -219,6 +277,8 @@ fun HomeScreen(
                             title = item.title,
                             subtitle = item.subtitle,
                             icon = item.icon,
+                            backgroundColor = item.backgroundColor,
+                            textColor = item.textColor,
                             modifier = Modifier.fillMaxWidth().height(120.dp),
                             onClick = { onNavigateTo(item.route) }
                         )
@@ -241,7 +301,7 @@ fun HomeScreen(
                         Text(
                             text = "Manage sales, stocks and master lists in one tap",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.onBackground
                         )
                     }
 
@@ -255,6 +315,8 @@ fun HomeScreen(
                                     title = item.title,
                                     subtitle = item.subtitle,
                                     icon = item.icon,
+                                    backgroundColor = item.backgroundColor,
+                                    textColor = item.textColor,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                     onClick = { onNavigateTo(item.route) }
                                 )
@@ -275,6 +337,8 @@ fun DashboardCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
+    backgroundColor: Color,
+    textColor: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -283,12 +347,12 @@ fun DashboardCard(
             .clickable { onClick() }
             .border(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                color = textColor.copy(alpha = 0.4f),
                 shape = RoundedCornerShape(20.dp)
             ),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        colors = CardDefaults.cardColors(containerColor = backgroundColor)
     ) {
         Column(
             modifier = Modifier
@@ -301,7 +365,7 @@ fun DashboardCard(
                 modifier = Modifier
                     .size(48.dp)
                     .background(
-                        color = MaterialTheme.colorScheme.primaryContainer,
+                        color = textColor.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(12.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -310,7 +374,7 @@ fun DashboardCard(
                     imageVector = icon,
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
-                    tint = MaterialTheme.colorScheme.primary
+                    tint = textColor
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -318,13 +382,13 @@ fun DashboardCard(
                 text = title,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
+                color = textColor
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = subtitle,
                 fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = textColor.copy(alpha = 0.8f),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
         }

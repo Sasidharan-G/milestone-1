@@ -2,9 +2,19 @@ package com.company.billing.feature.billing.domain
 
 import com.company.billing.core.common.Money
 
-data class SaleLine(val productId: String, val productName: String, val quantity: Long, val unitPrice: Money) {
+data class SaleLine(
+    val productId: String,
+    val productName: String,
+    val quantity: Long,
+    val unitPrice: Money,
+    val unitType: String = "PIECE"
+) {
     init { require(quantity > 0) }
-    val lineTotal: Money get() = unitPrice * quantity
+    val lineTotal: Money get() = if (unitType == "KG") {
+        Money((unitPrice.minorUnits * quantity) / 1000)
+    } else {
+        unitPrice * quantity
+    }
 }
 data class SaleDraft(val lines: List<SaleLine>, val customerId: String? = null) {
     init { require(lines.isNotEmpty()) }

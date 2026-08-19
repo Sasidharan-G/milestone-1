@@ -11,7 +11,10 @@ import com.company.billing.feature.masters.data.ProductEntity
 import com.company.billing.feature.masters.data.CustomerEntity
 import com.company.billing.feature.masters.data.SupplierEntity
 import com.company.billing.feature.masters.data.ExpenseEntity
+import com.company.billing.feature.masters.data.CustomerCreditEntity
+import com.company.billing.feature.masters.data.SupplierCreditEntity
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -69,13 +72,24 @@ class ProductViewModel @Inject constructor(
 
     fun updateSearch(query: String) { searchQuery.value = query }
 
-    fun addProduct(name: String, categoryId: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+    fun addProduct(
+        name: String,
+        categoryId: String,
+        purchasePriceMinorUnits: Long,
+        salePriceMinorUnits: Long,
+        unitType: String,
+        onSuccess: () -> Unit,
+        onError: (Throwable) -> Unit
+    ) {
         viewModelScope.launch {
             try {
                 val product = ProductEntity(
                     id = newRecordId(),
                     name = name,
                     categoryId = categoryId,
+                    purchasePriceMinorUnits = purchasePriceMinorUnits,
+                    salePriceMinorUnits = salePriceMinorUnits,
+                    unitType = unitType,
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
                     syncStatus = SyncStatus.LOCAL_ONLY
@@ -123,6 +137,42 @@ class CustomerViewModel @Inject constructor(
             }
         }
     }
+
+    fun addCustomerCredit(customerId: String, amountMinorUnits: Long, reason: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val credit = CustomerCreditEntity(
+                    id = newRecordId(),
+                    customerId = customerId,
+                    amountMinorUnits = amountMinorUnits,
+                    reason = reason,
+                    dateEpochMs = System.currentTimeMillis(),
+                    syncStatus = SyncStatus.LOCAL_ONLY
+                )
+                dao.insertCustomerCredit(credit)
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun getCustomerCredits(customerId: String): Flow<List<CustomerCreditEntity>> = dao.getCustomerCredits(customerId)
+
+    fun getCustomerCreditBalance(customerId: String): Flow<Long?> = dao.getCustomerCreditBalance(customerId)
+
+    fun getTotalCustomerCreditsReceivable(): Flow<Long?> = dao.getTotalCustomerCreditsReceivable()
+
+    fun updateCustomerCreditLimit(customerId: String, limit: Long, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                dao.updateCustomerCreditLimit(customerId, limit)
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
 }
 
 @HiltViewModel
@@ -158,6 +208,32 @@ class SupplierViewModel @Inject constructor(
             }
         }
     }
+
+    fun addSupplierCredit(supplierId: String, amountMinorUnits: Long, terms: String, dueDateEpochMs: Long, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val credit = SupplierCreditEntity(
+                    id = newRecordId(),
+                    supplierId = supplierId,
+                    amountMinorUnits = amountMinorUnits,
+                    terms = terms,
+                    dueDateEpochMs = dueDateEpochMs,
+                    dateEpochMs = System.currentTimeMillis(),
+                    syncStatus = SyncStatus.LOCAL_ONLY
+                )
+                dao.insertSupplierCredit(credit)
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun getSupplierCredits(supplierId: String): Flow<List<SupplierCreditEntity>> = dao.getSupplierCredits(supplierId)
+
+    fun getSupplierCreditBalance(supplierId: String): Flow<Long?> = dao.getSupplierCreditBalance(supplierId)
+
+    fun getTotalSupplierCreditsPayable(): Flow<Long?> = dao.getTotalSupplierCreditsPayable()
 }
 
 @HiltViewModel

@@ -28,6 +28,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.ui.platform.LocalContext
 import com.company.billing.feature.reports.domain.ReportType
+import com.company.billing.core.common.Money
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -102,6 +103,10 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
             ) {
+                val totalSalesSum by viewModel.totalSalesSum.collectAsState()
+                val purchaseCostSum by viewModel.purchaseCostSum.collectAsState()
+                val netProfitSum by viewModel.netProfitSum.collectAsState()
+
                 // Top KPI Statistics Summary Cards
                 Row(
                     modifier = Modifier
@@ -111,23 +116,26 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                 ) {
                     KpiCard(
                         title = "Total Sales",
-                        value = "$2,840.50",
-                        trend = "+12.5%",
-                        isPositive = true,
+                        value = if (totalSalesSum == 0L) "—" else Money(totalSalesSum).toString(),
+                        trend = if (totalSalesSum == 0L) "No sales" else "Live calculated",
+                        isPositive = totalSalesSum > 0L,
+                        showArrow = totalSalesSum > 0L,
                         modifier = Modifier.weight(1f)
                     )
                     KpiCard(
                         title = "Purchase Cost",
-                        value = "$1,950.00",
-                        trend = "+8.1%",
-                        isPositive = true,
+                        value = if (purchaseCostSum == 0L) "—" else Money(purchaseCostSum).toString(),
+                        trend = if (purchaseCostSum == 0L) "No purchases" else "Live calculated",
+                        isPositive = purchaseCostSum > 0L,
+                        showArrow = purchaseCostSum > 0L,
                         modifier = Modifier.weight(1f)
                     )
                     KpiCard(
                         title = "Net Profit",
-                        value = "$890.50",
-                        trend = "+20.4%",
-                        isPositive = true,
+                        value = if (totalSalesSum == 0L && purchaseCostSum == 0L) "—" else Money(netProfitSum).toString(),
+                        trend = if (totalSalesSum == 0L && purchaseCostSum == 0L) "No activity" else if (netProfitSum >= 0) "Profit" else "Loss",
+                        isPositive = netProfitSum >= 0,
+                        showArrow = (totalSalesSum > 0L || purchaseCostSum > 0L),
                         modifier = Modifier.weight(1f)
                     )
                 }
@@ -382,7 +390,8 @@ fun KpiCard(
     value: String,
     trend: String,
     isPositive: Boolean,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    showArrow: Boolean = true
 ) {
     Card(
         modifier = modifier.border(
@@ -414,12 +423,14 @@ fun KpiCard(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
-                Icon(
-                    imageVector = if (isPositive) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                    contentDescription = null,
-                    modifier = Modifier.size(12.dp),
-                    tint = if (isPositive) Color(0xFF0F766E) else Color(0xFFDC2626)
-                )
+                if (showArrow) {
+                    Icon(
+                        imageVector = if (isPositive) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                        contentDescription = null,
+                        modifier = Modifier.size(12.dp),
+                        tint = if (isPositive) Color(0xFF0F766E) else Color(0xFFDC2626)
+                    )
+                }
                 Text(
                     text = trend,
                     fontSize = 10.sp,

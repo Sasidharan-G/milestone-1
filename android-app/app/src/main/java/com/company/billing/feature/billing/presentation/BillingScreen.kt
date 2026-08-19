@@ -42,6 +42,14 @@ fun BillingScreen(viewModel: BillingViewModel) {
     var expandedCustomer by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
 
+    LaunchedEffect(selectedProductId) {
+        val prod = products.find { it.id == selectedProductId }
+        if (prod != null) {
+            priceText = String.format(Locale.US, "%.2f", prod.salePriceMinorUnits / 100.0)
+            quantityText = if (prod.unitType == "KG") "1.000" else "1"
+        }
+    }
+
     val billTotal = lines.fold(Money.Zero) { sum, line -> sum + line.lineTotal }
 
     Scaffold(
@@ -94,13 +102,6 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                 text = { Text("Walk-in Customer") },
                                 onClick = {
                                     viewModel.setCustomer(null)
-                                    expandedCustomer = false
-                                }
-                            )
-                            DropdownMenuItem(
-                                text = { Text("Online Customer") },
-                                onClick = {
-                                    viewModel.setCustomer("online")
                                     expandedCustomer = false
                                 }
                             )
@@ -158,16 +159,16 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         OutlinedTextField(
                             value = quantityText,
                             onValueChange = { quantityText = it },
-                            label = { Text("Qty") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            label = { Text(if (selectedProduct?.unitType == "KG") "Qty (Kg/g)" else "Qty") },
+                            keyboardOptions = KeyboardOptions(keyboardType = if (selectedProduct?.unitType == "KG") KeyboardType.Decimal else KeyboardType.Number),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = priceText,
                             onValueChange = { priceText = it },
-                            label = { Text("Unit Price") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            label = { Text(if (selectedProduct?.unitType == "KG") "Price per Kg" else "Unit Price") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(2f)
                         )
@@ -175,17 +176,25 @@ fun BillingScreen(viewModel: BillingViewModel) {
 
                     Button(
                         onClick = {
-                            val qty = quantityText.toLongOrNull()
+                            val isKg = selectedProduct?.unitType == "KG"
+                            val parsedQty = if (isKg) {
+                                val d = quantityText.toDoubleOrNull()
+                                if (d != null && d > 0.0) (d * 1000).toLong() else null
+                            } else {
+                                quantityText.toLongOrNull()
+                            }
+                            
                             val priceDouble = priceText.toDoubleOrNull()
+                            
                             if (selectedProductId.isBlank() || selectedProduct == null) {
                                 message = "Validation Error: Please select a product first"
-                            } else if (qty == null || qty <= 0) {
-                                message = "Validation Error: Quantity must be a valid number greater than 0"
+                            } else if (parsedQty == null || parsedQty <= 0) {
+                                message = if (isKg) "Validation Error: Weight must be a valid number greater than 0" else "Validation Error: Quantity must be a valid number greater than 0"
                             } else if (priceDouble == null || priceDouble <= 0.0) {
                                 message = "Validation Error: Unit price must be a valid number greater than 0"
                             } else {
                                 val priceMoney = Money((priceDouble * 100).toLong())
-                                viewModel.addLine(selectedProductId, selectedProduct.name, qty, priceMoney)
+                                viewModel.addLine(selectedProductId, selectedProduct.name, parsedQty, priceMoney, selectedProduct.unitType)
                                 selectedProductId = ""
                                 quantityText = "1"
                                 priceText = ""
@@ -222,10 +231,15 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    Column(modifier = Modifier.weight(3f)) {
-                                        Text(line.productName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                        Text("Qty: ${line.quantity} × ${line.unitPrice}", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                    }
+                                     Column(modifier = Modifier.weight(3f)) {
+                                         Text(line.productName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                         val qtyLabel = if (line.unitType == "KG") {
+                                             String.format(Locale.US, "%.3f Kg", line.quantity / 1000.0)
+                                         } else {
+                                             "${line.quantity} Pcs"
+                                         }
+                                         Text("Qty: $qtyLabel × ${line.unitPrice}", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                     }
                                     Text(line.lineTotal.toString(), fontWeight = FontWeight.Bold, fontSize = 13.sp, modifier = Modifier.weight(1.5f))
                                     IconButton(
                                         onClick = { viewModel.removeLine(line.productId) },

@@ -15,11 +15,14 @@ import javax.inject.Inject
 import com.company.billing.core.export.domain.PdfExporter
 import com.company.billing.core.export.domain.ExcelExporter
 
+import com.company.billing.core.database.BillingDatabase
+
 @HiltViewModel
 class ReportsViewModel @Inject constructor(
     private val reportService: ReportService,
     private val pdfExporter: PdfExporter,
-    private val excelExporter: ExcelExporter
+    private val excelExporter: ExcelExporter,
+    private val database: BillingDatabase
 ) : ViewModel() {
 
     private val _selectedType = MutableStateFlow(ReportType.SALE_AMOUNT)
@@ -39,6 +42,15 @@ class ReportsViewModel @Inject constructor(
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
+
+    private val _totalSalesSum = MutableStateFlow(0L)
+    val totalSalesSum: StateFlow<Long> = _totalSalesSum.asStateFlow()
+
+    private val _purchaseCostSum = MutableStateFlow(0L)
+    val purchaseCostSum: StateFlow<Long> = _purchaseCostSum.asStateFlow()
+
+    private val _netProfitSum = MutableStateFlow(0L)
+    val netProfitSum: StateFlow<Long> = _netProfitSum.asStateFlow()
 
     init {
         loadReport()
@@ -60,6 +72,15 @@ class ReportsViewModel @Inject constructor(
             _isLoading.value = true
             _error.value = null
             try {
+                // Query live KPI sums
+                val salesSum = database.reportDao().getTotalSalesSum(_fromEpochMs.value, _toEpochMs.value) ?: 0L
+                val purchasesSum = database.reportDao().getTotalPurchasesSum(_fromEpochMs.value, _toEpochMs.value) ?: 0L
+                val expensesSum = database.reportDao().getTotalExpensesSum(_fromEpochMs.value, _toEpochMs.value) ?: 0L
+
+                _totalSalesSum.value = salesSum
+                _purchaseCostSum.value = purchasesSum
+                _netProfitSum.value = salesSum - purchasesSum - expensesSum
+
                 val query = ReportQuery(
                     type = _selectedType.value,
                     fromEpochMs = _fromEpochMs.value,

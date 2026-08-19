@@ -4,6 +4,8 @@ import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.company.billing.core.preferences.AppPreferences
@@ -24,6 +26,7 @@ import javax.inject.Inject
 import com.company.billing.core.backup.data.BackupManager
 import com.company.billing.core.backup.domain.BackupResult
 import com.company.billing.core.backup.data.GoogleDriveBackupManager
+import com.company.billing.core.backup.data.SupabaseBackupManager
 import com.company.billing.core.sync.SyncScheduler
 
 data class BluetoothDeviceInfo(val name: String, val address: String)
@@ -35,6 +38,7 @@ class SettingsViewModel @Inject constructor(
     private val printerManager: PrinterManager,
     private val backupManager: BackupManager,
     private val googleDriveBackupManager: GoogleDriveBackupManager,
+    private val supabaseBackupManager: SupabaseBackupManager,
     private val syncScheduler: SyncScheduler,
     private val database: com.company.billing.core.database.BillingDatabase,
     private val sessionStore: com.company.billing.core.auth.SessionStore,
@@ -83,6 +87,87 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    val shopName: StateFlow<String> = appPreferences.shopName.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = "My Shop"
+    )
+
+    val ownerName: StateFlow<String> = appPreferences.ownerName.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ""
+    )
+
+    val gstNumber: StateFlow<String> = appPreferences.gstNumber.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ""
+    )
+
+    val shopAddress: StateFlow<String> = appPreferences.shopAddress.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ""
+    )
+
+    val shopPhone: StateFlow<String> = appPreferences.shopPhone.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ""
+    )
+
+    val shopEmail: StateFlow<String> = appPreferences.shopEmail.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ""
+    )
+
+    val shopLogoPath: StateFlow<String> = appPreferences.shopLogoPath.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = ""
+    )
+
+    fun saveShopDetails(name: String, owner: String, gst: String, address: String, phone: String, email: String, logoPath: String) {
+        viewModelScope.launch {
+            appPreferences.saveShopDetails(name, owner, gst, address, phone, email, logoPath)
+        }
+    }
+
+    fun processAndSaveLogo(context: android.content.Context, uri: android.net.Uri): String? {
+        return try {
+            val contentResolver = context.contentResolver
+            var fileSize = 0L
+            contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
+                fileSize = pfd.statSize
+            }
+            if (fileSize > 5 * 1024 * 1024) {
+                return "SIZE_LIMIT_EXCEEDED"
+            }
+
+            val inputStream = contentResolver.openInputStream(uri) ?: return null
+            val originalBitmap = android.graphics.BitmapFactory.decodeStream(inputStream) ?: return null
+            inputStream.close()
+
+            val width = originalBitmap.width
+            val height = originalBitmap.height
+            val scale = 512f / Math.max(width, height)
+            val newWidth = (width * scale).toInt()
+            val newHeight = (height * scale).toInt()
+            val resizedBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, newWidth, newHeight, true)
+
+            val logoFile = java.io.File(context.filesDir, "shop_logo.png")
+            java.io.FileOutputStream(logoFile).use { fos ->
+                resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, fos)
+            }
+            logoFile.absolutePath
+        } catch (e: Exception) {
+            e.printStackTrace()
+            null
+        }
+    }
+
     val googleAccount: StateFlow<String?> = appPreferences.googleAccount.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -97,6 +182,13 @@ class SettingsViewModel @Inject constructor(
 
     init {
         loadPairedBluetoothDevices()
+        viewModelScope.launch {
+            sessionStore.activeSession.collect { session ->
+                if (session != null && session.userId != "admin-user") {
+                    syncScheduler.schedulePeriodicSupabaseBackup()
+                }
+            }
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -236,12 +328,82 @@ class SettingsViewModel @Inject constructor(
 
     fun backupToGoogleDrive() {
         viewModelScope.launch {
+            if (!isNetworkAvailable()) {
+                _driveBackupStatus.value = "Backup failed: No internet connection. Please verify your network."
+                return@launch
+            }
             _driveBackupStatus.value = "Uploading backup to Google Drive..."
             val success = googleDriveBackupManager.uploadBackupToDrive()
             if (success) {
                 _driveBackupStatus.value = "Backup uploaded to Google Drive successfully!"
             } else {
                 _driveBackupStatus.value = "Google Drive backup failed. Ensure you are signed in."
+            }
+        }
+    }
+
+    private val _supabaseBackupStatus = MutableStateFlow<String?>(null)
+    val supabaseBackupStatus: StateFlow<String?> = _supabaseBackupStatus.asStateFlow()
+
+    private val _supabaseBackupsList = MutableStateFlow<List<io.github.jan.supabase.storage.FileObject>>(emptyList())
+    val supabaseBackupsList: StateFlow<List<io.github.jan.supabase.storage.FileObject>> = _supabaseBackupsList.asStateFlow()
+
+    fun backupToSupabase() {
+        viewModelScope.launch {
+            if (!isNetworkAvailable()) {
+                _supabaseBackupStatus.value = "Backup failed: No internet connection."
+                return@launch
+            }
+            _supabaseBackupStatus.value = "Uploading backup to Supabase..."
+            val success = supabaseBackupManager.uploadBackupToSupabase()
+            if (success) {
+                _supabaseBackupStatus.value = "Backup uploaded to Supabase successfully!"
+                fetchSupabaseBackups()
+            } else {
+                _supabaseBackupStatus.value = "Supabase backup failed. Ensure you are online and logged in."
+            }
+        }
+    }
+
+    fun fetchSupabaseBackups() {
+        viewModelScope.launch {
+            if (!isNetworkAvailable()) {
+                _supabaseBackupStatus.value = "Fetch failed: No internet connection."
+                return@launch
+            }
+            _supabaseBackupStatus.value = "Fetching backups from Supabase..."
+            val files = supabaseBackupManager.listBackupsFromSupabase()
+            _supabaseBackupsList.value = files.sortedByDescending { it.name }
+            if (files.isEmpty()) {
+                _supabaseBackupStatus.value = "No backups found in Supabase Storage."
+            } else {
+                _supabaseBackupStatus.value = "Loaded ${files.size} backups."
+            }
+        }
+    }
+
+    fun restoreFromSupabase(fileName: String, onFinished: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            if (!isNetworkAvailable()) {
+                _supabaseBackupStatus.value = "Restore failed: No internet connection."
+                onFinished(false)
+                return@launch
+            }
+            _supabaseBackupStatus.value = "Downloading database from Supabase..."
+            val bytes = supabaseBackupManager.downloadBackupFromSupabase(fileName)
+            if (bytes == null) {
+                _supabaseBackupStatus.value = "Download failed from Supabase."
+                onFinished(false)
+                return@launch
+            }
+            _supabaseBackupStatus.value = "Restoring database backup..."
+            val success = backupManager.restoreBackup(bytes)
+            if (success) {
+                _supabaseBackupStatus.value = "Database restored successfully from Supabase!"
+                onFinished(true)
+            } else {
+                _supabaseBackupStatus.value = "Restore failed: Invalid checksum or corrupted backup file."
+                onFinished(false)
             }
         }
     }
@@ -300,6 +462,10 @@ class SettingsViewModel @Inject constructor(
 
     fun fetchDriveBackups() {
         viewModelScope.launch {
+            if (!isNetworkAvailable()) {
+                _driveBackupStatus.value = "Fetch failed: No internet connection. Please verify your network."
+                return@launch
+            }
             _driveBackupStatus.value = "Fetching backups from Google Drive..."
             val files = googleDriveBackupManager.listBackupsFromDrive()
             // Sort by createdTime descending
@@ -314,6 +480,11 @@ class SettingsViewModel @Inject constructor(
 
     fun restoreFromGoogleDrive(fileId: String, onFinished: (Boolean) -> Unit) {
         viewModelScope.launch {
+            if (!isNetworkAvailable()) {
+                _driveBackupStatus.value = "Restore failed: No internet connection. Please verify your network."
+                onFinished(false)
+                return@launch
+            }
             _driveBackupStatus.value = "Downloading database from Google Drive..."
             val bytes = googleDriveBackupManager.downloadBackupFromDrive(fileId)
             if (bytes == null) {
@@ -343,5 +514,12 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             appPreferences.saveThemeMode(mode)
         }
+    }
+
+    private fun isNetworkAvailable(): Boolean {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        val activeNetwork = connectivityManager?.activeNetwork ?: return false
+        val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
+        return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
     }
 }

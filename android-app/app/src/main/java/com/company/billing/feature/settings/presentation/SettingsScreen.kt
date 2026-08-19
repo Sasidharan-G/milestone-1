@@ -2,6 +2,7 @@ package com.company.billing.feature.settings.presentation
 
 import com.company.billing.core.ui.LocalLayoutMode
 import com.company.billing.core.auth.UserEntity
+import kotlinx.serialization.json.jsonPrimitive
 import com.company.billing.core.security.Permission
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
@@ -12,11 +13,16 @@ import com.google.android.gms.common.api.ApiException
 import com.google.api.services.drive.DriveScopes
 import androidx.compose.ui.platform.LocalContext
 
+import androidx.activity.compose.BackHandler
+import android.graphics.BitmapFactory
+import androidx.compose.ui.graphics.asImageBitmap
+import java.io.File
 import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -25,6 +31,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -33,9 +47,23 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
+enum class SettingsCategory(val title: String, val icon: ImageVector, val shortSummary: String) {
+    SHOP_PROFILE("Shop Profile", Icons.Default.Home, "Name, GST, Address"),
+    PRINTER("Printer & Diagn.", Icons.Default.Build, "Paper width, Bluetooth pairing"),
+    CLOUD_BACKUP("Cloud Backup", Icons.Default.Share, "Supabase backups & restores"),
+    STAFF("Staff & Users", Icons.Default.Person, "Manage logins & permissions"),
+    DISPLAY("Display & Theme", Icons.Default.Settings, "Screen modes & light/dark"),
+    MAINTENANCE("Maintenance", Icons.Default.Delete, "Imports/Exports & Database reset")
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(viewModel: SettingsViewModel) {
+    var activeCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+    BackHandler(enabled = activeCategory != null) {
+        activeCategory = null
+    }
+
     val printerType by viewModel.printerType.collectAsState()
     val layoutModePref by viewModel.layoutMode.collectAsState()
     val printerDeviceId by viewModel.printerDeviceId.collectAsState()
@@ -109,10 +137,43 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         }
     }
 
+    val brandingShopName by viewModel.shopName.collectAsState()
+    val brandingLogoPath by viewModel.shopLogoPath.collectAsState()
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings & Maintenance", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                title = {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        val logoFile = File(brandingLogoPath)
+                        if (logoFile.exists()) {
+                            val bitmap = remember(brandingLogoPath) {
+                                try { BitmapFactory.decodeFile(logoFile.absolutePath) } catch (ignored: Exception) { null }
+                            }
+                            if (bitmap != null) {
+                                Card(
+                                    shape = RoundedCornerShape(18.dp),
+                                    modifier = Modifier.size(36.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) {
+                                    Image(
+                                        bitmap = bitmap.asImageBitmap(),
+                                        contentDescription = "Shop logo branding",
+                                        modifier = Modifier.fillMaxSize()
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = brandingShopName.ifBlank { "Settings & Maintenance" },
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
             )
         }
@@ -132,36 +193,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 else -> maxWidth < 600.dp
             }
 
-            val googleDriveCard: @Composable (Modifier) -> Unit = { modifier ->
-                val googleAccount by viewModel.googleAccount.collectAsState()
-                val driveBackupStatus by viewModel.driveBackupStatus.collectAsState()
-                val context = LocalContext.current
-
-                val gso = remember {
-                    GoogleSignInOptions.Builder(GoogleSignInOptions.DEFAULT_SIGN_IN)
-                        .requestEmail()
-                        .requestScopes(Scope(DriveScopes.DRIVE_APPDATA))
-                        .build()
-                }
-                val signInClient = remember { GoogleSignIn.getClient(context, gso) }
-                var errorMessage by remember { mutableStateOf("") }
-
-                val signInLauncher = rememberLauncherForActivityResult(
-                    contract = ActivityResultContracts.StartActivityForResult()
-                ) { result ->
-                    val task = GoogleSignIn.getSignedInAccountFromIntent(result.data)
-                    try {
-                        val account = task.getResult(ApiException::class.java)
-                        viewModel.linkGoogleAccount(account?.email)
-                        errorMessage = ""
-                    } catch (e: ApiException) {
-                        e.printStackTrace()
-                        errorMessage = "Sign-In Failed (Code: ${e.statusCode}). Make sure the app's SHA-1 is registered in Google Cloud Console."
-                    } catch (e: Exception) {
-                        e.printStackTrace()
-                        errorMessage = "Sign-In Failed: ${e.message}"
-                    }
-                }
+            val supabaseBackupCard: @Composable (Modifier) -> Unit = { modifier ->
+                val supabaseBackupStatus by viewModel.supabaseBackupStatus.collectAsState()
 
                 Card(
                     modifier = modifier.border(
@@ -177,47 +210,23 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("Google Drive Auto-Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Supabase Cloud Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text(
-                            "Automatically backup your transaction database to your personal Google Drive account in a secure app-specific folder.",
+                            "Automatically backup your transaction database to your secure Supabase Storage bucket.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
-                        if (!googleAccount.isNullOrBlank()) {
+                        val currentSession = session
+                        if (currentSession != null) {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text("Linked Account", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                    Text(googleAccount!!, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                }
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Column(
-                                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                                    horizontalAlignment = Alignment.End
-                                ) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            signInClient.signOut().addOnCompleteListener {
-                                                signInLauncher.launch(signInClient.signInIntent)
-                                            }
-                                        },
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Text("Switch Account")
-                                    }
-                                    TextButton(
-                                        onClick = {
-                                            signInClient.signOut().addOnCompleteListener {
-                                                viewModel.linkGoogleAccount(null)
-                                            }
-                                        }
-                                    ) {
-                                        Text("Disconnect", color = MaterialTheme.colorScheme.error)
-                                    }
+                                    Text("Signed-In User", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text(currentSession.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                             }
 
@@ -226,7 +235,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 Button(
-                                    onClick = { viewModel.backupToGoogleDrive() },
+                                    onClick = { viewModel.backupToSupabase() },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
@@ -237,7 +246,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
                                 OutlinedButton(
                                     onClick = {
-                                        viewModel.fetchDriveBackups()
+                                        viewModel.fetchSupabaseBackups()
                                         showBackupsDialog = true
                                     },
                                     modifier = Modifier.weight(1f),
@@ -247,33 +256,38 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                 }
 
                                 if (showBackupsDialog) {
-                                    val backupsList by viewModel.driveBackupsList.collectAsState()
+                                    val backupsList by viewModel.supabaseBackupsList.collectAsState()
                                     AlertDialog(
                                         onDismissRequest = { showBackupsDialog = false },
-                                        title = { Text("Restore from Google Drive") },
+                                        title = { Text("Restore from Supabase Storage") },
                                         text = {
                                             Column(
                                                 verticalArrangement = Arrangement.spacedBy(8.dp),
                                                 modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState())
                                             ) {
                                                 if (backupsList.isEmpty()) {
-                                                    Text("No backup files found. Click fetch to reload.")
+                                                    Text("No backup files found. Click refresh to check again.")
                                                 } else {
                                                     backupsList.forEach { file ->
-                                                        val formattedTime = remember(file.createdTime) {
-                                                            if (file.createdTime != null) {
+                                                        val timestampStr = file.name.substringAfter("billing_backup_").substringBefore(".zip")
+                                                        val formattedTime = remember(file.name) {
+                                                            try {
+                                                                val ts = timestampStr.toLong()
                                                                 java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault())
-                                                                    .format(java.util.Date(file.createdTime.value))
-                                                            } else {
+                                                                    .format(java.util.Date(ts))
+                                                            } catch (e: Exception) {
                                                                 "Unknown Date"
                                                             }
                                                         }
-                                                        val sizeKb = (file.getSize() ?: 0L) / 1024
+                                                        val sizeBytes = file.metadata?.get("size")?.jsonPrimitive?.content?.toLongOrNull() 
+                                                            ?: file.metadata?.get("size")?.toString()?.toLongOrNull() 
+                                                            ?: 0L
+                                                        val sizeKb = sizeBytes / 1024
                                                         Card(
                                                             modifier = Modifier.fillMaxWidth(),
                                                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
                                                             onClick = {
-                                                                viewModel.restoreFromGoogleDrive(file.id) { success ->
+                                                                viewModel.restoreFromSupabase(file.name) { success ->
                                                                     if (success) {
                                                                         showBackupsDialog = false
                                                                     }
@@ -296,7 +310,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                             }
                                         },
                                         confirmButton = {
-                                            TextButton(onClick = { viewModel.fetchDriveBackups() }) {
+                                            TextButton(onClick = { viewModel.fetchSupabaseBackups() }) {
                                                 Text("Refresh")
                                             }
                                         },
@@ -309,18 +323,15 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                 }
                             }
                         } else {
-                            Button(
-                                onClick = {
-                                    signInLauncher.launch(signInClient.signInIntent)
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(8.dp)
+                            Box(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                                contentAlignment = Alignment.Center
                             ) {
-                                Text("Link Google Account", fontWeight = FontWeight.Bold)
+                                Text("Offline: Login online to enable Supabase Cloud Backups.", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
                             }
                         }
 
-                        if (!driveBackupStatus.isNullOrBlank()) {
+                        if (!supabaseBackupStatus.isNullOrBlank()) {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                 modifier = Modifier
@@ -332,21 +343,12 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     )
                             ) {
                                 Text(
-                                    text = driveBackupStatus!!,
+                                    text = supabaseBackupStatus!!,
                                     fontSize = 12.sp,
                                     modifier = Modifier.padding(12.dp),
                                     fontWeight = FontWeight.Medium
                                 )
                             }
-                        }
-
-                        if (errorMessage.isNotBlank()) {
-                            Text(errorMessage, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                            Text(
-                                "Setup Guide:\n1. Register package com.company.billing in Google Cloud Console.\n2. Add your SHA-1 certificate fingerprint.\n3. Enable the Google Drive API in Google Cloud APIs library.",
-                                fontSize = 11.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
                         }
                     }
                 }
@@ -371,7 +373,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         Text(
                             "Choose whether the app layout forces a mobile stacked view, a tablet split view, or adapts automatically to screen size.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
                         var currentLayoutMode by remember { mutableStateOf("Auto") }
@@ -431,7 +433,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         Text(
                             "Choose whether the app uses a light theme, dark theme, or matches the system setting dynamically.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
                         var currentThemeMode by remember { mutableStateOf("System") }
@@ -611,7 +613,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         Text(
                             "Verify physical print output by dispatching a standard ESC/POS ticket payload to your connected hardware.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            color = MaterialTheme.colorScheme.onSurface,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
 
@@ -673,7 +675,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         Text(
                             "Create staff logins, assign specific screen permissions, and reset user passwords here.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
                         Column(
@@ -773,7 +775,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         Text(
                             "Create a local, transaction-safe compressed backup archive of your billing database. You can restore this backup on this or other devices to recover transactions.",
                             fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.outline
+                            color = MaterialTheme.colorScheme.onSurface
                         )
 
                         if (isMobile) {
@@ -853,6 +855,286 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 }
             }
 
+            val shopDetailsCard: @Composable (Modifier) -> Unit = { modifier ->
+                val context = LocalContext.current
+                val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                val currentShopName by viewModel.shopName.collectAsState()
+                val currentOwnerName by viewModel.ownerName.collectAsState()
+                val currentGstNumber by viewModel.gstNumber.collectAsState()
+                val currentShopAddress by viewModel.shopAddress.collectAsState()
+                val currentShopPhone by viewModel.shopPhone.collectAsState()
+                val currentShopEmail by viewModel.shopEmail.collectAsState()
+                val currentShopLogoPath by viewModel.shopLogoPath.collectAsState()
+
+                var inputShopName by remember { mutableStateOf("") }
+                var inputOwnerName by remember { mutableStateOf("") }
+                var inputGstNumber by remember { mutableStateOf("") }
+                var inputShopAddress by remember { mutableStateOf("") }
+                var inputShopPhone by remember { mutableStateOf("") }
+                var inputShopEmail by remember { mutableStateOf("") }
+                var inputShopLogoPath by remember { mutableStateOf("") }
+
+                var isProcessingImage by remember { mutableStateOf(false) }
+
+                LaunchedEffect(currentShopName, currentOwnerName, currentGstNumber, currentShopAddress, currentShopPhone, currentShopEmail, currentShopLogoPath) {
+                    inputShopName = currentShopName
+                    inputOwnerName = currentOwnerName
+                    inputGstNumber = currentGstNumber
+                    inputShopAddress = currentShopAddress
+                    inputShopPhone = currentShopPhone
+                    inputShopEmail = currentShopEmail
+                    inputShopLogoPath = currentShopLogoPath
+                }
+
+                val logoPickerLauncher = rememberLauncherForActivityResult(
+                    contract = ActivityResultContracts.GetContent()
+                ) { uri: android.net.Uri? ->
+                    if (uri != null) {
+                        val type = context.contentResolver.getType(uri)
+                        if (type != "image/png" && type != "image/jpeg" && type != "image/jpg") {
+                            android.widget.Toast.makeText(context, "Invalid File Type: Only PNG, JPG, or JPEG images are accepted!", android.widget.Toast.LENGTH_LONG).show()
+                            return@rememberLauncherForActivityResult
+                        }
+
+                        isProcessingImage = true
+                        val res = viewModel.processAndSaveLogo(context, uri)
+                        isProcessingImage = false
+
+                        if (res == "SIZE_LIMIT_EXCEEDED") {
+                            android.widget.Toast.makeText(context, "Oversized Image: Maximum limit is 5MB!", android.widget.Toast.LENGTH_LONG).show()
+                        } else if (res != null) {
+                            inputShopLogoPath = res
+                            android.widget.Toast.makeText(context, "Logo processed successfully. Preview below!", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            android.widget.Toast.makeText(context, "Image Processing Failure: Failed to load image.", android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+
+                val isEmailValid = remember(inputShopEmail) {
+                    inputShopEmail.isEmpty() || android.util.Patterns.EMAIL_ADDRESS.matcher(inputShopEmail).matches()
+                }
+
+                val logoFile = File(inputShopLogoPath)
+                val bitmap = remember(inputShopLogoPath) {
+                    if (logoFile.exists()) {
+                        try {
+                            BitmapFactory.decodeFile(logoFile.absolutePath)
+                        } catch (e: Exception) {
+                            null
+                        }
+                    } else {
+                        null
+                    }
+                }
+
+                Card(
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Shop Details Customization", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text(
+                            "Configure your shop details, email contact, and brand logo. These details will be printed on all generated PDF invoices.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+
+                        OutlinedTextField(
+                            value = inputShopName,
+                            onValueChange = { inputShopName = it },
+                            label = { Text("Shop Name") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = inputOwnerName,
+                            onValueChange = { inputOwnerName = it },
+                            label = { Text("Owner Name") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = inputGstNumber,
+                            onValueChange = { inputGstNumber = it },
+                            label = { Text("GST Number") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = inputShopAddress,
+                            onValueChange = { inputShopAddress = it },
+                            label = { Text("Shop Address") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = false,
+                            maxLines = 3,
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = inputShopPhone,
+                            onValueChange = { inputShopPhone = it },
+                            label = { Text("Shop Phone Number") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Phone),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = inputShopEmail,
+                            onValueChange = { inputShopEmail = it },
+                            label = { Text("Shop Email ID") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true,
+                            isError = !isEmailValid,
+                            supportingText = {
+                                if (!isEmailValid) {
+                                    Text("Invalid email format (e.g. shop@email.com)", color = MaterialTheme.colorScheme.error)
+                                }
+                            },
+                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email),
+                            shape = RoundedCornerShape(12.dp)
+                        )
+
+                        // Logo upload section
+                        Text("Shop Brand Logo", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                        
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = { logoPickerLauncher.launch("image/*") },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Default.Add, contentDescription = null)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Upload Logo")
+                            }
+
+                            if (isProcessingImage) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            }
+                        }
+
+                        if (inputShopLogoPath.isNotEmpty() && bitmap != null) {
+                            Text("Logo & App Icon Preview Mockup", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                            
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                    Text("Original", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                    Spacer(Modifier.height(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(72.dp)
+                                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                            .padding(4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = "Original logo preview",
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                    Text("Compressed", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                    Spacer(Modifier.height(4.dp))
+                                    Box(
+                                        modifier = Modifier
+                                            .size(72.dp)
+                                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                            .padding(4.dp),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Image(
+                                            bitmap = bitmap.asImageBitmap(),
+                                            contentDescription = "Compressed logo preview",
+                                            modifier = Modifier.fillMaxSize()
+                                        )
+                                    }
+                                }
+
+                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
+                                    Text("App Icon", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                    Spacer(Modifier.height(4.dp))
+                                    Card(
+                                        modifier = Modifier.size(72.dp),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .fillMaxSize()
+                                                .padding(8.dp),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Image(
+                                                bitmap = bitmap.asImageBitmap(),
+                                                contentDescription = "App launcher icon mockup",
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+
+                            TextButton(
+                                onClick = {
+                                    inputShopLogoPath = ""
+                                },
+                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                            ) {
+                                Text("Remove Logo")
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                val gstTrimmed = inputGstNumber.trim()
+                                if (gstTrimmed.isNotEmpty() && gstTrimmed.length != 15) {
+                                    android.widget.Toast.makeText(context, "Validation Error: GST Number must be exactly 15 characters!", android.widget.Toast.LENGTH_LONG).show()
+                                } else if (!isEmailValid) {
+                                    android.widget.Toast.makeText(context, "Validation Error: Please enter a valid Email ID!", android.widget.Toast.LENGTH_LONG).show()
+                                } else {
+                                    viewModel.saveShopDetails(inputShopName, inputOwnerName, gstTrimmed, inputShopAddress, inputShopPhone, inputShopEmail, inputShopLogoPath)
+                                    keyboardController?.hide()
+                                    android.widget.Toast.makeText(context, "Shop details saved successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier.align(Alignment.End),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Save Shop Details", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -860,43 +1142,127 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                if (isMobile) {
-                    printerPreferencesCard(Modifier.fillMaxWidth())
-                    printerDiagnosticsCard(Modifier.fillMaxWidth())
-                    layoutModeCard(Modifier.fillMaxWidth())
-                    themePreferencesCard(Modifier.fillMaxWidth())
-                    googleDriveCard(Modifier.fillMaxWidth())
-                    if (hasUserManagePermission) {
-                        userManagementCard(Modifier.fillMaxWidth())
+                if (activeCategory == null) {
+                    val categories = remember(hasUserManagePermission) {
+                        listOfNotNull(
+                            SettingsCategory.SHOP_PROFILE,
+                            SettingsCategory.PRINTER,
+                            SettingsCategory.CLOUD_BACKUP,
+                            if (hasUserManagePermission) SettingsCategory.STAFF else null,
+                            SettingsCategory.DISPLAY,
+                            SettingsCategory.MAINTENANCE
+                        )
                     }
-                    dbMaintenanceCard(Modifier.fillMaxWidth())
-                } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().height(480.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        printerPreferencesCard(Modifier.weight(1.5f).fillMaxHeight())
-                        printerDiagnosticsCard(Modifier.weight(1.5f).fillMaxHeight())
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        layoutModeCard(Modifier.weight(1f))
-                        themePreferencesCard(Modifier.weight(1f))
-                    }
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        googleDriveCard(Modifier.weight(1f))
-                        if (hasUserManagePermission) {
-                            userManagementCard(Modifier.weight(1f))
-                        } else {
-                            Spacer(Modifier.weight(1f))
+
+                    val columns = if (isMobile) 2 else 3
+                    val rows = categories.chunked(columns)
+
+                    rows.forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                        ) {
+                            rowItems.forEach { cat ->
+                                Card(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(130.dp)
+                                        .clickable(
+                                            onClickLabel = "Open ${cat.title} category",
+                                            onClick = { activeCategory = cat }
+                                        )
+                                        .border(
+                                            width = 1.dp,
+                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                            shape = RoundedCornerShape(16.dp)
+                                        ),
+                                    shape = RoundedCornerShape(16.dp),
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .padding(12.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center
+                                    ) {
+                                        Icon(
+                                            imageVector = cat.icon,
+                                            contentDescription = null,
+                                            tint = MaterialTheme.colorScheme.primary,
+                                            modifier = Modifier.size(36.dp)
+                                        )
+                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Text(
+                                            text = cat.title,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 14.sp,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Text(
+                                            text = cat.shortSummary,
+                                            fontSize = 10.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
+                                }
+                            }
+                            if (rowItems.size < columns) {
+                                repeat(columns - rowItems.size) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
                         }
                     }
-                    dbMaintenanceCard(Modifier.fillMaxWidth())
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        IconButton(onClick = { activeCategory = null }) {
+                            Icon(
+                                imageVector = Icons.Default.ArrowBack,
+                                contentDescription = "Go back to settings dashboard"
+                            )
+                        }
+                        Text(
+                            text = activeCategory!!.title,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    when (activeCategory) {
+                        SettingsCategory.SHOP_PROFILE -> {
+                            shopDetailsCard(Modifier.fillMaxWidth())
+                        }
+                        SettingsCategory.PRINTER -> {
+                            printerPreferencesCard(Modifier.fillMaxWidth())
+                            Spacer(modifier = Modifier.height(16.dp))
+                            printerDiagnosticsCard(Modifier.fillMaxWidth())
+                        }
+                        SettingsCategory.CLOUD_BACKUP -> {
+                            supabaseBackupCard(Modifier.fillMaxWidth())
+                        }
+                        SettingsCategory.STAFF -> {
+                            userManagementCard(Modifier.fillMaxWidth())
+                        }
+                        SettingsCategory.DISPLAY -> {
+                            layoutModeCard(Modifier.fillMaxWidth())
+                            Spacer(modifier = Modifier.height(16.dp))
+                            themePreferencesCard(Modifier.fillMaxWidth())
+                        }
+                        SettingsCategory.MAINTENANCE -> {
+                            dbMaintenanceCard(Modifier.fillMaxWidth())
+                        }
+                        null -> {}
+                    }
                 }
             }
         }
@@ -965,6 +1331,8 @@ fun AddUserDialog(
             Button(onClick = {
                 if (username.isBlank() || displayName.isBlank() || password.isBlank()) {
                     errorMsg = "Please fill in all fields"
+                } else if (password.length < 6) {
+                    errorMsg = "Password must be at least 6 characters for security"
                 } else {
                     val pSet = buildSet {
                         if (accessMasters) {

@@ -149,4 +149,13 @@ interface ReportDao {
         ORDER BY createdAtEpochMs DESC
     """)
     suspend fun getExpensesReport(fromEpochMs: Long?, toEpochMs: Long?): List<ExpenseReportRow>
+
+    @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE (:fromEpochMs IS NULL OR createdAtEpochMs >= :fromEpochMs) AND (:toEpochMs IS NULL OR createdAtEpochMs <= :toEpochMs)")
+    suspend fun getTotalSalesSum(fromEpochMs: Long?, toEpochMs: Long?): Long?
+
+    @Query("SELECT SUM(totalMinorUnits) FROM purchases WHERE (:fromEpochMs IS NULL OR createdAtEpochMs >= :fromEpochMs) AND (:toEpochMs IS NULL OR createdAtEpochMs <= :toEpochMs)")
+    suspend fun getTotalPurchasesSum(fromEpochMs: Long?, toEpochMs: Long?): Long?
+
+    @Query("SELECT SUM(amountMinorUnits) FROM expenses WHERE (:fromEpochMs IS NULL OR createdAtEpochMs >= :fromEpochMs) AND (:toEpochMs IS NULL OR createdAtEpochMs <= :toEpochMs)")
+    suspend fun getTotalExpensesSum(fromEpochMs: Long?, toEpochMs: Long?): Long?
 }

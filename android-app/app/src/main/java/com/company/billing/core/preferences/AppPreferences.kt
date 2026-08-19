@@ -74,5 +74,38 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             it[themeModeKey] = mode
         }
     }
+
+    private val shopNameKey = stringPreferencesKey("shop_name")
+    val shopName: Flow<String> = dataStore.data.map { it[shopNameKey] ?: "My Shop" }
+
+    private val ownerNameKey = stringPreferencesKey("owner_name")
+    val ownerName: Flow<String> = dataStore.data.map { it[ownerNameKey] ?: "" }
+
+    private val gstNumberKey = stringPreferencesKey("gst_number")
+    val gstNumber: Flow<String> = dataStore.data.map { it[gstNumberKey] ?: "" }
+
+    private val shopAddressKey = stringPreferencesKey("shop_address")
+    val shopAddress: Flow<String> = dataStore.data.map { it[shopAddressKey] ?: "" }
+
+    private val shopPhoneKey = stringPreferencesKey("shop_phone")
+    val shopPhone: Flow<String> = dataStore.data.map { it[shopPhoneKey] ?: "" }
+
+    private val shopEmailKey = stringPreferencesKey("shop_email")
+    val shopEmail: Flow<String> = dataStore.data.map { it[shopEmailKey] ?: "" }
+
+    private val shopLogoPathKey = stringPreferencesKey("shop_logo_path")
+    val shopLogoPath: Flow<String> = dataStore.data.map { it[shopLogoPathKey] ?: "" }
+
+    suspend fun saveShopDetails(name: String, owner: String, gst: String, address: String, phone: String, email: String, logoPath: String) {
+        dataStore.edit {
+            it[shopNameKey] = name
+            it[ownerNameKey] = owner
+            it[gstNumberKey] = gst
+            it[shopAddressKey] = address
+            it[shopPhoneKey] = phone
+            it[shopEmailKey] = email
+            it[shopLogoPathKey] = logoPath
+        }
+    }
 }
 

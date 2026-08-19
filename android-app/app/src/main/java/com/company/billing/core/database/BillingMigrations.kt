@@ -47,4 +47,23 @@ val migration6To7 = object : Migration(6, 7) {
         db.execSQL("ALTER TABLE `suppliers` ADD COLUMN `address` TEXT")
     }
 }
+val migration7To8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `products` ADD COLUMN `purchasePriceMinorUnits` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `products` ADD COLUMN `salePriceMinorUnits` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `products` ADD COLUMN `unitType` TEXT NOT NULL DEFAULT 'PIECE'")
+    }
+}
+
+val migration8To9 = object : Migration(8, 9) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `customers` ADD COLUMN `creditLimitMinorUnits` INTEGER NOT NULL DEFAULT 0")
+        
+        db.execSQL("CREATE TABLE IF NOT EXISTS `customer_credits` (`id` TEXT NOT NULL, `customerId` TEXT NOT NULL, `amountMinorUnits` INTEGER NOT NULL, `reason` TEXT NOT NULL, `dateEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_customer_credits_customerId` ON `customer_credits` (`customerId`)")
+        
+        db.execSQL("CREATE TABLE IF NOT EXISTS `supplier_credits` (`id` TEXT NOT NULL, `supplierId` TEXT NOT NULL, `amountMinorUnits` INTEGER NOT NULL, `terms` TEXT NOT NULL, `dueDateEpochMs` INTEGER NOT NULL, `dateEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_supplier_credits_supplierId` ON `supplier_credits` (`supplierId`)")
+    }
+}
 

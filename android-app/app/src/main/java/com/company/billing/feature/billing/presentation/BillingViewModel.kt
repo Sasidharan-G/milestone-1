@@ -20,13 +20,15 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.company.billing.core.sharing.ShareManager
+import com.company.billing.core.preferences.AppPreferences
 import kotlinx.coroutines.flow.first
 
 @HiltViewModel
 class BillingViewModel @Inject constructor(
     private val database: BillingDatabase,
     private val saleRepository: SaleRepository,
-    private val shareManager: ShareManager
+    private val shareManager: ShareManager,
+    private val appPreferences: AppPreferences
 ) : ViewModel() {
 
     private val masterDao = database.masterDao()
@@ -51,14 +53,14 @@ class BillingViewModel @Inject constructor(
         _selectedCustomerId.value = customerId
     }
 
-    fun addLine(productId: String, productName: String, quantity: Long, unitPrice: Money) {
+    fun addLine(productId: String, productName: String, quantity: Long, unitPrice: Money, unitType: String) {
         val current = _lines.value.toMutableList()
         val index = current.indexOfFirst { it.productId == productId }
         if (index >= 0) {
             val line = current[index]
             current[index] = line.copy(quantity = line.quantity + quantity)
         } else {
-            current.add(SaleLine(productId, productName, quantity, unitPrice))
+            current.add(SaleLine(productId, productName, quantity, unitPrice, unitType))
         }
         _lines.value = current
     }
@@ -106,28 +108,40 @@ class BillingViewModel @Inject constructor(
             val saleList = saleDao.getSales().first()
             val sale = saleList.find { it.billNumber == billNumber } ?: return@launch
             val items = saleDao.getSaleItems(sale.id).first()
+            val productsList = masterDao.products("").first()
+            val productsMap = productsList.associateBy { it.id }
             
-            val summary = StringBuilder().apply {
-                appendLine("INVOICE SUMMARY - ${sale.billNumber}")
-                appendLine("Date: ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", java.util.Locale.getDefault()).format(java.util.Date(sale.createdAtEpochMs))}")
-                appendLine("---------------------------")
-                for (item in items) {
-                    // Try to resolve product name from DB or use ID
-                    val pName = masterDao.products("").first().find { it.id == item.productId }?.name ?: "Product"
-                    appendLine("$pName:")
-                    appendLine("  ${item.quantity} x ${com.company.billing.core.common.Money(item.unitPriceMinorUnits)} = ${com.company.billing.core.common.Money(item.lineTotalMinorUnits)}")
-                }
-                appendLine("---------------------------")
-                appendLine("TOTAL: ${com.company.billing.core.common.Money(sale.totalMinorUnits)}")
-                appendLine("Thank you for your business!")
-            }.toString()
-
-            if (isWhatsapp) {
-                val customer = sale.customerId?.let { masterDao.getCustomerById(it) }
-                val phone = customer?.phone
-                shareManager.shareTextToWhatsApp(summary, phone)
+            val shopName = appPreferences.shopName.first()
+            val ownerName = appPreferences.ownerName.first()
+            val gstNumber = appPreferences.gstNumber.first()
+            val shopAddress = appPreferences.shopAddress.first()
+            val shopPhone = appPreferences.shopPhone.first()
+            
+            val customerName = if (sale.customerId == null) {
+                "Walk-in Customer"
+            } else if (sale.customerId == "online") {
+                "Online Customer"
             } else {
-                shareManager.shareText(summary, null)
+                masterDao.getCustomerById(sale.customerId)?.name ?: "Walk-in Customer"
+            }
+            
+            val pdfBytes = shareManager.generatePdfInvoice(
+                sale = sale,
+                items = items,
+                productsMap = productsMap,
+                customerName = customerName,
+                shopName = shopName,
+                ownerName = ownerName,
+                gstNumber = gstNumber,
+                shopAddress = shopAddress,
+                shopPhone = shopPhone
+            )
+            
+            val filename = "invoice_${sale.billNumber.replace("-", "_")}.pdf"
+            if (isWhatsapp) {
+                shareManager.shareFile(pdfBytes, filename, "application/pdf", ShareManager.PACKAGE_WHATSAPP)
+            } else {
+                shareManager.shareFile(pdfBytes, filename, "application/pdf", null)
             }
         }
     }

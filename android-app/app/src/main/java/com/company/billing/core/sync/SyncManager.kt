@@ -24,6 +24,9 @@ class SyncManager(
             "id" to product.id,
             "name" to product.name,
             "categoryId" to product.categoryId,
+            "purchasePriceMinorUnits" to product.purchasePriceMinorUnits,
+            "salePriceMinorUnits" to product.salePriceMinorUnits,
+            "unitType" to product.unitType,
             "createdAtEpochMs" to product.createdAtEpochMs,
             "updatedAtEpochMs" to product.updatedAtEpochMs
         ))
