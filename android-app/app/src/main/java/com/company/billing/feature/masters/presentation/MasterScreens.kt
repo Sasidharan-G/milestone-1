@@ -37,6 +37,7 @@ import com.company.billing.feature.masters.data.ProductEntity
 import com.company.billing.feature.masters.data.ExpenseEntity
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.ExperimentalFoundationApi
 
 @Composable
 fun MasterGridCard(
@@ -2483,7 +2484,7 @@ fun SupplierCreditDetailDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierViewModel) {
     val customers by customerVm.customers.collectAsState()
@@ -2518,173 +2519,192 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
         )
     }
 
-    Column(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Card(
-                modifier = Modifier.weight(1f),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
-                shape = RoundedCornerShape(16.dp)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        // 1. Content Above Search Bar (normal scrollable item)
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Total Customer Credits Receivable", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(Money(totalRec ?: 0L).toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                }
-            }
-            Card(
-                modifier = Modifier.weight(1f),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text("Total Supplier Credits Payable", fontSize = 11.sp, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f))
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(Money(totalPay ?: 0L).toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
-                }
-            }
-        }
-
-        TabRow(selectedTabIndex = viewMode) {
-            Tab(selected = viewMode == 0, onClick = { viewMode = 0; statusFilter = 0; search = "" }, text = { Text("Customer Credits") })
-            Tab(selected = viewMode == 1, onClick = { viewMode = 1; statusFilter = 0; search = "" }, text = { Text("Supplier Credits") })
-        }
-
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            OutlinedTextField(
-                value = search,
-                onValueChange = { search = it },
-                label = { Text("Search by name") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier.weight(1f)
-            )
-            
-            var dropdownExpanded by remember { mutableStateOf(false) }
-            val filterLabel = when(statusFilter) {
-                1 -> "With Balance"
-                2 -> if (viewMode == 0) "Exceeded Limit" else "Overdue"
-                else -> "All Balances"
-            }
-            
-            Box {
-                Button(
-                    onClick = { dropdownExpanded = true },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    shape = RoundedCornerShape(16.dp)
                 ) {
-                    Text(filterLabel)
-                    Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Total Customer Credits Receivable", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(Money(totalRec ?: 0L).toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
                 }
-                DropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
-                    DropdownMenuItem(text = { Text("All Balances") }, onClick = { statusFilter = 0; dropdownExpanded = false })
-                    DropdownMenuItem(text = { Text("With Balance") }, onClick = { statusFilter = 1; dropdownExpanded = false })
-                    DropdownMenuItem(text = { Text(if (viewMode == 0) "Exceeded Limit" else "Overdue") }, onClick = { statusFilter = 2; dropdownExpanded = false })
+                Card(
+                    modifier = Modifier.weight(1f),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(modifier = Modifier.padding(16.dp)) {
+                        Text("Total Supplier Credits Payable", fontSize = 11.sp, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f))
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(Money(totalPay ?: 0L).toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                    }
                 }
             }
         }
 
-        LazyColumn(modifier = Modifier.fillMaxWidth().weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            if (viewMode == 0) {
-                val filteredCustomers = customers.filter { customer ->
-                    customer.name.contains(search, ignoreCase = true)
+        // 2. Sticky Header (TabRow and Search Bar wrapper)
+        stickyHeader {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(MaterialTheme.colorScheme.background)
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                TabRow(selectedTabIndex = viewMode, modifier = Modifier.fillMaxWidth()) {
+                    Tab(selected = viewMode == 0, onClick = { viewMode = 0; statusFilter = 0; search = "" }, text = { Text("Customer Credits") })
+                    Tab(selected = viewMode == 1, onClick = { viewMode = 1; statusFilter = 0; search = "" }, text = { Text("Supplier Credits") })
                 }
-                
-                items(filteredCustomers) { customer ->
-                    val balanceFlow = remember(customer.id) { customerVm.getCustomerCreditBalance(customer.id) }
-                    val balance by balanceFlow.collectAsState(initial = 0L)
-                    val bal = balance ?: 0L
-                    val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    OutlinedTextField(
+                        value = search,
+                        onValueChange = { search = it },
+                        label = { Text("Search by name") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.weight(1f)
+                    )
                     
-                    val passesFilter = when(statusFilter) {
-                        1 -> bal != 0L
-                        2 -> isOverLimit
-                        else -> true
+                    var dropdownExpanded by remember { mutableStateOf(false) }
+                    val filterLabel = when(statusFilter) {
+                        1 -> "With Balance"
+                        2 -> if (viewMode == 0) "Exceeded Limit" else "Overdue"
+                        else -> "All Balances"
                     }
                     
-                    if (passesFilter) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedCustomerForCredit = customer }
-                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                    Box {
+                        Button(
+                            onClick = { dropdownExpanded = true },
                             shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
                         ) {
-                            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(customer.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    Text("Credit Limit: ${Money(customer.creditLimitMinorUnits)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = Money(bal).toString(),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                    )
-                                    if (isOverLimit) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(12.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Over Limit", fontSize = 10.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-                                        }
+                            Text(filterLabel)
+                            Icon(Icons.Default.ArrowDropDown, contentDescription = null)
+                        }
+                        DropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
+                            DropdownMenuItem(text = { Text("All Balances") }, onClick = { statusFilter = 0; dropdownExpanded = false })
+                            DropdownMenuItem(text = { Text("With Balance") }, onClick = { statusFilter = 1; dropdownExpanded = false })
+                            DropdownMenuItem(text = { Text(if (viewMode == 0) "Exceeded Limit" else "Overdue") }, onClick = { statusFilter = 2; dropdownExpanded = false })
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Content Below Search Bar (normal scrollable list items)
+        if (viewMode == 0) {
+            val filteredCustomers = customers.filter { customer ->
+                customer.name.contains(search, ignoreCase = true)
+            }
+            
+            items(filteredCustomers) { customer ->
+                val balanceFlow = remember(customer.id) { customerVm.getCustomerCreditBalance(customer.id) }
+                val balance by balanceFlow.collectAsState(initial = 0L)
+                val bal = balance ?: 0L
+                val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
+                
+                val passesFilter = when(statusFilter) {
+                    1 -> bal != 0L
+                    2 -> isOverLimit
+                    else -> true
+                }
+                
+                if (passesFilter) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedCustomerForCredit = customer }
+                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(customer.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                Text("Credit Limit: ${Money(customer.creditLimitMinorUnits)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = Money(bal).toString(),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                )
+                                if (isOverLimit) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(12.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Over Limit", fontSize = 10.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
                         }
                     }
                 }
-            } else {
-                val filteredSuppliers = suppliers.filter { supplier ->
-                    supplier.name.contains(search, ignoreCase = true)
+            }
+        } else {
+            val filteredSuppliers = suppliers.filter { supplier ->
+                supplier.name.contains(search, ignoreCase = true)
+            }
+            
+            items(filteredSuppliers) { supplier ->
+                val balanceFlow = remember(supplier.id) { supplierVm.getSupplierCreditBalance(supplier.id) }
+                val balance by balanceFlow.collectAsState(initial = 0L)
+                val bal = balance ?: 0L
+                
+                val creditsFlow = remember(supplier.id) { supplierVm.getSupplierCredits(supplier.id) }
+                val credits by creditsFlow.collectAsState(initial = emptyList<SupplierCreditEntity>())
+                val isOverdue = bal > 0L && credits.any { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L && it.dueDateEpochMs < System.currentTimeMillis() }
+                
+                val passesFilter = when(statusFilter) {
+                    1 -> bal != 0L
+                    2 -> isOverdue
+                    else -> true
                 }
                 
-                items(filteredSuppliers) { supplier ->
-                    val balanceFlow = remember(supplier.id) { supplierVm.getSupplierCreditBalance(supplier.id) }
-                    val balance by balanceFlow.collectAsState(initial = 0L)
-                    val bal = balance ?: 0L
-                    
-                    val creditsFlow = remember(supplier.id) { supplierVm.getSupplierCredits(supplier.id) }
-                    val credits by creditsFlow.collectAsState(initial = emptyList<SupplierCreditEntity>())
-                    val isOverdue = bal > 0L && credits.any { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L && it.dueDateEpochMs < System.currentTimeMillis() }
-                    
-                    val passesFilter = when(statusFilter) {
-                        1 -> bal != 0L
-                        2 -> isOverdue
-                        else -> true
-                    }
-                    
-                    if (passesFilter) {
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedSupplierForCredit = supplier }
-                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                        ) {
-                            Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(supplier.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                    val nextDue = credits.filter { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L }.minByOrNull { it.dueDateEpochMs }
-                                    if (nextDue != null && bal > 0L) {
-                                        val df = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                                        Text("Next Repayment Due: ${df.format(Date(nextDue.dueDateEpochMs))}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                    }
+                if (passesFilter) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable { selectedSupplierForCredit = supplier }
+                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                    ) {
+                        Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(supplier.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                val nextDue = credits.filter { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L }.minByOrNull { it.dueDateEpochMs }
+                                if (nextDue != null && bal > 0L) {
+                                    val df = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+                                    Text("Next Repayment Due: ${df.format(Date(nextDue.dueDateEpochMs))}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                 }
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = Money(bal).toString(),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                    )
-                                    if (isOverdue) {
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
-                                            Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(12.dp))
-                                            Spacer(modifier = Modifier.width(4.dp))
-                                            Text("Repayment Overdue", fontSize = 10.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
-                                        }
+                            }
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text(
+                                    text = Money(bal).toString(),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                )
+                                if (isOverdue) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(12.dp))
+                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Text("Repayment Overdue", fontSize = 10.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
                                     }
                                 }
                             }
