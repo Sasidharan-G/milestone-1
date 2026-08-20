@@ -46,7 +46,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
         val prod = products.find { it.id == selectedProductId }
         if (prod != null) {
             priceText = String.format(Locale.US, "%.2f", prod.salePriceMinorUnits / 100.0)
-            quantityText = if (prod.unitType == "KG") "1.000" else "1"
+            quantityText = if (prod.unitType == "KG" || prod.unitType == "LITER") "1.000" else "1"
         }
     }
 
@@ -159,15 +159,15 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         OutlinedTextField(
                             value = quantityText,
                             onValueChange = { quantityText = it },
-                            label = { Text(if (selectedProduct?.unitType == "KG") "Qty (Kg/g)" else "Qty") },
-                            keyboardOptions = KeyboardOptions(keyboardType = if (selectedProduct?.unitType == "KG") KeyboardType.Decimal else KeyboardType.Number),
+                            label = { Text(if (selectedProduct?.unitType == "KG") "Qty (Kg/g)" else if (selectedProduct?.unitType == "LITER") "Qty (Liters)" else "Qty") },
+                            keyboardOptions = KeyboardOptions(keyboardType = if (selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER") KeyboardType.Decimal else KeyboardType.Number),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(1f)
                         )
                         OutlinedTextField(
                             value = priceText,
                             onValueChange = { priceText = it },
-                            label = { Text(if (selectedProduct?.unitType == "KG") "Price per Kg" else "Unit Price") },
+                            label = { Text(if (selectedProduct?.unitType == "KG") "Price per Kg" else if (selectedProduct?.unitType == "LITER") "Price per Ltr" else "Unit Price") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.weight(2f)
@@ -176,10 +176,10 @@ fun BillingScreen(viewModel: BillingViewModel) {
 
                     Button(
                         onClick = {
-                            val isKg = selectedProduct?.unitType == "KG"
-                            val parsedQty = if (isKg) {
-                                val d = quantityText.toDoubleOrNull()
-                                if (d != null && d > 0.0) (d * 1000).toLong() else null
+                            val isDecimalUnit = selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER"
+                            val parsedQty = if (isDecimalUnit) {
+                                val qty = quantityText.toDoubleOrNull()
+                                if (qty != null && qty > 0) (qty * 1000).toLong() else null
                             } else {
                                 quantityText.toLongOrNull()
                             }
@@ -189,7 +189,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             if (selectedProductId.isBlank() || selectedProduct == null) {
                                 message = "Validation Error: Please select a product first"
                             } else if (parsedQty == null || parsedQty <= 0) {
-                                message = if (isKg) "Validation Error: Weight must be a valid number greater than 0" else "Validation Error: Quantity must be a valid number greater than 0"
+                                message = if (isDecimalUnit) "Validation Error: Quantity must be a valid number greater than 0" else "Validation Error: Quantity must be a valid number greater than 0"
                             } else if (priceDouble == null || priceDouble <= 0.0) {
                                 message = "Validation Error: Unit price must be a valid number greater than 0"
                             } else {
@@ -235,6 +235,8 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                          Text(line.productName, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                                          val qtyLabel = if (line.unitType == "KG") {
                                              String.format(Locale.US, "%.3f Kg", line.quantity / 1000.0)
+                                         } else if (line.unitType == "LITER") {
+                                             String.format(Locale.US, "%.3f Ltr", line.quantity / 1000.0)
                                          } else {
                                              "${line.quantity} Pcs"
                                          }

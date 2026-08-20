@@ -194,9 +194,6 @@ fun HomeScreen(
             if (showReports) {
                 add(DashboardItem("Reports Engine", "Analyze Sales, Stock, Profits, Purchases & Expenses", Icons.Default.List, AppRoute.Reports))
             }
-            if (showSettings) {
-                add(DashboardItem("Utilities & Settings", "Login Master, User Rights, Backups & Hardware", Icons.Default.Settings, AppRoute.Settings))
-            }
         }
     }
 
@@ -230,7 +227,7 @@ fun HomeScreen(
                             }
                         }
                         Text(
-                            text = shopName.ifBlank { "Client Billing System" },
+                            text = shopName.ifBlank { "KadaKutty" },
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary
                         )

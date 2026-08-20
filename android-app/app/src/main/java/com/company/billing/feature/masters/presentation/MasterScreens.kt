@@ -575,7 +575,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             ) {
                                 OutlinedTextField(
                                     readOnly = true,
-                                    value = if (unitType == "KG") "Kg / Grams" else "Pieces",
+                                    value = if (unitType == "KG") "Kg / Grams" else if (unitType == "LITER") "Liters" else "Pieces",
                                     onValueChange = {},
                                     label = { Text("Unit Type") },
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitTypeExpanded) },
@@ -598,6 +598,13 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         text = { Text("Kg / Grams") },
                                         onClick = {
                                             unitType = "KG"
+                                            unitTypeExpanded = false
+                                        }
+                                    )
+                                    DropdownMenuItem(
+                                        text = { Text("Liters") },
+                                        onClick = {
+                                            unitType = "LITER"
                                             unitTypeExpanded = false
                                         }
                                     )
@@ -677,7 +684,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                     val purText = Money(product.purchasePriceMinorUnits).toString()
                                     val saleText = Money(product.salePriceMinorUnits).toString()
-                                    val unitLabel = if (product.unitType == "KG") "Kg" else "Piece"
+                                    val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Piece"
                                     Text("$unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -766,7 +773,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         ) {
                             OutlinedTextField(
                                 readOnly = true,
-                                value = if (unitType == "KG") "Kg / Grams" else "Pieces",
+                                value = if (unitType == "KG") "Kg / Grams" else if (unitType == "LITER") "Liters" else "Pieces",
                                 onValueChange = {},
                                 label = { Text("Unit Type") },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitTypeExpanded) },
@@ -789,6 +796,13 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     text = { Text("Kg / Grams") },
                                     onClick = {
                                         unitType = "KG"
+                                        unitTypeExpanded = false
+                                    }
+                                )
+                                DropdownMenuItem(
+                                    text = { Text("Liters") },
+                                    onClick = {
+                                        unitType = "LITER"
                                         unitTypeExpanded = false
                                     }
                                 )
@@ -867,7 +881,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                             Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                             val purText = Money(product.purchasePriceMinorUnits).toString()
                                             val saleText = Money(product.salePriceMinorUnits).toString()
-                                            val unitLabel = if (product.unitType == "KG") "Kg" else "Piece"
+                                            val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Piece"
                                             Text("$unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {

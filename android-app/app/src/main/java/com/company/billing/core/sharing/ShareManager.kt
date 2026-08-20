@@ -231,6 +231,8 @@ class ShareManager(private val context: Context) {
             
             val qtyStr = if (unitType == "KG") {
                 String.format(Locale.US, "%.3f Kg", item.quantity / 1000.0)
+            } else if (unitType == "LITER") {
+                String.format(Locale.US, "%.3f Ltr", item.quantity / 1000.0)
             } else {
                 "${item.quantity} Pcs"
             }
@@ -267,10 +269,13 @@ class ShareManager(private val context: Context) {
         val itemCount = items.size
         var totalQtyPieces = 0L
         var totalQtyKg = 0.0
+        var totalQtyLiters = 0.0
         for (item in items) {
             val p = productsMap[item.productId]
             if (p?.unitType == "KG") {
                 totalQtyKg += (item.quantity / 1000.0)
+            } else if (p?.unitType == "LITER") {
+                totalQtyLiters += (item.quantity / 1000.0)
             } else {
                 totalQtyPieces += item.quantity
             }
@@ -289,6 +294,10 @@ class ShareManager(private val context: Context) {
         }
         if (totalQtyKg > 0.0) {
             canvas.drawText(String.format(Locale.US, "Total Wt: %.3f Kg", totalQtyKg), 40f, countY, paint)
+            countY += 16f
+        }
+        if (totalQtyLiters > 0.0) {
+            canvas.drawText(String.format(Locale.US, "Total Vol: %.3f Ltr", totalQtyLiters), 40f, countY, paint)
         }
         
         // Draw amounts on the right

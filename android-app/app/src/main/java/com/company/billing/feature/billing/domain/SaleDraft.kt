@@ -10,7 +10,7 @@ data class SaleLine(
     val unitType: String = "PIECE"
 ) {
     init { require(quantity > 0) }
-    val lineTotal: Money get() = if (unitType == "KG") {
+    val lineTotal: Money get() = if (unitType == "KG" || unitType == "LITER") {
         Money((unitPrice.minorUnits * quantity) / 1000)
     } else {
         unitPrice * quantity
