@@ -37,6 +37,8 @@ import com.company.billing.feature.settings.presentation.SettingsScreen
 import com.company.billing.feature.settings.presentation.SettingsViewModel
 import com.company.billing.feature.auth.LoginScreen
 import com.company.billing.feature.auth.LoginViewModel
+import com.company.billing.feature.auth.RegisterScreen
+import com.company.billing.feature.auth.RegisterViewModel
 import com.company.billing.feature.billing.presentation.BillingScreen
 import com.company.billing.feature.billing.presentation.BillingViewModel
 import com.company.billing.feature.masters.presentation.*
@@ -69,11 +71,32 @@ fun BillingApp() {
             NavHost(navController = navController, startDestination = AppRoute.Login.path) {
                 composable(AppRoute.Login.path) {
                     val vm: LoginViewModel = hiltViewModel()
-                    LoginScreen(viewModel = vm, onLoginSuccess = {
-                        navController.navigate(AppRoute.Home.path) {
-                            popUpTo(AppRoute.Login.path) { inclusive = true }
+                    LoginScreen(
+                        viewModel = vm,
+                        onLoginSuccess = {
+                            navController.navigate(AppRoute.Home.path) {
+                                popUpTo(AppRoute.Login.path) { inclusive = true }
+                            }
+                        },
+                        onNavigateToRegister = {
+                            navController.navigate(AppRoute.Register.path)
                         }
-                    })
+                    )
+                }
+
+                composable(AppRoute.Register.path) {
+                    val vm: RegisterViewModel = hiltViewModel()
+                    RegisterScreen(
+                        viewModel = vm,
+                        onNavigateBackToLogin = {
+                            navController.popBackStack()
+                        },
+                        onRegisterSuccess = {
+                            navController.navigate(AppRoute.Login.path) {
+                                popUpTo(AppRoute.Register.path) { inclusive = true }
+                            }
+                        }
+                    )
                 }
 
                 composable(AppRoute.Home.path) {
@@ -137,9 +160,7 @@ data class DashboardItem(
     val title: String,
     val subtitle: String,
     val icon: ImageVector,
-    val route: AppRoute,
-    val backgroundColor: Color,
-    val textColor: Color
+    val route: AppRoute
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -159,32 +180,22 @@ fun HomeScreen(
     val showReports = permissions.any { it == Permission.REPORT_SALES || it == Permission.REPORT_STOCK || it == Permission.REPORT_PROFIT }
     val showSettings = permissions.any { it == Permission.SETTINGS_VIEW || it == Permission.USER_MANAGE }
 
-    val isDark = isSystemInDarkTheme()
-    val dashboardItems = remember(showMasters, showSales, showPurchases, showReports, isDark) {
-        val masterBg = if (isDark) Color(0xFF1A237E) else Color(0xFFE3F2FD)
-        val masterText = if (isDark) Color(0xFFE3F2FD) else Color(0xFF0D47A1)
-
-        val salesBg = if (isDark) Color(0xFF004D40) else Color(0xFFE0F2F1)
-        val salesText = if (isDark) Color(0xFFE0F2F1) else Color(0xFF004D40)
-
-        val purchasesBg = if (isDark) Color(0xFF1B5E20) else Color(0xFFE8F5E9)
-        val purchasesText = if (isDark) Color(0xFFE8F5E9) else Color(0xFF1B5E20)
-
-        val reportsBg = if (isDark) Color(0xFF4A148C) else Color(0xFFF3E5F5)
-        val reportsText = if (isDark) Color(0xFFF3E5F5) else Color(0xFF4A148C)
-
+    val dashboardItems = remember(showMasters, showSales, showPurchases, showReports) {
         buildList {
             if (showMasters) {
-                add(DashboardItem("Master Data", "Manage Categories, Products, Customers, Suppliers, Expenses", Icons.Default.Menu, AppRoute.Masters, masterBg, masterText))
+                add(DashboardItem("Master Data", "Manage Categories, Products, Customers, Suppliers, Expenses", Icons.Default.Menu, AppRoute.Masters))
             }
             if (showSales) {
-                add(DashboardItem("Sales Invoicing", "Draft bills, invoice products and log sales ledger", Icons.Default.ShoppingCart, AppRoute.Billing, salesBg, salesText))
+                add(DashboardItem("Sales Invoicing", "Draft bills, invoice products and log sales ledger", Icons.Default.ShoppingCart, AppRoute.Billing))
             }
             if (showPurchases) {
-                add(DashboardItem("Purchases & Stock", "Record stock inward, manage supplier invoices & ledger", Icons.Default.AddCircle, AppRoute.Purchases, purchasesBg, purchasesText))
+                add(DashboardItem("Purchases & Stock", "Record stock inward, manage supplier invoices & ledger", Icons.Default.AddCircle, AppRoute.Purchases))
             }
             if (showReports) {
-                add(DashboardItem("Reports Engine", "Analyze Sales, Stock, Profits, Purchases & Expenses", Icons.Default.List, AppRoute.Reports, reportsBg, reportsText))
+                add(DashboardItem("Reports Engine", "Analyze Sales, Stock, Profits, Purchases & Expenses", Icons.Default.List, AppRoute.Reports))
+            }
+            if (showSettings) {
+                add(DashboardItem("Utilities & Settings", "Login Master, User Rights, Backups & Hardware", Icons.Default.Settings, AppRoute.Settings))
             }
         }
     }
@@ -277,8 +288,6 @@ fun HomeScreen(
                             title = item.title,
                             subtitle = item.subtitle,
                             icon = item.icon,
-                            backgroundColor = item.backgroundColor,
-                            textColor = item.textColor,
                             modifier = Modifier.fillMaxWidth().height(120.dp),
                             onClick = { onNavigateTo(item.route) }
                         )
@@ -315,8 +324,6 @@ fun HomeScreen(
                                     title = item.title,
                                     subtitle = item.subtitle,
                                     icon = item.icon,
-                                    backgroundColor = item.backgroundColor,
-                                    textColor = item.textColor,
                                     modifier = Modifier.weight(1f).fillMaxHeight(),
                                     onClick = { onNavigateTo(item.route) }
                                 )
@@ -337,8 +344,6 @@ fun DashboardCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
-    backgroundColor: Color,
-    textColor: Color,
     modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
@@ -347,12 +352,12 @@ fun DashboardCard(
             .clickable { onClick() }
             .border(
                 width = 1.dp,
-                color = textColor.copy(alpha = 0.4f),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
                 shape = RoundedCornerShape(20.dp)
             ),
         shape = RoundedCornerShape(20.dp),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-        colors = CardDefaults.cardColors(containerColor = backgroundColor)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
     ) {
         Column(
             modifier = Modifier
@@ -365,7 +370,7 @@ fun DashboardCard(
                 modifier = Modifier
                     .size(48.dp)
                     .background(
-                        color = textColor.copy(alpha = 0.15f),
+                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.15f),
                         shape = RoundedCornerShape(12.dp)
                     ),
                 contentAlignment = Alignment.Center
@@ -374,7 +379,7 @@ fun DashboardCard(
                     imageVector = icon,
                     contentDescription = null,
                     modifier = Modifier.size(24.dp),
-                    tint = textColor
+                    tint = MaterialTheme.colorScheme.primary
                 )
             }
             Spacer(modifier = Modifier.height(12.dp))
@@ -382,13 +387,13 @@ fun DashboardCard(
                 text = title,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold,
-                color = textColor
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = subtitle,
                 fontSize = 11.sp,
-                color = textColor.copy(alpha = 0.8f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f),
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
             )
         }

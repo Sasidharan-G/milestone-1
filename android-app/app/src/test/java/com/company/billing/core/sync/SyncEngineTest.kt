@@ -6,6 +6,7 @@ import com.company.billing.core.database.SyncQueueEntity
 import com.company.billing.feature.masters.data.CategoryEntity
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -23,9 +24,9 @@ class SyncEngineTest {
                 override suspend fun enqueue(item: SyncQueueEntity) {
                     enqueuedItem = item
                 }
-                override suspend fun pending(limit: Int): List<SyncQueueEntity> = emptyList()
+                override suspend fun pending(companyId: String, limit: Int): List<SyncQueueEntity> = emptyList()
                 override suspend fun updateStatus(id: String, status: SyncStatus, updatedAtEpochMs: Long, error: String?) {}
-                override fun pendingCount(): Flow<Int> = emptyFlow()
+                override fun pendingCount(companyId: String): Flow<Int> = emptyFlow()
             }
 
             val mockDb = mock(BillingDatabase::class.java)
@@ -35,9 +36,21 @@ class SyncEngineTest {
             val mockOperation = mock(androidx.work.Operation::class.java)
             doReturn(mockOperation).`when`(mockScheduler).request()
 
-            val manager = SyncManager(mockDb, mockScheduler)
+            val mockSessionStore = mock(com.company.billing.core.auth.SessionStore::class.java)
+            val fakeSession = com.company.billing.core.auth.Session(
+                userId = "user-123",
+                displayName = "Test User",
+                permissions = emptySet(),
+                accessToken = "token",
+                companyId = "company-123",
+                role = "COMPANY_ADMIN"
+            )
+            doReturn(flowOf(fakeSession)).`when`(mockSessionStore).activeSession
+
+            val manager = SyncManager(mockDb, mockScheduler, mockSessionStore)
             val category = CategoryEntity(
                 id = "cat-1",
+                companyId = "company-123",
                 name = "Groceries",
                 createdAtEpochMs = 123456L,
                 updatedAtEpochMs = 123456L,

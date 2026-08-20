@@ -129,7 +129,9 @@ class ShareManager(private val context: Context) {
         ownerName: String,
         gstNumber: String,
         shopAddress: String,
-        shopPhone: String
+        shopPhone: String,
+        shopEmail: String,
+        cashierName: String
     ): ByteArray {
         val pdfDocument = PdfDocument()
         val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4
@@ -159,6 +161,10 @@ class ShareManager(private val context: Context) {
             y += 16f
             canvas.drawText("Phone: $shopPhone", 297.5f, y, paint)
         }
+        if (shopEmail.isNotBlank()) {
+            y += 16f
+            canvas.drawText("Email: $shopEmail", 297.5f, y, paint)
+        }
         
         // Owner Name & GST
         if (ownerName.isNotBlank() || gstNumber.isNotBlank()) {
@@ -184,8 +190,10 @@ class ShareManager(private val context: Context) {
         val sdf = SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault())
         val dateStr = sdf.format(Date(sale.createdAtEpochMs))
         canvas.drawText("Bill No: ${sale.billNumber}", 40f, y, paint)
-        y += 18f
+        y += 16f
         canvas.drawText("Date: $dateStr", 40f, y, paint)
+        y += 16f
+        canvas.drawText("Cashier: $cashierName", 40f, y, paint)
         
         // Right Column: Customer details
         val custY = y - 18f
@@ -256,6 +264,36 @@ class ShareManager(private val context: Context) {
         val cgstMinor = if (hasGst) ((grandTotalMinor - subtotalMinor) / 2) else 0L
         val sgstMinor = if (hasGst) (grandTotalMinor - subtotalMinor - cgstMinor) else 0L
         
+        val itemCount = items.size
+        var totalQtyPieces = 0L
+        var totalQtyKg = 0.0
+        for (item in items) {
+            val p = productsMap[item.productId]
+            if (p?.unitType == "KG") {
+                totalQtyKg += (item.quantity / 1000.0)
+            } else {
+                totalQtyPieces += item.quantity
+            }
+        }
+        
+        // Draw Item Counts on the left
+        paint.textAlign = Paint.Align.LEFT
+        paint.textSize = 10f
+        paint.isFakeBoldText = false
+        var countY = y
+        canvas.drawText("Items Count: $itemCount", 40f, countY, paint)
+        countY += 16f
+        if (totalQtyPieces > 0) {
+            canvas.drawText("Total Pcs: $totalQtyPieces", 40f, countY, paint)
+            countY += 16f
+        }
+        if (totalQtyKg > 0.0) {
+            canvas.drawText(String.format(Locale.US, "Total Wt: %.3f Kg", totalQtyKg), 40f, countY, paint)
+        }
+        
+        // Draw amounts on the right
+        paint.textAlign = Paint.Align.RIGHT
+        paint.textSize = 11f
         if (hasGst) {
             canvas.drawText("Subtotal: ", 450f, y, paint)
             canvas.drawText(Money(subtotalMinor).toString(), 550f, y, paint)
@@ -290,9 +328,9 @@ class ShareManager(private val context: Context) {
         
         y += 30f
         paint.textAlign = Paint.Align.CENTER
-        paint.isFakeBoldText = false
-        paint.textSize = 10f
-        canvas.drawText("Thank you for your business!", 297.5f, y, paint)
+        paint.isFakeBoldText = true
+        paint.textSize = 12f
+        canvas.drawText("Thank You for Shopping! Visit Again", 297.5f, y, paint)
         
         pdfDocument.finishPage(page)
         

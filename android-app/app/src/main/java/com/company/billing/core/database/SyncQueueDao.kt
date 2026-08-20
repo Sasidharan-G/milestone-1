@@ -12,13 +12,13 @@ interface SyncQueueDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun enqueue(item: SyncQueueEntity)
 
-    @Query("SELECT * FROM sync_queue WHERE status IN ('PENDING', 'FAILED') ORDER BY createdAtEpochMs LIMIT :limit")
-    suspend fun pending(limit: Int): List<SyncQueueEntity>
+    @Query("SELECT * FROM sync_queue WHERE companyId = :companyId AND status IN ('PENDING', 'FAILED') ORDER BY createdAtEpochMs LIMIT :limit")
+    suspend fun pending(companyId: String, limit: Int): List<SyncQueueEntity>
 
     @Query("UPDATE sync_queue SET status = :status, updatedAtEpochMs = :updatedAtEpochMs, lastError = :error WHERE id = :id")
     suspend fun updateStatus(id: String, status: SyncStatus, updatedAtEpochMs: Long, error: String? = null)
 
-    @Query("SELECT COUNT(*) FROM sync_queue WHERE status != 'SYNCED'")
-    fun pendingCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM sync_queue WHERE companyId = :companyId AND status != 'SYNCED'")
+    fun pendingCount(companyId: String): Flow<Int>
 }
 

@@ -22,26 +22,38 @@ import javax.inject.Inject
 import com.company.billing.core.sharing.ShareManager
 import com.company.billing.core.preferences.AppPreferences
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import com.company.billing.core.auth.SessionStore
 
 @HiltViewModel
 class BillingViewModel @Inject constructor(
     private val database: BillingDatabase,
     private val saleRepository: SaleRepository,
     private val shareManager: ShareManager,
-    private val appPreferences: AppPreferences
+    private val appPreferences: AppPreferences,
+    private val sessionStore: SessionStore
 ) : ViewModel() {
 
     private val masterDao = database.masterDao()
     private val saleDao = database.saleDao()
 
-    val products: StateFlow<List<ProductEntity>> = masterDao.products("")
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val products: StateFlow<List<ProductEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            masterDao.products(companyId, "")
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    val customers: StateFlow<List<CustomerEntity>> = masterDao.customers("")
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val customers: StateFlow<List<CustomerEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            masterDao.customers(companyId, "")
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    val sales: StateFlow<List<SaleEntity>> = saleDao.getSales()
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val sales: StateFlow<List<SaleEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            saleDao.getSales(companyId)
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     private val _selectedCustomerId = MutableStateFlow<String?>(null)
     val selectedCustomerId: StateFlow<String?> = _selectedCustomerId.asStateFlow()
@@ -105,10 +117,12 @@ class BillingViewModel @Inject constructor(
 
     fun shareBill(billNumber: String, isWhatsapp: Boolean) {
         viewModelScope.launch {
-            val saleList = saleDao.getSales().first()
+            val session = sessionStore.activeSession.first() ?: return@launch
+            val companyId = session.companyId
+            val saleList = saleDao.getSales(companyId).first()
             val sale = saleList.find { it.billNumber == billNumber } ?: return@launch
-            val items = saleDao.getSaleItems(sale.id).first()
-            val productsList = masterDao.products("").first()
+            val items = saleDao.getSaleItems(companyId, sale.id).first()
+            val productsList = masterDao.products(companyId, "").first()
             val productsMap = productsList.associateBy { it.id }
             
             val shopName = appPreferences.shopName.first()
@@ -122,9 +136,12 @@ class BillingViewModel @Inject constructor(
             } else if (sale.customerId == "online") {
                 "Online Customer"
             } else {
-                masterDao.getCustomerById(sale.customerId)?.name ?: "Walk-in Customer"
+                masterDao.getCustomerById(companyId, sale.customerId)?.name ?: "Walk-in Customer"
             }
             
+            val shopEmail = appPreferences.shopEmail.first()
+            val cashierName = session.displayName
+
             val pdfBytes = shareManager.generatePdfInvoice(
                 sale = sale,
                 items = items,
@@ -134,7 +151,9 @@ class BillingViewModel @Inject constructor(
                 ownerName = ownerName,
                 gstNumber = gstNumber,
                 shopAddress = shopAddress,
-                shopPhone = shopPhone
+                shopPhone = shopPhone,
+                shopEmail = shopEmail,
+                cashierName = cashierName
             )
             
             val filename = "invoice_${sale.billNumber.replace("-", "_")}.pdf"

@@ -4,24 +4,34 @@ import com.company.billing.core.database.BillingDatabase
 import com.company.billing.core.database.SyncQueueEntity
 import com.company.billing.core.common.newRecordId
 
+import kotlinx.coroutines.flow.first
+import com.company.billing.core.auth.SessionStore
+
 class SyncManager(
     private val database: BillingDatabase,
-    private val syncScheduler: SyncScheduler
+    private val syncScheduler: SyncScheduler,
+    private val sessionStore: SessionStore
 ) {
 
     suspend fun enqueueCategory(category: com.company.billing.feature.masters.data.CategoryEntity, operation: String) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
         val payload = toJson(mapOf(
             "id" to category.id,
+            "companyId" to companyId,
             "name" to category.name,
             "createdAtEpochMs" to category.createdAtEpochMs,
             "updatedAtEpochMs" to category.updatedAtEpochMs
         ))
-        enqueueItem("Category", category.id, operation, payload)
+        enqueueItem(companyId, "Category", category.id, operation, payload)
     }
 
     suspend fun enqueueProduct(product: com.company.billing.feature.masters.data.ProductEntity, operation: String) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
         val payload = toJson(mapOf(
             "id" to product.id,
+            "companyId" to companyId,
             "name" to product.name,
             "categoryId" to product.categoryId,
             "purchasePriceMinorUnits" to product.purchasePriceMinorUnits,
@@ -30,43 +40,60 @@ class SyncManager(
             "createdAtEpochMs" to product.createdAtEpochMs,
             "updatedAtEpochMs" to product.updatedAtEpochMs
         ))
-        enqueueItem("Product", product.id, operation, payload)
+        enqueueItem(companyId, "Product", product.id, operation, payload)
     }
 
     suspend fun enqueueCustomer(customer: com.company.billing.feature.masters.data.CustomerEntity, operation: String) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
         val payload = toJson(mapOf(
             "id" to customer.id,
+            "companyId" to companyId,
             "name" to customer.name,
+            "phone" to customer.phone,
+            "address" to customer.address,
+            "creditLimitMinorUnits" to customer.creditLimitMinorUnits,
             "createdAtEpochMs" to customer.createdAtEpochMs,
             "updatedAtEpochMs" to customer.updatedAtEpochMs
         ))
-        enqueueItem("Customer", customer.id, operation, payload)
+        enqueueItem(companyId, "Customer", customer.id, operation, payload)
     }
 
     suspend fun enqueueSupplier(supplier: com.company.billing.feature.masters.data.SupplierEntity, operation: String) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
         val payload = toJson(mapOf(
             "id" to supplier.id,
+            "companyId" to companyId,
             "name" to supplier.name,
+            "phone" to supplier.phone,
+            "address" to supplier.address,
             "createdAtEpochMs" to supplier.createdAtEpochMs,
             "updatedAtEpochMs" to supplier.updatedAtEpochMs
         ))
-        enqueueItem("Supplier", supplier.id, operation, payload)
+        enqueueItem(companyId, "Supplier", supplier.id, operation, payload)
     }
 
     suspend fun enqueueExpense(expense: com.company.billing.feature.masters.data.ExpenseEntity, operation: String) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
         val payload = toJson(mapOf(
             "id" to expense.id,
+            "companyId" to companyId,
             "amountMinorUnits" to expense.amountMinorUnits,
             "description" to expense.description,
             "createdAtEpochMs" to expense.createdAtEpochMs,
             "updatedAtEpochMs" to expense.updatedAtEpochMs
         ))
-        enqueueItem("Expense", expense.id, operation, payload)
+        enqueueItem(companyId, "Expense", expense.id, operation, payload)
     }
 
     suspend fun enqueueSale(sale: com.company.billing.feature.billing.data.SaleEntity, items: List<com.company.billing.feature.billing.data.SaleItemEntity>) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
         val itemsList = items.map { item ->
             mapOf(
+                "companyId" to companyId,
                 "productId" to item.productId,
                 "quantity" to item.quantity,
                 "unitPriceMinorUnits" to item.unitPriceMinorUnits,
@@ -75,18 +102,22 @@ class SyncManager(
         }
         val payload = toJson(mapOf(
             "id" to sale.id,
+            "companyId" to companyId,
             "billNumber" to sale.billNumber,
             "totalMinorUnits" to sale.totalMinorUnits,
             "createdAtEpochMs" to sale.createdAtEpochMs,
             "customerId" to sale.customerId,
             "items" to itemsList
         ))
-        enqueueItem("Sale", sale.id, "INSERT", payload)
+        enqueueItem(companyId, "Sale", sale.id, "INSERT", payload)
     }
 
     suspend fun enqueuePurchase(purchase: com.company.billing.feature.purchase.data.PurchaseEntity, items: List<com.company.billing.feature.purchase.data.PurchaseItemEntity>) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
         val itemsList = items.map { item ->
             mapOf(
+                "companyId" to companyId,
                 "productId" to item.productId,
                 "quantity" to item.quantity,
                 "unitValueMinorUnits" to item.unitValueMinorUnits,
@@ -95,15 +126,46 @@ class SyncManager(
         }
         val payload = toJson(mapOf(
             "id" to purchase.id,
+            "companyId" to companyId,
             "supplierId" to purchase.supplierId,
             "totalMinorUnits" to purchase.totalMinorUnits,
             "createdAtEpochMs" to purchase.createdAtEpochMs,
             "items" to itemsList
         ))
-        enqueueItem("Purchase", purchase.id, "INSERT", payload)
+        enqueueItem(companyId, "Purchase", purchase.id, "INSERT", payload)
+    }
+
+    suspend fun enqueueCustomerCredit(credit: com.company.billing.feature.masters.data.CustomerCreditEntity, operation: String) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
+        val payload = toJson(mapOf(
+            "id" to credit.id,
+            "companyId" to companyId,
+            "customerId" to credit.customerId,
+            "amountMinorUnits" to credit.amountMinorUnits,
+            "reason" to credit.reason,
+            "dateEpochMs" to credit.dateEpochMs
+        ))
+        enqueueItem(companyId, "CustomerCredit", credit.id, operation, payload)
+    }
+
+    suspend fun enqueueSupplierCredit(credit: com.company.billing.feature.masters.data.SupplierCreditEntity, operation: String) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
+        val payload = toJson(mapOf(
+            "id" to credit.id,
+            "companyId" to companyId,
+            "supplierId" to credit.supplierId,
+            "amountMinorUnits" to credit.amountMinorUnits,
+            "terms" to credit.terms,
+            "dueDateEpochMs" to credit.dueDateEpochMs,
+            "dateEpochMs" to credit.dateEpochMs
+        ))
+        enqueueItem(companyId, "SupplierCredit", credit.id, operation, payload)
     }
 
     private suspend fun enqueueItem(
+        companyId: String,
         entityType: String,
         entityId: String,
         operation: String,
@@ -111,6 +173,7 @@ class SyncManager(
     ) {
         val syncItem = SyncQueueEntity(
             id = newRecordId(),
+            companyId = companyId,
             entityType = entityType,
             entityId = entityId,
             operation = operation,

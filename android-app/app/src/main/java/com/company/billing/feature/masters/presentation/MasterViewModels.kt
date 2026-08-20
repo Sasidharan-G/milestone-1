@@ -23,24 +23,46 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+import kotlinx.coroutines.flow.first
+import com.company.billing.core.auth.SessionStore
+import kotlinx.coroutines.flow.map
+
+data class LedgerEntry(
+    val id: String,
+    val dateEpochMs: Long,
+    val description: String,
+    val debitMinorUnits: Long,
+    val creditMinorUnits: Long,
+    val runningBalance: Long
+)
+
 @HiltViewModel
 class CategoryViewModel @Inject constructor(
     private val database: BillingDatabase,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val sessionStore: SessionStore
 ) : ViewModel() {
     private val dao = database.masterDao()
     private val searchQuery = MutableStateFlow("")
-    val categories: StateFlow<List<CategoryEntity>> = searchQuery
-        .flatMapLatest { dao.categories(it) }
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val categories: StateFlow<List<CategoryEntity>> = kotlinx.coroutines.flow.combine(
+        sessionStore.activeSession,
+        searchQuery
+    ) { session, query ->
+        val companyId = session?.companyId ?: ""
+        companyId to query
+    }.flatMapLatest { (companyId, query) ->
+        dao.categories(companyId, query)
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun updateSearch(query: String) { searchQuery.value = query }
 
     fun addCategory(name: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val category = CategoryEntity(
                     id = newRecordId(),
+                    companyId = session.companyId,
                     name = name,
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
@@ -87,16 +109,27 @@ class CategoryViewModel @Inject constructor(
 @HiltViewModel
 class ProductViewModel @Inject constructor(
     private val database: BillingDatabase,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val sessionStore: SessionStore
 ) : ViewModel() {
     private val dao = database.masterDao()
     private val searchQuery = MutableStateFlow("")
-    val products: StateFlow<List<ProductEntity>> = searchQuery
-        .flatMapLatest { dao.products(it) }
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    val categories: StateFlow<List<CategoryEntity>> = dao.categories("")
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val products: StateFlow<List<ProductEntity>> = kotlinx.coroutines.flow.combine(
+        sessionStore.activeSession,
+        searchQuery
+    ) { session, query ->
+        val companyId = session?.companyId ?: ""
+        companyId to query
+    }.flatMapLatest { (companyId, query) ->
+        dao.products(companyId, query)
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val categories: StateFlow<List<CategoryEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            dao.categories(companyId, "")
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun updateSearch(query: String) { searchQuery.value = query }
 
@@ -111,8 +144,10 @@ class ProductViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val product = ProductEntity(
                     id = newRecordId(),
+                    companyId = session.companyId,
                     name = name,
                     categoryId = categoryId,
                     purchasePriceMinorUnits = purchasePriceMinorUnits,
@@ -176,21 +211,31 @@ class ProductViewModel @Inject constructor(
 @HiltViewModel
 class CustomerViewModel @Inject constructor(
     private val database: BillingDatabase,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val sessionStore: SessionStore
 ) : ViewModel() {
     private val dao = database.masterDao()
     private val searchQuery = MutableStateFlow("")
-    val customers: StateFlow<List<CustomerEntity>> = searchQuery
-        .flatMapLatest { dao.customers(it) }
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val customers: StateFlow<List<CustomerEntity>> = kotlinx.coroutines.flow.combine(
+        sessionStore.activeSession,
+        searchQuery
+    ) { session, query ->
+        val companyId = session?.companyId ?: ""
+        companyId to query
+    }.flatMapLatest { (companyId, query) ->
+        dao.customers(companyId, query)
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun updateSearch(query: String) { searchQuery.value = query }
 
     fun addCustomer(name: String, phone: String?, address: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val customer = CustomerEntity(
                     id = newRecordId(),
+                    companyId = session.companyId,
                     name = name,
                     phone = phone,
                     address = address,
@@ -240,8 +285,10 @@ class CustomerViewModel @Inject constructor(
     fun addCustomerCredit(customerId: String, amountMinorUnits: Long, reason: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val credit = CustomerCreditEntity(
                     id = newRecordId(),
+                    companyId = session.companyId,
                     customerId = customerId,
                     amountMinorUnits = amountMinorUnits,
                     reason = reason,
@@ -249,6 +296,7 @@ class CustomerViewModel @Inject constructor(
                     syncStatus = SyncStatus.LOCAL_ONLY
                 )
                 dao.insertCustomerCredit(credit)
+                syncManager.enqueueCustomerCredit(credit, "INSERT")
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -256,16 +304,57 @@ class CustomerViewModel @Inject constructor(
         }
     }
 
-    fun getCustomerCredits(customerId: String): Flow<List<CustomerCreditEntity>> = dao.getCustomerCredits(customerId)
+    fun getCustomerCredits(customerId: String): Flow<List<CustomerCreditEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            dao.getCustomerCredits(companyId, customerId)
+        }
 
-    fun getCustomerCreditBalance(customerId: String): Flow<Long?> = dao.getCustomerCreditBalance(customerId)
+    fun getCustomerCreditBalance(customerId: String): Flow<Long?> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            dao.getCustomerCreditBalance(companyId, customerId)
+        }
 
-    fun getTotalCustomerCreditsReceivable(): Flow<Long?> = dao.getTotalCustomerCreditsReceivable()
+    fun getTotalCustomerCreditsReceivable(): Flow<Long?> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            dao.getTotalCustomerCreditsReceivable(companyId)
+        }
+
+    fun getCustomerLedger(customerId: String): Flow<List<LedgerEntry>> = kotlinx.coroutines.flow.combine(
+        sessionStore.activeSession.flatMapLatest { session -> 
+            database.saleDao().getSalesForCustomer(session?.companyId ?: "", customerId) 
+        },
+        sessionStore.activeSession.flatMapLatest { session -> 
+            dao.getCustomerCredits(session?.companyId ?: "", customerId) 
+        }
+    ) { sales, credits ->
+        val entries = mutableListOf<LedgerEntry>()
+        sales.forEach { sale ->
+            entries.add(LedgerEntry(sale.id, sale.createdAtEpochMs, "Bill #${sale.billNumber}", sale.totalMinorUnits, 0L, 0L))
+        }
+        credits.forEach { credit ->
+            entries.add(LedgerEntry(credit.id, credit.dateEpochMs, credit.reason, 0L, credit.amountMinorUnits, 0L))
+        }
+        val sorted = entries.sortedBy { it.dateEpochMs }
+        var balance = 0L
+        sorted.map { entry ->
+            balance += entry.debitMinorUnits
+            balance -= entry.creditMinorUnits
+            entry.copy(runningBalance = balance)
+        }.reversed()
+    }
+
+    fun getCustomerBalance(customerId: String): Flow<Long> = getCustomerLedger(customerId).map { ledger ->
+        ledger.firstOrNull()?.runningBalance ?: 0L
+    }
 
     fun updateCustomerCreditLimit(customerId: String, limit: Long, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
-                dao.updateCustomerCreditLimit(customerId, limit)
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                dao.updateCustomerCreditLimit(session.companyId, customerId, limit)
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -277,21 +366,31 @@ class CustomerViewModel @Inject constructor(
 @HiltViewModel
 class SupplierViewModel @Inject constructor(
     private val database: BillingDatabase,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val sessionStore: SessionStore
 ) : ViewModel() {
     private val dao = database.masterDao()
     private val searchQuery = MutableStateFlow("")
-    val suppliers: StateFlow<List<SupplierEntity>> = searchQuery
-        .flatMapLatest { dao.suppliers(it) }
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val suppliers: StateFlow<List<SupplierEntity>> = kotlinx.coroutines.flow.combine(
+        sessionStore.activeSession,
+        searchQuery
+    ) { session, query ->
+        val companyId = session?.companyId ?: ""
+        companyId to query
+    }.flatMapLatest { (companyId, query) ->
+        dao.suppliers(companyId, query)
+    }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun updateSearch(query: String) { searchQuery.value = query }
 
     fun addSupplier(name: String, phone: String?, address: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val supplier = SupplierEntity(
                     id = newRecordId(),
+                    companyId = session.companyId,
                     name = name,
                     phone = phone,
                     address = address,
@@ -341,8 +440,10 @@ class SupplierViewModel @Inject constructor(
     fun addSupplierCredit(supplierId: String, amountMinorUnits: Long, terms: String, dueDateEpochMs: Long, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val credit = SupplierCreditEntity(
                     id = newRecordId(),
+                    companyId = session.companyId,
                     supplierId = supplierId,
                     amountMinorUnits = amountMinorUnits,
                     terms = terms,
@@ -351,6 +452,7 @@ class SupplierViewModel @Inject constructor(
                     syncStatus = SyncStatus.LOCAL_ONLY
                 )
                 dao.insertSupplierCredit(credit)
+                syncManager.enqueueSupplierCredit(credit, "INSERT")
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -358,27 +460,74 @@ class SupplierViewModel @Inject constructor(
         }
     }
 
-    fun getSupplierCredits(supplierId: String): Flow<List<SupplierCreditEntity>> = dao.getSupplierCredits(supplierId)
+    fun getSupplierCredits(supplierId: String): Flow<List<SupplierCreditEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            dao.getSupplierCredits(companyId, supplierId)
+        }
 
-    fun getSupplierCreditBalance(supplierId: String): Flow<Long?> = dao.getSupplierCreditBalance(supplierId)
+    fun getSupplierCreditBalance(supplierId: String): Flow<Long?> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            dao.getSupplierCreditBalance(companyId, supplierId)
+        }
 
-    fun getTotalSupplierCreditsPayable(): Flow<Long?> = dao.getTotalSupplierCreditsPayable()
+    fun getTotalSupplierCreditsPayable(): Flow<Long?> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            dao.getTotalSupplierCreditsPayable(companyId)
+        }
+
+    fun getSupplierLedger(supplierId: String): Flow<List<LedgerEntry>> = kotlinx.coroutines.flow.combine(
+        sessionStore.activeSession.flatMapLatest { session -> 
+            database.purchaseDao().getPurchasesForSupplier(session?.companyId ?: "", supplierId) 
+        },
+        sessionStore.activeSession.flatMapLatest { session -> 
+            dao.getSupplierCredits(session?.companyId ?: "", supplierId) 
+        }
+    ) { purchases, credits ->
+        val entries = mutableListOf<LedgerEntry>()
+        purchases.forEach { purchase ->
+            entries.add(LedgerEntry(purchase.id, purchase.createdAtEpochMs, "Purchase", purchase.totalMinorUnits, 0L, 0L))
+        }
+        credits.forEach { credit ->
+            entries.add(LedgerEntry(credit.id, credit.dateEpochMs, credit.terms, 0L, credit.amountMinorUnits, 0L))
+        }
+        val sorted = entries.sortedBy { it.dateEpochMs }
+        var balance = 0L
+        sorted.map { entry ->
+            balance += entry.debitMinorUnits
+            balance -= entry.creditMinorUnits
+            entry.copy(runningBalance = balance)
+        }.reversed()
+    }
+    
+    fun getSupplierBalance(supplierId: String): Flow<Long> = getSupplierLedger(supplierId).map { ledger ->
+        ledger.firstOrNull()?.runningBalance ?: 0L
+    }
 }
 
 @HiltViewModel
 class ExpenseViewModel @Inject constructor(
     private val database: BillingDatabase,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val sessionStore: SessionStore
 ) : ViewModel() {
     private val dao = database.masterDao()
-    val expenses: StateFlow<List<ExpenseEntity>> = dao.expenses()
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+
+    val expenses: StateFlow<List<ExpenseEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            dao.expenses(companyId)
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun addExpense(amountMinorUnits: Long, description: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val expense = ExpenseEntity(
                     id = newRecordId(),
+                    companyId = session.companyId,
                     amountMinorUnits = amountMinorUnits,
                     description = description,
                     createdAtEpochMs = System.currentTimeMillis(),

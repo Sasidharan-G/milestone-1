@@ -22,6 +22,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import com.company.billing.core.auth.SessionStore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import javax.inject.Inject
@@ -41,23 +43,36 @@ data class ParsedInvoiceItem(
 class PurchaseViewModel @Inject constructor(
     private val database: BillingDatabase,
     private val purchaseRepository: PurchaseRepository,
-    private val appPreferences: AppPreferences
+    private val appPreferences: AppPreferences,
+    private val sessionStore: SessionStore
 ) : ViewModel() {
 
     private val masterDao = database.masterDao()
     private val purchaseDao = database.purchaseDao()
 
-    val products: StateFlow<List<ProductEntity>> = masterDao.products("")
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val products: StateFlow<List<ProductEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            masterDao.products(companyId, "")
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    val suppliers: StateFlow<List<SupplierEntity>> = masterDao.suppliers("")
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val suppliers: StateFlow<List<SupplierEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            masterDao.suppliers(companyId, "")
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    val purchases: StateFlow<List<PurchaseEntity>> = purchaseDao.getPurchases()
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val purchases: StateFlow<List<PurchaseEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            purchaseDao.getPurchases(companyId)
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
-    val stocks: StateFlow<List<ProductStock>> = purchaseDao.getStockBalances()
-        .stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+    val stocks: StateFlow<List<ProductStock>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            purchaseDao.getStockBalances(companyId)
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val geminiApiKey: StateFlow<String?> = appPreferences.geminiApi
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
@@ -156,11 +171,15 @@ class PurchaseViewModel @Inject constructor(
                 }
 
                 // 2. Map or insert Supplier
-                val allSuppliers = masterDao.suppliers("").first()
+                val session = sessionStore.activeSession.first() ?: return@launch
+                val companyId = session.companyId
+                
+                val allSuppliers = masterDao.suppliers(companyId, "").first()
                 var supplier = allSuppliers.find { it.name.equals(parsedInvoice.supplierName, ignoreCase = true) }
                 if (supplier == null) {
                     val newSupplier = SupplierEntity(
                         id = java.util.UUID.randomUUID().toString(),
+                        companyId = companyId,
                         name = parsedInvoice.supplierName,
                         createdAtEpochMs = System.currentTimeMillis(),
                         updatedAtEpochMs = System.currentTimeMillis(),
@@ -172,13 +191,14 @@ class PurchaseViewModel @Inject constructor(
                 _selectedSupplierId.value = supplier.id
 
                 // 3. Map or insert Products
-                val allProducts = masterDao.products("").first()
-                val allCategories = masterDao.categories("").first()
+                val allProducts = masterDao.products(companyId, "").first()
+                val allCategories = masterDao.categories(companyId, "").first()
 
                 var defaultCategoryId = allCategories.firstOrNull()?.id
                 if (defaultCategoryId == null) {
                     val newCategory = CategoryEntity(
                         id = java.util.UUID.randomUUID().toString(),
+                        companyId = companyId,
                         name = "General",
                         createdAtEpochMs = System.currentTimeMillis(),
                         updatedAtEpochMs = System.currentTimeMillis(),
@@ -194,6 +214,7 @@ class PurchaseViewModel @Inject constructor(
                     if (product == null) {
                         val newProduct = ProductEntity(
                             id = java.util.UUID.randomUUID().toString(),
+                            companyId = companyId,
                             name = item.productName,
                             categoryId = defaultCategoryId!!,
                             createdAtEpochMs = System.currentTimeMillis(),

@@ -6,12 +6,24 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.company.billing.core.sync.SyncStatus
 
-@Entity(tableName = "categories", indices = [Index(value = ["name"], unique = true)])
-data class CategoryEntity(@PrimaryKey val id: String, val name: String, val createdAtEpochMs: Long, val updatedAtEpochMs: Long, val syncStatus: SyncStatus)
+@Entity(tableName = "categories", indices = [Index(value = ["companyId", "name"], unique = true)])
+data class CategoryEntity(
+    @PrimaryKey val id: String,
+    val companyId: String,
+    val name: String,
+    val createdAtEpochMs: Long,
+    val updatedAtEpochMs: Long,
+    val syncStatus: SyncStatus
+)
 
-@Entity(tableName = "products", foreignKeys = [ForeignKey(entity = CategoryEntity::class, parentColumns = ["id"], childColumns = ["categoryId"], onDelete = ForeignKey.RESTRICT)], indices = [Index("categoryId"), Index(value = ["name"], unique = true)])
+@Entity(
+    tableName = "products",
+    foreignKeys = [ForeignKey(entity = CategoryEntity::class, parentColumns = ["id"], childColumns = ["categoryId"], onDelete = ForeignKey.RESTRICT)],
+    indices = [Index("categoryId"), Index(value = ["companyId", "name"], unique = true)]
+)
 data class ProductEntity(
     @PrimaryKey val id: String,
+    val companyId: String,
     val name: String,
     val categoryId: String,
     val purchasePriceMinorUnits: Long = 0L,
@@ -22,9 +34,10 @@ data class ProductEntity(
     val syncStatus: SyncStatus
 )
 
-@Entity(tableName = "customers", indices = [Index("name")])
+@Entity(tableName = "customers", indices = [Index(value = ["companyId", "name"]), Index(value = ["companyId"])])
 data class CustomerEntity(
     @PrimaryKey val id: String,
+    val companyId: String,
     val name: String,
     val phone: String? = null,
     val address: String? = null,
@@ -34,9 +47,10 @@ data class CustomerEntity(
     val syncStatus: SyncStatus
 )
 
-@Entity(tableName = "suppliers", indices = [Index("name")])
+@Entity(tableName = "suppliers", indices = [Index(value = ["companyId", "name"]), Index(value = ["companyId"])])
 data class SupplierEntity(
     @PrimaryKey val id: String,
+    val companyId: String,
     val name: String,
     val phone: String? = null,
     val address: String? = null,
@@ -45,9 +59,10 @@ data class SupplierEntity(
     val syncStatus: SyncStatus
 )
 
-@Entity(tableName = "expenses")
+@Entity(tableName = "expenses", indices = [Index("companyId")])
 data class ExpenseEntity(
     @PrimaryKey val id: String,
+    val companyId: String,
     val amountMinorUnits: Long,
     val description: String,
     val createdAtEpochMs: Long,
@@ -55,9 +70,10 @@ data class ExpenseEntity(
     val syncStatus: SyncStatus
 )
 
-@Entity(tableName = "customer_credits", indices = [Index("customerId")])
+@Entity(tableName = "customer_credits", indices = [Index(value = ["companyId", "customerId"]), Index("companyId")])
 data class CustomerCreditEntity(
     @PrimaryKey val id: String,
+    val companyId: String,
     val customerId: String,
     val amountMinorUnits: Long,
     val reason: String,
@@ -65,9 +81,10 @@ data class CustomerCreditEntity(
     val syncStatus: SyncStatus
 )
 
-@Entity(tableName = "supplier_credits", indices = [Index("supplierId")])
+@Entity(tableName = "supplier_credits", indices = [Index(value = ["companyId", "supplierId"]), Index("companyId")])
 data class SupplierCreditEntity(
     @PrimaryKey val id: String,
+    val companyId: String,
     val supplierId: String,
     val amountMinorUnits: Long,
     val terms: String,
@@ -75,4 +92,3 @@ data class SupplierCreditEntity(
     val dateEpochMs: Long,
     val syncStatus: SyncStatus
 )
-

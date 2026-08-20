@@ -1043,7 +1043,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                     }
                 } else {
                     items(customers) { customer ->
-                        val balanceFlow = remember(customer.id) { viewModel.getCustomerCreditBalance(customer.id) }
+                        val balanceFlow = remember(customer.id) { viewModel.getCustomerBalance(customer.id) }
                         val balance by balanceFlow.collectAsState(initial = 0L)
                         val bal = balance ?: 0L
                         val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
@@ -1192,7 +1192,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             }
                         } else {
                             items(customers) { customer ->
-                                val balanceFlow = remember(customer.id) { viewModel.getCustomerCreditBalance(customer.id) }
+                                val balanceFlow = remember(customer.id) { viewModel.getCustomerBalance(customer.id) }
                                 val balance by balanceFlow.collectAsState(initial = 0L)
                                 val bal = balance ?: 0L
                                 val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
@@ -1407,7 +1407,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                     }
                 } else {
                     items(suppliers) { supplier ->
-                        val balanceFlow = remember(supplier.id) { viewModel.getSupplierCreditBalance(supplier.id) }
+                        val balanceFlow = remember(supplier.id) { viewModel.getSupplierBalance(supplier.id) }
                         val balance by balanceFlow.collectAsState(initial = 0L)
                         val bal = balance ?: 0L
                         
@@ -1560,7 +1560,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             }
                         } else {
                             items(suppliers) { supplier ->
-                                val balanceFlow = remember(supplier.id) { viewModel.getSupplierCreditBalance(supplier.id) }
+                                val balanceFlow = remember(supplier.id) { viewModel.getSupplierBalance(supplier.id) }
                                 val balance by balanceFlow.collectAsState(initial = 0L)
                                 val bal = balance ?: 0L
                                 
@@ -1936,9 +1936,8 @@ fun CustomerCreditDetailDialog(
     viewModel: CustomerViewModel,
     onDismiss: () -> Unit
 ) {
-    val credits by viewModel.getCustomerCredits(customer.id).collectAsState(initial = emptyList<CustomerCreditEntity>())
-    val balance by viewModel.getCustomerCreditBalance(customer.id).collectAsState(initial = 0L)
-    val bal = balance ?: 0L
+    val ledger by viewModel.getCustomerLedger(customer.id).collectAsState(initial = emptyList())
+    val bal = ledger.firstOrNull()?.runningBalance ?: 0L
     val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
 
     var amountText by remember { mutableStateOf("") }
@@ -2156,15 +2155,14 @@ fun CustomerCreditDetailDialog(
                             sb.append("----------------------------------------\n")
                             sb.append("TRANSACTION HISTORY:\n\n")
                             
-                            var running = 0L
-                            credits.asReversed().forEach { c ->
-                                running += c.amountMinorUnits
-                                val sign = if (c.amountMinorUnits >= 0) "[CREDIT]" else "[PAYMENT]"
-                                sb.append("${df.format(Date(c.dateEpochMs))}\n")
+                            ledger.reversed().forEach { entry ->
+                                val sign = if (entry.debitMinorUnits > 0) "[SALE]" else "[PAYMENT]"
+                                val amt = if (entry.debitMinorUnits > 0) entry.debitMinorUnits else entry.creditMinorUnits
+                                sb.append("${df.format(Date(entry.dateEpochMs))}\n")
                                 sb.append("  Type: $sign\n")
-                                sb.append("  Amt: ${Money(Math.abs(c.amountMinorUnits))}\n")
-                                sb.append("  Reason: ${c.reason}\n")
-                                sb.append("  Running Bal: ${Money(running)}\n")
+                                sb.append("  Amt: ${Money(amt)}\n")
+                                sb.append("  Desc: ${entry.description}\n")
+                                sb.append("  Running Bal: ${Money(entry.runningBalance)}\n")
                                 sb.append("----------------------------------------\n")
                             }
                             auditReportText = sb.toString()
@@ -2175,18 +2173,13 @@ fun CustomerCreditDetailDialog(
                 }
 
                 Text("Ledger History", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
-                if (credits.isEmpty()) {
+                if (ledger.isEmpty()) {
                     Text("No transactions logged yet.", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
                 } else {
-                    var currentRunningBalance = 0L
-                    val runningBalances = credits.asReversed().map {
-                        currentRunningBalance += it.amountMinorUnits
-                        currentRunningBalance
-                    }.asReversed()
-
-                    credits.forEachIndexed { index, cr ->
+                    ledger.forEach { entry ->
                         val df = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                        val crBal = runningBalances[index]
+                        val isDebit = entry.debitMinorUnits > 0
+                        val amt = if (isDebit) entry.debitMinorUnits else entry.creditMinorUnits
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2194,18 +2187,18 @@ fun CustomerCreditDetailDialog(
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(cr.reason, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text(entry.description, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                                     Text(
-                                        text = if (cr.amountMinorUnits >= 0) "+${Money(cr.amountMinorUnits)}" else Money(cr.amountMinorUnits).toString(),
+                                        text = if (isDebit) "+${Money(amt)}" else "-${Money(amt)}",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
-                                        color = if (cr.amountMinorUnits >= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        color = if (isDebit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(df.format(Date(cr.dateEpochMs)), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                    Text("Running Bal: ${Money(crBal)}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(df.format(Date(entry.dateEpochMs)), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text("Running Bal: ${Money(entry.runningBalance)}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }
@@ -2225,9 +2218,11 @@ fun SupplierCreditDetailDialog(
     viewModel: SupplierViewModel,
     onDismiss: () -> Unit
 ) {
-    val credits by viewModel.getSupplierCredits(supplier.id).collectAsState(initial = emptyList<SupplierCreditEntity>())
-    val balance by viewModel.getSupplierCreditBalance(supplier.id).collectAsState(initial = 0L)
-    val bal = balance ?: 0L
+    val ledger by viewModel.getSupplierLedger(supplier.id).collectAsState(initial = emptyList())
+    val bal = ledger.firstOrNull()?.runningBalance ?: 0L
+    // Note: Due dates are stored in Purchase tables if applicable, but for overdue we check credits list.
+    // For simplicity, overdue check remains based on raw credits if we still want it, but let's fetch credits just for this.
+    val credits by viewModel.getSupplierCredits(supplier.id).collectAsState(initial = emptyList<com.company.billing.feature.masters.data.SupplierCreditEntity>())
     val isOverdue = bal > 0L && credits.any { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L && it.dueDateEpochMs < System.currentTimeMillis() }
 
     var amountText by remember { mutableStateOf("") }
@@ -2411,18 +2406,14 @@ fun SupplierCreditDetailDialog(
                             sb.append("----------------------------------------\n")
                             sb.append("TRANSACTION HISTORY:\n\n")
                             
-                            var running = 0L
-                            credits.asReversed().forEach { c ->
-                                running += c.amountMinorUnits
-                                val sign = if (c.amountMinorUnits >= 0) "[CREDIT RECEIVED]" else "[PAYMENT MADE]"
-                                sb.append("${df.format(Date(c.dateEpochMs))}\n")
+                            ledger.reversed().forEach { entry ->
+                                val sign = if (entry.creditMinorUnits > 0) "[PURCHASE/CREDIT RECEIVED]" else "[PAYMENT MADE]"
+                                val amt = if (entry.creditMinorUnits > 0) entry.creditMinorUnits else entry.debitMinorUnits
+                                sb.append("${df.format(Date(entry.dateEpochMs))}\n")
                                 sb.append("  Type: $sign\n")
-                                sb.append("  Amt: ${Money(Math.abs(c.amountMinorUnits))}\n")
-                                sb.append("  Terms: ${c.terms}\n")
-                                if (c.amountMinorUnits > 0 && c.dueDateEpochMs > 0) {
-                                    sb.append("  Due Date: ${df.format(Date(c.dueDateEpochMs))}\n")
-                                }
-                                sb.append("  Running Bal: ${Money(running)}\n")
+                                sb.append("  Amt: ${Money(amt)}\n")
+                                sb.append("  Desc: ${entry.description}\n")
+                                sb.append("  Running Bal: ${Money(entry.runningBalance)}\n")
                                 sb.append("----------------------------------------\n")
                             }
                             auditReportText = sb.toString()
@@ -2435,18 +2426,13 @@ fun SupplierCreditDetailDialog(
                 }
 
                 Text("Ledger History", fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
-                if (credits.isEmpty()) {
+                if (ledger.isEmpty()) {
                     Text("No transactions logged yet.", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
                 } else {
-                    var currentRunningBalance = 0L
-                    val runningBalances = credits.asReversed().map {
-                        currentRunningBalance += it.amountMinorUnits
-                        currentRunningBalance
-                    }.asReversed()
-
-                    credits.forEachIndexed { index, cr ->
+                    ledger.forEach { entry ->
                         val df = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                        val crBal = runningBalances[index]
+                        val isCredit = entry.creditMinorUnits > 0
+                        val amt = if (isCredit) entry.creditMinorUnits else entry.debitMinorUnits
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2454,23 +2440,18 @@ fun SupplierCreditDetailDialog(
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(cr.terms, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                                    Text(entry.description, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
                                     Text(
-                                        text = if (cr.amountMinorUnits >= 0) "+${Money(cr.amountMinorUnits)}" else Money(cr.amountMinorUnits).toString(),
+                                        text = if (isCredit) "+${Money(amt)}" else "-${Money(amt)}",
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp,
-                                        color = if (cr.amountMinorUnits >= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        color = if (isCredit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                     )
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
-                                if (cr.amountMinorUnits > 0 && cr.dueDateEpochMs > 0) {
-                                    val dueStr = df.format(Date(cr.dueDateEpochMs))
-                                    Text("Due Date: $dueStr", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                }
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(df.format(Date(cr.dateEpochMs)), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                    Text("Running Bal: ${Money(crBal)}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                    Text(df.format(Date(entry.dateEpochMs)), fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text("Running Bal: ${Money(entry.runningBalance)}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
                                 }
                             }
                         }

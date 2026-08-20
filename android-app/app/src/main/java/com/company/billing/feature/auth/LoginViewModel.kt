@@ -19,4 +19,14 @@ data class LoginUiState(val username: String = "", val password: String = "", va
     fun updatePassword(value: String) = mutableState.update { it.copy(password = value, error = null) }
     fun updateMode(value: LoginMode) = mutableState.update { it.copy(mode = value, error = null) }
     fun login() { val current = state.value; if (current.username.isBlank() || current.password.isBlank()) { mutableState.update { it.copy(error = "Username and password are required") }; return }; viewModelScope.launch { mutableState.update { it.copy(loading = true, error = null) }; val password = current.password.toCharArray(); val result = when (current.mode) { LoginMode.Online -> authRepository.loginOnline(current.username, password); LoginMode.Offline -> authRepository.loginOffline(current.username, password) }; password.fill('\u0000'); mutableState.update { when (result) { is LoginResult.Success -> it.copy(loading = false, complete = true, password = ""); is LoginResult.Failure -> it.copy(loading = false, error = result.message, password = "") } } } }
+
+    fun recoverPassword(email: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            val res = authRepository.recoverPassword(email)
+            when (res) {
+                is com.company.billing.core.auth.RecoveryResult.Success -> onResult(true, null)
+                is com.company.billing.core.auth.RecoveryResult.Failure -> onResult(false, res.message)
+            }
+        }
+    }
 }

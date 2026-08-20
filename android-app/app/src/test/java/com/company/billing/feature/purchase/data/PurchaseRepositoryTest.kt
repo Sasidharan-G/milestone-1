@@ -13,6 +13,10 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
+import kotlinx.coroutines.flow.flowOf
+import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.mock
+
 class PurchaseRepositoryTest {
     @Test
     fun `save maps draft to purchase entities and inserts atomically`() = runBlocking {
@@ -29,14 +33,25 @@ class PurchaseRepositoryTest {
                 savedItems = items
                 savedMovements = movements
             }
-            override fun getStockBalances(): Flow<List<ProductStock>> = emptyFlow()
-            override fun getPurchases(): Flow<List<PurchaseEntity>> = emptyFlow()
-            override fun getPurchaseItems(purchaseId: String): Flow<List<PurchaseItemEntity>> = emptyFlow()
-            override suspend fun getAveragePurchasePrice(productId: String): Double? = null
+            override fun getStockBalances(companyId: String): Flow<List<ProductStock>> = emptyFlow()
+            override fun getPurchases(companyId: String): Flow<List<PurchaseEntity>> = emptyFlow()
+            override fun getPurchaseItems(companyId: String, purchaseId: String): Flow<List<PurchaseItemEntity>> = emptyFlow()
+            override suspend fun getAveragePurchasePrice(companyId: String, productId: String): Double? = null
         }
         
-        val mockSyncManager = org.mockito.Mockito.mock(com.company.billing.core.sync.SyncManager::class.java)
-        val repository = PurchaseRepositoryImpl(fakeDao, mockSyncManager)
+        val mockSyncManager = mock(com.company.billing.core.sync.SyncManager::class.java)
+        val mockSessionStore = mock(com.company.billing.core.auth.SessionStore::class.java)
+        val fakeSession = com.company.billing.core.auth.Session(
+            userId = "user-123",
+            displayName = "Test User",
+            permissions = emptySet(),
+            accessToken = "token",
+            companyId = "company-123",
+            role = "COMPANY_ADMIN"
+        )
+        doReturn(flowOf(fakeSession)).`when`(mockSessionStore).activeSession
+
+        val repository = PurchaseRepositoryImpl(fakeDao, mockSyncManager, mockSessionStore)
         val draft = PurchaseDraft(
             supplierId = "supp-1",
             lines = listOf(

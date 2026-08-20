@@ -9,18 +9,23 @@ import com.company.billing.feature.purchase.domain.PurchaseDraft
 import com.company.billing.feature.purchase.domain.PurchaseRepository
 
 import com.company.billing.core.sync.SyncManager
+import kotlinx.coroutines.flow.first
 
 class PurchaseRepositoryImpl(
     private val purchaseDao: PurchaseDao,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val sessionStore: com.company.billing.core.auth.SessionStore
 ) : PurchaseRepository {
     override suspend fun save(draft: PurchaseDraft): AppResult<String> {
         return try {
+            val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+            val companyId = session.companyId
             val purchaseId = newRecordId()
             val epochMs = System.currentTimeMillis()
             
             val purchase = PurchaseEntity(
                 id = purchaseId,
+                companyId = companyId,
                 supplierId = draft.supplierId,
                 totalMinorUnits = draft.total.minorUnits,
                 createdAtEpochMs = epochMs,
@@ -29,6 +34,7 @@ class PurchaseRepositoryImpl(
             
             val items = draft.lines.map { line ->
                 PurchaseItemEntity(
+                    companyId = companyId,
                     purchaseId = purchaseId,
                     productId = line.productId,
                     quantity = line.quantity,
@@ -40,6 +46,7 @@ class PurchaseRepositoryImpl(
             val movements = draft.lines.map { line ->
                 StockMovementEntity(
                     id = newRecordId(),
+                    companyId = companyId,
                     productId = line.productId,
                     quantityDelta = line.quantity, // Positive for purchases to add stock
                     type = "PURCHASE",

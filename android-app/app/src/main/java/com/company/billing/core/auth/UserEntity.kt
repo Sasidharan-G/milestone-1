@@ -15,7 +15,11 @@ data class UserEntity(
     val displayName: String,
     val salt: String, // Base64 derived salt
     val verifier: String, // Base64 derived verifier
-    val permissions: String // Comma-separated permissions list (e.g. "USER_MANAGE,PRODUCT_VIEW")
+    val permissions: String, // Comma-separated permissions list (e.g. "USER_MANAGE,PRODUCT_VIEW")
+    val companyId: String,
+    val role: String,
+    val lastOnlineVerifiedAt: Long,
+    val offlineValidUntil: Long
 ) {
     fun toPermissionsSet(): Set<Permission> {
         if (permissions.isBlank()) return emptySet()

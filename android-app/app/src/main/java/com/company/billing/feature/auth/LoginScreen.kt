@@ -24,7 +24,8 @@ import com.company.billing.core.auth.LoginMode
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
-    onLoginSuccess: () -> Unit
+    onLoginSuccess: () -> Unit,
+    onNavigateToRegister: () -> Unit
 ) {
     val state by viewModel.state.collectAsState()
     var message by remember { mutableStateOf("") }
@@ -148,7 +149,18 @@ fun LoginScreen(
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable {
-                            message = "Contact your system administrator to reset your credentials."
+                            val email = state.username.trim()
+                            if (email.isBlank() || !email.contains("@")) {
+                                message = "Please enter your email address in the username field first."
+                            } else {
+                                viewModel.recoverPassword(email) { success, errMsg ->
+                                    message = if (success) {
+                                        "Password recovery email dispatched. Check your inbox."
+                                    } else {
+                                        "Recovery failed: $errMsg"
+                                    }
+                                }
+                            }
                         }
                     )
                 }
@@ -179,6 +191,18 @@ fun LoginScreen(
                         Text("Sign In", fontWeight = FontWeight.Bold)
                     }
                 }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = "New business? Register here",
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .clickable { onNavigateToRegister() }
+                        .padding(vertical = 4.dp)
+                )
 
                 if (message.isNotBlank()) {
                     Text(

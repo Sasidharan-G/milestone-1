@@ -13,6 +13,10 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
+import kotlinx.coroutines.flow.flowOf
+import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.mock
+
 class CostingStrategyTest {
     @Test
     fun `calculates product costing based on average purchase price`() = runBlocking {
@@ -21,15 +25,26 @@ class CostingStrategyTest {
             override suspend fun insertItems(items: List<PurchaseItemEntity>) {}
             override suspend fun insertStockMovements(movements: List<StockMovementEntity>) {}
             override suspend fun savePurchase(purchase: PurchaseEntity, items: List<PurchaseItemEntity>, movements: List<StockMovementEntity>) {}
-            override fun getStockBalances(): Flow<List<ProductStock>> = emptyFlow()
-            override fun getPurchases(): Flow<List<PurchaseEntity>> = emptyFlow()
-            override fun getPurchaseItems(purchaseId: String): Flow<List<PurchaseItemEntity>> = emptyFlow()
-            override suspend fun getAveragePurchasePrice(productId: String): Double? {
+            override fun getStockBalances(companyId: String): Flow<List<ProductStock>> = emptyFlow()
+            override fun getPurchases(companyId: String): Flow<List<PurchaseEntity>> = emptyFlow()
+            override fun getPurchaseItems(companyId: String, purchaseId: String): Flow<List<PurchaseItemEntity>> = emptyFlow()
+            override suspend fun getAveragePurchasePrice(companyId: String, productId: String): Double? {
                 return if (productId == "p1") 150.0 else null
             }
         }
         
-        val costing = DefaultCostingStrategy(fakeDao)
+        val mockSessionStore = mock(com.company.billing.core.auth.SessionStore::class.java)
+        val fakeSession = com.company.billing.core.auth.Session(
+            userId = "user-123",
+            displayName = "Test User",
+            permissions = emptySet(),
+            accessToken = "token",
+            companyId = "company-123",
+            role = "COMPANY_ADMIN"
+        )
+        doReturn(flowOf(fakeSession)).`when`(mockSessionStore).activeSession
+
+        val costing = DefaultCostingStrategy(fakeDao, mockSessionStore)
         val costP1 = costing.getProductCost("p1", 4)
         val costP2 = costing.getProductCost("p2", 10)
         

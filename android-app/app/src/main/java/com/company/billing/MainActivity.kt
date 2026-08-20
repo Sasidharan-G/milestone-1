@@ -21,46 +21,13 @@ class MainActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Physical Security: Prevent screenshots and screen recording app-wide
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        )
-
         // Runtime Security Check
         if (runSecurityChecks()) {
             return
         }
 
         setContent {
-            var isAuthenticated by remember { mutableStateOf(false) }
-
-            LaunchedEffect(Unit) {
-                if (BiometricAuthenticator.isBiometricAvailable(this@MainActivity)) {
-                    BiometricAuthenticator.authenticate(
-                        activity = this@MainActivity,
-                        onSuccess = { isAuthenticated = true },
-                        onError = {
-                            // Close app on cancel or failure
-                            finishAffinity()
-                        }
-                    )
-                } else {
-                    // Fallback to password or direct access if biometrics are not set up on device
-                    isAuthenticated = true
-                }
-            }
-
-            if (isAuthenticated) {
-                BillingApp()
-            } else {
-                // Secure black canvas to prevent pre-auth data exposure
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black)
-                )
-            }
+            BillingApp()
         }
     }
 

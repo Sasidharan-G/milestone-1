@@ -12,6 +12,7 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.postgrest.from
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.decodeFromString
+import kotlinx.coroutines.flow.first
 
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
@@ -20,6 +21,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     interface SyncEntryPoint {
         fun database(): BillingDatabase
         fun supabase(): SupabaseClient
+        fun sessionStore(): com.company.billing.core.auth.SessionStore
     }
 
     private val json = Json { ignoreUnknownKeys = true }
@@ -31,12 +33,16 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         )
         val database = entryPoint.database()
         val supabase = entryPoint.supabase()
+        val sessionStore = entryPoint.sessionStore()
+
+        val activeSession = sessionStore.activeSession.first() ?: return Result.success()
+        val companyId = activeSession.companyId
 
         val syncQueueDao = database.syncQueueDao()
 
         try {
             while (true) {
-                val pendingItems = syncQueueDao.pending(50)
+                val pendingItems = syncQueueDao.pending(companyId, 50)
                 if (pendingItems.isEmpty()) break
 
                 var allSuccessful = true
@@ -95,6 +101,24 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                                     table.upsert(local.toSupabase())
                                 }
                             }
+                            "CustomerCredit" -> {
+                                val table = supabase.from("customer_credits")
+                                if (operation == "DELETE") {
+                                    table.delete { filter { eq("id", entityId) } }
+                                } else {
+                                    val local = json.decodeFromString<CustomerCreditLocal>(payload)
+                                    table.upsert(local.toSupabase())
+                                }
+                            }
+                            "SupplierCredit" -> {
+                                val table = supabase.from("supplier_credits")
+                                if (operation == "DELETE") {
+                                    table.delete { filter { eq("id", entityId) } }
+                                } else {
+                                    val local = json.decodeFromString<SupplierCreditLocal>(payload)
+                                    table.upsert(local.toSupabase())
+                                }
+                            }
                             "Sale" -> {
                                 if (operation == "DELETE") {
                                     supabase.from("sales").delete { filter { eq("id", entityId) } }
@@ -104,6 +128,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                                     supabase.from("sales").upsert(
                                         SupabaseSale(
                                             id = local.id,
+                                            companyId = companyId,
                                             billNumber = local.billNumber,
                                             totalMinorUnits = local.totalMinorUnits,
                                             createdAtEpochMs = local.createdAtEpochMs,
@@ -113,6 +138,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                                     // Upsert sale items
                                     val supabaseItems = local.items.map { sItem ->
                                         SupabaseSaleItem(
+                                            companyId = companyId,
                                             saleId = local.id,
                                             productId = sItem.productId,
                                             quantity = sItem.quantity,
@@ -132,6 +158,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                                     supabase.from("purchases").upsert(
                                         SupabasePurchase(
                                             id = local.id,
+                                            companyId = companyId,
                                             supplierId = local.supplierId,
                                             totalMinorUnits = local.totalMinorUnits,
                                             createdAtEpochMs = local.createdAtEpochMs
@@ -140,6 +167,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                                     // Upsert purchase items
                                     val supabaseItems = local.items.map { pItem ->
                                         SupabasePurchaseItem(
+                                            companyId = companyId,
                                             purchaseId = local.id,
                                             productId = pItem.productId,
                                             quantity = pItem.quantity,
@@ -192,6 +220,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             "Expense" -> "expenses"
             "Sale" -> "sales"
             "Purchase" -> "purchases"
+            "CustomerCredit" -> "customer_credits"
+            "SupplierCredit" -> "supplier_credits"
             else -> null
         }
         if (tableName != null) {

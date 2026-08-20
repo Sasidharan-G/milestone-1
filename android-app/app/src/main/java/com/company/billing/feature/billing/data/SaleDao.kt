@@ -12,9 +12,12 @@ import kotlinx.coroutines.flow.Flow
     @Insert suspend fun insertStockMovements(movements: List<StockMovementEntity>)
     @Transaction suspend fun saveSale(sale: SaleEntity, items: List<SaleItemEntity>, movements: List<StockMovementEntity>) { insertSale(sale); insertItems(items); insertStockMovements(movements) }
 
-    @Query("SELECT * FROM sales ORDER BY createdAtEpochMs DESC")
-    fun getSales(): Flow<List<SaleEntity>>
+    @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
+    fun getSales(companyId: String): Flow<List<SaleEntity>>
 
-    @Query("SELECT * FROM sale_items WHERE saleId = :saleId")
-    fun getSaleItems(saleId: String): Flow<List<SaleItemEntity>>
+    @Query("SELECT * FROM sale_items WHERE companyId = :companyId AND saleId = :saleId")
+    fun getSaleItems(companyId: String, saleId: String): Flow<List<SaleItemEntity>>
+
+    @Query("SELECT * FROM sales WHERE companyId = :companyId AND customerId = :customerId ORDER BY createdAtEpochMs DESC")
+    fun getSalesForCustomer(companyId: String, customerId: String): Flow<List<SaleEntity>>
 }

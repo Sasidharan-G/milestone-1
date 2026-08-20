@@ -12,6 +12,7 @@ import com.company.billing.core.database.migration5To6
 import com.company.billing.core.database.migration6To7
 import com.company.billing.core.database.migration7To8
 import com.company.billing.core.database.migration8To9
+import com.company.billing.core.database.migration9To10
 import com.company.billing.core.auth.AuthRepository
 import com.company.billing.core.auth.DefaultAuthRepository
 import com.company.billing.core.auth.OfflineCredentialStore
@@ -19,7 +20,6 @@ import com.company.billing.core.auth.OfflineCredentialVerifier
 import com.company.billing.core.auth.SessionStore
 import com.company.billing.core.logging.AndroidLogger
 import com.company.billing.core.logging.AppLogger
-import com.company.billing.core.network.BillingApi
 import com.company.billing.core.preferences.AppPreferences
 import com.company.billing.core.sync.SyncScheduler
 import com.company.billing.core.printer.data.BluetoothPrinterDriver
@@ -47,8 +47,6 @@ import dagger.Provides
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import retrofit2.Retrofit
-import retrofit2.converter.moshi.MoshiConverterFactory
 import javax.inject.Singleton
 import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
@@ -68,10 +66,9 @@ object CoreModule {
         val factory = net.sqlcipher.database.SupportFactory(keyBytes)
         return Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
             .openHelperFactory(factory)
-            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9)
+            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10)
             .build()
     }
-    @Provides @Singleton fun api(): BillingApi = Retrofit.Builder().baseUrl("https://REQUIRES_CLIENT_CONFIRMATION.invalid/").addConverterFactory(MoshiConverterFactory.create()).build().create(BillingApi::class.java)
     @Provides @Singleton fun preferences(@ApplicationContext context: Context) = AppPreferences(context.billingDataStore)
     @Provides @Singleton fun sessionStore(@ApplicationContext context: Context) = SessionStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialStore(@ApplicationContext context: Context) = OfflineCredentialStore(context.billingDataStore)
@@ -87,12 +84,12 @@ object CoreModule {
     @Provides @Singleton fun authRepository(supabase: SupabaseClient, sessions: SessionStore, credentials: OfflineCredentialStore, verifier: OfflineCredentialVerifier, database: BillingDatabase): AuthRepository = DefaultAuthRepository(supabase, sessions, credentials, verifier, database)
     @Provides @Singleton fun logger(): AppLogger = AndroidLogger()
     @Provides @Singleton fun syncScheduler(@ApplicationContext context: Context) = SyncScheduler(context)
-    @Provides @Singleton fun syncManager(database: BillingDatabase, syncScheduler: SyncScheduler) = SyncManager(database, syncScheduler)
+    @Provides @Singleton fun syncManager(database: BillingDatabase, syncScheduler: SyncScheduler, sessionStore: SessionStore) = SyncManager(database, syncScheduler, sessionStore)
 
-    @Provides @Singleton fun saleRepository(database: BillingDatabase, syncManager: SyncManager): SaleRepository = SaleRepositoryImpl(database.saleDao(), syncManager)
-    @Provides @Singleton fun purchaseRepository(database: BillingDatabase, syncManager: SyncManager): PurchaseRepository = PurchaseRepositoryImpl(database.purchaseDao(), syncManager)
-    @Provides @Singleton fun costingStrategy(database: BillingDatabase): CostingStrategy = DefaultCostingStrategy(database.purchaseDao())
-    @Provides @Singleton fun reportRepository(database: BillingDatabase, costingStrategy: CostingStrategy): ReportRepository = ReportRepositoryImpl(database.reportDao(), costingStrategy)
+    @Provides @Singleton fun saleRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore): SaleRepository = SaleRepositoryImpl(database.saleDao(), syncManager, sessionStore)
+    @Provides @Singleton fun purchaseRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore): PurchaseRepository = PurchaseRepositoryImpl(database.purchaseDao(), syncManager, sessionStore)
+    @Provides @Singleton fun costingStrategy(database: BillingDatabase, sessionStore: SessionStore): CostingStrategy = DefaultCostingStrategy(database.purchaseDao(), sessionStore)
+    @Provides @Singleton fun reportRepository(database: BillingDatabase, costingStrategy: CostingStrategy, sessionStore: SessionStore): ReportRepository = ReportRepositoryImpl(database.reportDao(), costingStrategy, sessionStore)
     @Provides @Singleton fun reportService(reportRepository: ReportRepository): ReportService = DefaultReportService(reportRepository)
     @Provides @Singleton fun pdfExporter(): PdfExporter = AndroidPdfExporter()
     @Provides @Singleton fun excelExporter(): ExcelExporter = CsvExcelExporter()

@@ -67,3 +67,116 @@ val migration8To9 = object : Migration(8, 9) {
     }
 }
 
+val migration9To10 = object : Migration(9, 10) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        val defaultCompany = "00000000-0000-0000-0000-000000000000"
+
+        // 1. Categories
+        db.execSQL("ALTER TABLE `categories` RENAME TO `temp_categories`")
+        db.execSQL("CREATE TABLE `categories` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `name` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `categories` SELECT id, '$defaultCompany', name, createdAtEpochMs, updatedAtEpochMs, syncStatus FROM temp_categories")
+        db.execSQL("CREATE UNIQUE INDEX `index_categories_companyId_name` ON `categories` (`companyId`, `name`)")
+        db.execSQL("DROP TABLE `temp_categories`")
+
+        // 2. Products
+        db.execSQL("ALTER TABLE `products` RENAME TO `temp_products`")
+        db.execSQL("CREATE TABLE `products` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `name` TEXT NOT NULL, `categoryId` TEXT NOT NULL, `purchasePriceMinorUnits` INTEGER NOT NULL, `salePriceMinorUnits` INTEGER NOT NULL, `unitType` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`), FOREIGN KEY(`categoryId`) REFERENCES `categories`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+        db.execSQL("INSERT INTO `products` SELECT id, '$defaultCompany', name, categoryId, purchasePriceMinorUnits, salePriceMinorUnits, unitType, createdAtEpochMs, updatedAtEpochMs, syncStatus FROM temp_products")
+        db.execSQL("CREATE UNIQUE INDEX `index_products_companyId_name` ON `products` (`companyId`, `name`)")
+        db.execSQL("CREATE INDEX `index_products_categoryId` ON `products` (`categoryId`)")
+        db.execSQL("DROP TABLE `temp_products`")
+
+        // 3. Customers
+        db.execSQL("ALTER TABLE `customers` RENAME TO `temp_customers`")
+        db.execSQL("CREATE TABLE `customers` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `name` TEXT NOT NULL, `phone` TEXT, `address` TEXT, `creditLimitMinorUnits` INTEGER NOT NULL DEFAULT 0, `createdAtEpochMs` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `customers` SELECT id, '$defaultCompany', name, phone, address, creditLimitMinorUnits, createdAtEpochMs, updatedAtEpochMs, syncStatus FROM temp_customers")
+        db.execSQL("CREATE INDEX `index_customers_companyId_name` ON `customers` (`companyId`, `name`)")
+        db.execSQL("CREATE INDEX `index_customers_companyId` ON `customers` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_customers`")
+
+        // 4. Suppliers
+        db.execSQL("ALTER TABLE `suppliers` RENAME TO `temp_suppliers`")
+        db.execSQL("CREATE TABLE `suppliers` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `name` TEXT NOT NULL, `phone` TEXT, `address` TEXT, `createdAtEpochMs` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `suppliers` SELECT id, '$defaultCompany', name, phone, address, createdAtEpochMs, updatedAtEpochMs, syncStatus FROM temp_suppliers")
+        db.execSQL("CREATE INDEX `index_suppliers_companyId_name` ON `suppliers` (`companyId`, `name`)")
+        db.execSQL("CREATE INDEX `index_suppliers_companyId` ON `suppliers` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_suppliers`")
+
+        // 5. Expenses
+        db.execSQL("ALTER TABLE `expenses` RENAME TO `temp_expenses`")
+        db.execSQL("CREATE TABLE `expenses` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `amountMinorUnits` INTEGER NOT NULL, `description` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `expenses` SELECT id, '$defaultCompany', amountMinorUnits, description, createdAtEpochMs, updatedAtEpochMs, syncStatus FROM temp_expenses")
+        db.execSQL("CREATE INDEX `index_expenses_companyId` ON `expenses` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_expenses`")
+
+        // 6. Sales
+        db.execSQL("ALTER TABLE `sales` RENAME TO `temp_sales`")
+        db.execSQL("CREATE TABLE `sales` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `billNumber` TEXT NOT NULL, `totalMinorUnits` INTEGER NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, `customerId` TEXT, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `sales` SELECT id, '$defaultCompany', billNumber, totalMinorUnits, createdAtEpochMs, syncStatus, customerId FROM temp_sales")
+        db.execSQL("CREATE UNIQUE INDEX `index_sales_companyId_billNumber` ON `sales` (`companyId`, `billNumber`)")
+        db.execSQL("CREATE INDEX `index_sales_companyId` ON `sales` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_sales`")
+
+        // 7. Sale Items
+        db.execSQL("ALTER TABLE `sale_items` RENAME TO `temp_sale_items`")
+        db.execSQL("CREATE TABLE `sale_items` (`companyId` TEXT NOT NULL, `saleId` TEXT NOT NULL, `productId` TEXT NOT NULL, `quantity` INTEGER NOT NULL, `unitPriceMinorUnits` INTEGER NOT NULL, `lineTotalMinorUnits` INTEGER NOT NULL, PRIMARY KEY(`saleId`, `productId`), FOREIGN KEY(`saleId`) REFERENCES `sales`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(`productId`) REFERENCES `products`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT)")
+        db.execSQL("INSERT INTO `sale_items` SELECT '$defaultCompany', saleId, productId, quantity, unitPriceMinorUnits, lineTotalMinorUnits FROM temp_sale_items")
+        db.execSQL("CREATE INDEX `index_sale_items_productId` ON `sale_items` (`productId`)")
+        db.execSQL("CREATE INDEX `index_sale_items_companyId` ON `sale_items` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_sale_items`")
+
+        // 8. Stock Movements
+        db.execSQL("ALTER TABLE `stock_movements` RENAME TO `temp_stock_movements`")
+        db.execSQL("CREATE TABLE `stock_movements` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `quantityDelta` INTEGER NOT NULL, `type` TEXT NOT NULL, `referenceId` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `stock_movements` SELECT id, '$defaultCompany', productId, quantityDelta, type, referenceId, createdAtEpochMs FROM temp_stock_movements")
+        db.execSQL("CREATE INDEX `index_stock_movements_companyId_productId` ON `stock_movements` (`companyId`, `productId`)")
+        db.execSQL("CREATE INDEX `index_stock_movements_companyId_referenceId` ON `stock_movements` (`companyId`, `referenceId`)")
+        db.execSQL("CREATE INDEX `index_stock_movements_companyId` ON `stock_movements` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_stock_movements`")
+
+        // 9. Purchases
+        db.execSQL("ALTER TABLE `purchases` RENAME TO `temp_purchases`")
+        db.execSQL("CREATE TABLE `purchases` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `supplierId` TEXT NOT NULL, `totalMinorUnits` INTEGER NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `purchases` SELECT id, '$defaultCompany', supplierId, totalMinorUnits, createdAtEpochMs, syncStatus FROM temp_purchases")
+        db.execSQL("CREATE INDEX `index_purchases_companyId` ON `purchases` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_purchases`")
+
+        // 10. Purchase Items
+        db.execSQL("ALTER TABLE `purchase_items` RENAME TO `temp_purchase_items`")
+        db.execSQL("CREATE TABLE `purchase_items` (`companyId` TEXT NOT NULL, `purchaseId` TEXT NOT NULL, `productId` TEXT NOT NULL, `quantity` INTEGER NOT NULL, `unitValueMinorUnits` INTEGER NOT NULL, `lineTotalMinorUnits` INTEGER NOT NULL, PRIMARY KEY(`purchaseId`, `productId`))")
+        db.execSQL("INSERT INTO `purchase_items` SELECT '$defaultCompany', purchaseId, productId, quantity, unitValueMinorUnits, lineTotalMinorUnits FROM temp_purchase_items")
+        db.execSQL("CREATE INDEX `index_purchase_items_companyId` ON `purchase_items` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_purchase_items`")
+
+        // 11. Customer Credits
+        db.execSQL("ALTER TABLE `customer_credits` RENAME TO `temp_customer_credits`")
+        db.execSQL("CREATE TABLE `customer_credits` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `customerId` TEXT NOT NULL, `amountMinorUnits` INTEGER NOT NULL, `reason` TEXT NOT NULL, `dateEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `customer_credits` SELECT id, '$defaultCompany', customerId, amountMinorUnits, reason, dateEpochMs, syncStatus FROM temp_customer_credits")
+        db.execSQL("CREATE INDEX `index_customer_credits_companyId_customerId` ON `customer_credits` (`companyId`, `customerId`)")
+        db.execSQL("CREATE INDEX `index_customer_credits_companyId` ON `customer_credits` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_customer_credits`")
+
+        // 12. Supplier Credits
+        db.execSQL("ALTER TABLE `supplier_credits` RENAME TO `temp_supplier_credits`")
+        db.execSQL("CREATE TABLE `supplier_credits` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `supplierId` TEXT NOT NULL, `amountMinorUnits` INTEGER NOT NULL, `terms` TEXT NOT NULL, `dueDateEpochMs` INTEGER NOT NULL, `dateEpochMs` INTEGER NOT NULL, `syncStatus` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `supplier_credits` SELECT id, '$defaultCompany', supplierId, amountMinorUnits, terms, dueDateEpochMs, dateEpochMs, syncStatus FROM temp_supplier_credits")
+        db.execSQL("CREATE INDEX `index_supplier_credits_companyId_supplierId` ON `supplier_credits` (`companyId`, `supplierId`)")
+        db.execSQL("CREATE INDEX `index_supplier_credits_companyId` ON `supplier_credits` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_supplier_credits`")
+
+        // 13. Sync Queue
+        db.execSQL("ALTER TABLE `sync_queue` RENAME TO `temp_sync_queue`")
+        db.execSQL("CREATE TABLE `sync_queue` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `entityType` TEXT NOT NULL, `entityId` TEXT NOT NULL, `operation` TEXT NOT NULL, `payload` TEXT NOT NULL, `status` TEXT NOT NULL, `attemptCount` INTEGER NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, `updatedAtEpochMs` INTEGER NOT NULL, `lastError` TEXT, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `sync_queue` SELECT id, '$defaultCompany', entityType, entityId, operation, payload, status, attemptCount, createdAtEpochMs, updatedAtEpochMs, lastError FROM temp_sync_queue")
+        db.execSQL("CREATE INDEX `index_sync_queue_companyId` ON `sync_queue` (`companyId`)")
+        db.execSQL("DROP TABLE `temp_sync_queue`")
+
+        // 14. Users Table Alteration (Add companyId, role, lastOnlineVerifiedAt, offlineValidUntil)
+        db.execSQL("ALTER TABLE `users` ADD COLUMN `companyId` TEXT NOT NULL DEFAULT '$defaultCompany'")
+        db.execSQL("ALTER TABLE `users` ADD COLUMN `role` TEXT NOT NULL DEFAULT 'CASHIER'")
+        db.execSQL("ALTER TABLE `users` ADD COLUMN `lastOnlineVerifiedAt` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `users` ADD COLUMN `offlineValidUntil` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+

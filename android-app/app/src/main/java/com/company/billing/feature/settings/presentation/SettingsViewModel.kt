@@ -28,6 +28,10 @@ import com.company.billing.core.backup.domain.BackupResult
 import com.company.billing.core.backup.data.GoogleDriveBackupManager
 import com.company.billing.core.backup.data.SupabaseBackupManager
 import com.company.billing.core.sync.SyncScheduler
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 
 data class BluetoothDeviceInfo(val name: String, val address: String)
 
@@ -42,7 +46,8 @@ class SettingsViewModel @Inject constructor(
     private val syncScheduler: SyncScheduler,
     private val database: com.company.billing.core.database.BillingDatabase,
     private val sessionStore: com.company.billing.core.auth.SessionStore,
-    private val verifier: com.company.billing.core.auth.OfflineCredentialVerifier
+    private val verifier: com.company.billing.core.auth.OfflineCredentialVerifier,
+    private val supabase: SupabaseClient
 ) : ViewModel() {
 
     val printerType: StateFlow<String?> = appPreferences.printerType.stateIn(
@@ -410,19 +415,47 @@ class SettingsViewModel @Inject constructor(
 
     fun createUser(username: String, displayName: String, password: CharArray, permissions: Set<com.company.billing.core.security.Permission>) {
         viewModelScope.launch {
-            val cred = verifier.create(username, password, java.util.UUID.randomUUID().toString(), displayName)
-            val saltStr = android.util.Base64.encodeToString(cred.salt, android.util.Base64.NO_WRAP)
-            val verifierStr = android.util.Base64.encodeToString(cred.verifier, android.util.Base64.NO_WRAP)
+            try {
+                val session = sessionStore.activeSession.first() ?: return@launch
+                val companyId = session.companyId
+                val cred = verifier.create(username, password, java.util.UUID.randomUUID().toString(), displayName)
+                val saltStr = java.util.Base64.getEncoder().encodeToString(cred.salt)
+                val verifierStr = java.util.Base64.getEncoder().encodeToString(cred.verifier)
 
-            val userEntity = com.company.billing.core.auth.UserEntity(
-                id = cred.userId,
-                username = username,
-                displayName = displayName,
-                salt = saltStr,
-                verifier = verifierStr,
-                permissions = permissions.joinToString(",") { it.name }
-            )
-            database.userDao().insertUser(userEntity)
+                val userEntity = com.company.billing.core.auth.UserEntity(
+                    id = cred.userId,
+                    username = username,
+                    displayName = displayName,
+                    salt = saltStr,
+                    verifier = verifierStr,
+                    permissions = permissions.joinToString(",") { it.name },
+                    companyId = companyId,
+                    role = "CASHIER",
+                    lastOnlineVerifiedAt = System.currentTimeMillis(),
+                    offlineValidUntil = System.currentTimeMillis() + (7 * 24 * 60 * 60 * 1000L)
+                )
+                database.userDao().insertUser(userEntity)
+
+                // Call Supabase RPC
+                try {
+                    supabase.postgrest.rpc(
+                        function = "create_cashier_user",
+                        parameters = buildJsonObject {
+                            put("cashier_email", username)
+                            put("cashier_password", String(password))
+                            put("cashier_display_name", displayName)
+                            val permsArray = kotlinx.serialization.json.buildJsonArray {
+                                permissions.forEach { add(kotlinx.serialization.json.JsonPrimitive(it.name)) }
+                            }
+                            put("cashier_permissions", permsArray)
+                        }
+                    )
+                } catch (rpcEx: Exception) {
+                    rpcEx.printStackTrace()
+                }
+            } catch (e: Exception) {
+                // Outer failure handling
+            }
         }
     }
 
@@ -433,8 +466,8 @@ class SettingsViewModel @Inject constructor(
 
             val updatedUser = if (newPassword != null && newPassword.isNotEmpty()) {
                 val cred = verifier.create(existing.username, newPassword, existing.id, existing.displayName)
-                val saltStr = android.util.Base64.encodeToString(cred.salt, android.util.Base64.NO_WRAP)
-                val verifierStr = android.util.Base64.encodeToString(cred.verifier, android.util.Base64.NO_WRAP)
+                val saltStr = java.util.Base64.getEncoder().encodeToString(cred.salt)
+                val verifierStr = java.util.Base64.getEncoder().encodeToString(cred.verifier)
                 existing.copy(
                     salt = saltStr,
                     verifier = verifierStr,

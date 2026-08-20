@@ -8,13 +8,17 @@ import com.company.billing.feature.billing.domain.SaleDraft
 import com.company.billing.feature.billing.domain.SaleRepository
 
 import com.company.billing.core.sync.SyncManager
+import kotlinx.coroutines.flow.first
 
 class SaleRepositoryImpl(
     private val saleDao: SaleDao,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val sessionStore: com.company.billing.core.auth.SessionStore
 ) : SaleRepository {
     override suspend fun save(draft: SaleDraft): AppResult<String> {
         return try {
+            val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+            val companyId = session.companyId
             val saleId = newRecordId()
             val epochMs = System.currentTimeMillis()
             
@@ -24,6 +28,7 @@ class SaleRepositoryImpl(
             
             val sale = SaleEntity(
                 id = saleId,
+                companyId = companyId,
                 billNumber = billNumber,
                 totalMinorUnits = draft.total.minorUnits,
                 createdAtEpochMs = epochMs,
@@ -33,6 +38,7 @@ class SaleRepositoryImpl(
             
             val items = draft.lines.map { line ->
                 SaleItemEntity(
+                    companyId = companyId,
                     saleId = saleId,
                     productId = line.productId,
                     quantity = line.quantity,
@@ -44,6 +50,7 @@ class SaleRepositoryImpl(
             val movements = draft.lines.map { line ->
                 StockMovementEntity(
                     id = newRecordId(),
+                    companyId = companyId,
                     productId = line.productId,
                     quantityDelta = -line.quantity, // Negative for sales to reduce stock
                     type = "SALE",

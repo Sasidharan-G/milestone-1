@@ -8,18 +8,24 @@ import com.company.billing.feature.reports.domain.ReportQuery
 import com.company.billing.feature.reports.domain.ReportRepository
 import com.company.billing.feature.reports.domain.ReportType
 
+import com.company.billing.core.auth.SessionStore
+import kotlinx.coroutines.flow.first
+
 class ReportRepositoryImpl(
     private val reportDao: ReportDao,
-    private val costingStrategy: CostingStrategy
+    private val costingStrategy: CostingStrategy,
+    private val sessionStore: SessionStore
 ) : ReportRepository {
 
     override suspend fun query(query: ReportQuery): ReportData {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
         val fromMs = query.fromEpochMs
         val toMs = query.toEpochMs
 
         return when (query.type) {
             ReportType.SALE_AMOUNT -> {
-                val data = reportDao.getSaleAmountReport(fromMs, toMs)
+                val data = reportDao.getSaleAmountReport(companyId, fromMs, toMs)
                 ReportData(
                     title = "Sale Amount Report",
                     columns = listOf("Date", "Total Sales"),
@@ -27,7 +33,7 @@ class ReportRepositoryImpl(
                 )
             }
             ReportType.SALE_BILL -> {
-                val data = reportDao.getSaleBillReport(fromMs, toMs)
+                val data = reportDao.getSaleBillReport(companyId, fromMs, toMs)
                 ReportData(
                     title = "Sale Bill Report",
                     columns = listOf("Bill Number", "Date", "Total Amount", "Customer"),
@@ -35,7 +41,7 @@ class ReportRepositoryImpl(
                 )
             }
             ReportType.ITEM_WISE -> {
-                val data = reportDao.getItemWiseReport(fromMs, toMs)
+                val data = reportDao.getItemWiseReport(companyId, fromMs, toMs)
                 ReportData(
                     title = "Item-wise Report",
                     columns = listOf("Product Name", "Category", "Quantity Sold", "Total Revenue"),
@@ -43,7 +49,7 @@ class ReportRepositoryImpl(
                 )
             }
             ReportType.STOCK -> {
-                val data = reportDao.getStockReport()
+                val data = reportDao.getStockReport(companyId)
                 ReportData(
                     title = "Stock Report",
                     columns = listOf("Product Name", "Category", "Current Stock"),
@@ -51,7 +57,7 @@ class ReportRepositoryImpl(
                 )
             }
             ReportType.PROFIT -> {
-                val raw = reportDao.getProfitReportRaw(fromMs, toMs)
+                val raw = reportDao.getProfitReportRaw(companyId, fromMs, toMs)
                 val rows = mutableListOf<List<String>>()
                 var grandTotalRevenue = Money.Zero
                 var grandTotalCost = Money.Zero
@@ -92,7 +98,7 @@ class ReportRepositoryImpl(
                 )
             }
             ReportType.PURCHASE -> {
-                val data = reportDao.getPurchaseReport(fromMs, toMs)
+                val data = reportDao.getPurchaseReport(companyId, fromMs, toMs)
                 ReportData(
                     title = "Purchase Report",
                     columns = listOf("Purchase ID", "Date", "Supplier", "Total Amount"),
@@ -100,7 +106,7 @@ class ReportRepositoryImpl(
                 )
             }
             ReportType.CUSTOMER -> {
-                val data = reportDao.getCustomerReport(fromMs, toMs)
+                val data = reportDao.getCustomerReport(companyId, fromMs, toMs)
                 ReportData(
                     title = "Customer Report",
                     columns = listOf("Customer Name", "Total Bills", "Total Spent"),
@@ -108,7 +114,7 @@ class ReportRepositoryImpl(
                 )
             }
             ReportType.SUPPLIER -> {
-                val data = reportDao.getSupplierReport(fromMs, toMs)
+                val data = reportDao.getSupplierReport(companyId, fromMs, toMs)
                 ReportData(
                     title = "Supplier Report",
                     columns = listOf("Supplier Name", "Total Bills", "Total Purchased"),
@@ -116,7 +122,7 @@ class ReportRepositoryImpl(
                 )
             }
             ReportType.EXPENSES -> {
-                val data = reportDao.getExpensesReport(fromMs, toMs)
+                val data = reportDao.getExpensesReport(companyId, fromMs, toMs)
                 ReportData(
                     title = "Expenses Report",
                     columns = listOf("Expense ID", "Date", "Description", "Amount"),

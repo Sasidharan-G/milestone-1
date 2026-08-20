@@ -28,19 +28,23 @@ interface PurchaseDao {
             COALESCE(SUM(sm.quantityDelta), 0) as currentStock
         FROM products p
         INNER JOIN categories c ON p.categoryId = c.id
-        LEFT JOIN stock_movements sm ON p.id = sm.productId
+        LEFT JOIN stock_movements sm ON p.id = sm.productId AND sm.companyId = :companyId
+        WHERE p.companyId = :companyId AND c.companyId = :companyId
         GROUP BY p.id
         ORDER BY p.name ASC
     """)
-    fun getStockBalances(): Flow<List<ProductStock>>
+    fun getStockBalances(companyId: String): Flow<List<ProductStock>>
 
-    @Query("SELECT * FROM purchases ORDER BY createdAtEpochMs DESC")
-    fun getPurchases(): Flow<List<PurchaseEntity>>
+    @Query("SELECT * FROM purchases WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
+    fun getPurchases(companyId: String): Flow<List<PurchaseEntity>>
 
-    @Query("SELECT * FROM purchase_items WHERE purchaseId = :purchaseId")
-    fun getPurchaseItems(purchaseId: String): Flow<List<PurchaseItemEntity>>
+    @Query("SELECT * FROM purchase_items WHERE companyId = :companyId AND purchaseId = :purchaseId")
+    fun getPurchaseItems(companyId: String, purchaseId: String): Flow<List<PurchaseItemEntity>>
 
-    @Query("SELECT AVG(unitValueMinorUnits) FROM purchase_items WHERE productId = :productId")
-    suspend fun getAveragePurchasePrice(productId: String): Double?
+    @Query("SELECT AVG(unitValueMinorUnits) FROM purchase_items WHERE companyId = :companyId AND productId = :productId")
+    suspend fun getAveragePurchasePrice(companyId: String, productId: String): Double?
+
+    @Query("SELECT * FROM purchases WHERE companyId = :companyId AND supplierId = :supplierId ORDER BY createdAtEpochMs DESC")
+    fun getPurchasesForSupplier(companyId: String, supplierId: String): Flow<List<PurchaseEntity>>
 }
 
