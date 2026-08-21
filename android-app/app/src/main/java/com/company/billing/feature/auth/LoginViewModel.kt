@@ -13,7 +13,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 data class LoginUiState(val username: String = "", val password: String = "", val mode: LoginMode = LoginMode.Online, val loading: Boolean = false, val error: String? = null, val complete: Boolean = false)
-@HiltViewModel class LoginViewModel @Inject constructor(private val authRepository: AuthRepository) : ViewModel() {
+@HiltViewModel class LoginViewModel @Inject constructor(private val authRepository: AuthRepository, val supabaseClient: io.github.jan.supabase.SupabaseClient) : ViewModel() {
     private val mutableState = MutableStateFlow(LoginUiState()); val state = mutableState.asStateFlow()
     fun updateUsername(value: String) = mutableState.update { it.copy(username = value, error = null) }
     fun updatePassword(value: String) = mutableState.update { it.copy(password = value, error = null) }

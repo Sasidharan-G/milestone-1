@@ -25,6 +25,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.company.billing.core.auth.LoginMode
 
+import io.github.jan.supabase.compose.auth.composeAuth
+import io.github.jan.supabase.compose.auth.composable.rememberSignInWithGoogle
+import io.github.jan.supabase.compose.auth.composable.NativeSignInResult
+
 @Composable
 fun LoginScreen(
     viewModel: LoginViewModel,
@@ -33,6 +37,32 @@ fun LoginScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var message by remember { mutableStateOf("") }
+    val composeAuth = viewModel.supabaseClient.composeAuth
+    val googleSignInAction = composeAuth.rememberSignInWithGoogle(
+        onResult = { result ->
+            when (result) {
+                is NativeSignInResult.Success -> {
+                    viewModel.handleGoogleSignInSuccess { success, msg ->
+                        if (success) {
+                            onLoginSuccess()
+                        } else {
+                            message = msg ?: "Failed to initialize company data"
+                        }
+                    }
+                }
+                is NativeSignInResult.Error -> {
+                    message = result.message
+                }
+                is NativeSignInResult.ClosedByUser -> {
+                    // Do nothing
+                }
+                else -> {}
+            }
+        },
+        fallback = {
+            viewModel.signInWithGoogle()
+        }
+    )
 
     LaunchedEffect(state.complete) {
         if (state.complete) {
@@ -200,7 +230,7 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(12.dp))
                 
                 Button(
-                    onClick = { viewModel.signInWithGoogle() },
+                    onClick = { googleSignInAction.startFlow() },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
