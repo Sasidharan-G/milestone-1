@@ -21,4 +21,7 @@ interface AuthRepository {
     suspend fun logout()
     suspend fun registerCompany(email: String, password: CharArray, ownerName: String, businessName: String): RegisterResult
     suspend fun recoverPassword(email: String): RecoveryResult
+    suspend fun updatePassword(password: CharArray): RecoveryResult
+    suspend fun handleGoogleSignInSuccess()
+    suspend fun signInWithGoogle()
 }

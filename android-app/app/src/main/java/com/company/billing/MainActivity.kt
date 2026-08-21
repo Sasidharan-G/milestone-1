@@ -14,20 +14,32 @@ import com.company.billing.core.ui.BillingApp
 import com.company.billing.core.security.SecurityShield
 import com.company.billing.core.security.BiometricAuthenticator
 import dagger.hilt.android.AndroidEntryPoint
+import io.github.jan.supabase.SupabaseClient
+import io.github.jan.supabase.auth.handleDeeplinks
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
+    @Inject lateinit var supabaseClient: SupabaseClient
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        try {
+            supabaseClient.handleDeeplinks(intent)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
 
         // Runtime Security Check
         if (runSecurityChecks()) {
             return
         }
 
+        val isRecoveryFlow = intent?.dataString?.contains("type=recovery") == true
+
         setContent {
-            BillingApp()
+            BillingApp(isRecoveryFlow = isRecoveryFlow)
         }
     }
 

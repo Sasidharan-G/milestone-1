@@ -7,6 +7,8 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
+import io.github.jan.supabase.compose.auth.composeAuth
+import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import com.company.billing.core.sync.*
@@ -237,10 +239,43 @@ class DefaultAuthRepository(
     }
 
     override suspend fun recoverPassword(email: String): RecoveryResult = try {
-        supabase.auth.resetPasswordForEmail(email = email.trim())
+        supabase.auth.resetPasswordForEmail(email = email.trim(), redirectUrl = "kadakutty://login-callback")
         RecoveryResult.Success
     } catch (e: Exception) {
         RecoveryResult.Failure(e.message ?: "Password recovery failed")
+    }
+
+    override suspend fun updatePassword(password: CharArray): RecoveryResult = try {
+        supabase.auth.updateUser {
+            this.password = String(password)
+        }
+        RecoveryResult.Success
+    } catch (e: Exception) {
+        RecoveryResult.Failure(e.message ?: "Failed to update password")
+    }
+
+    override suspend fun signInWithGoogle() {
+        supabase.auth.signInWith(io.github.jan.supabase.auth.providers.Google)
+    }
+
+    override suspend fun handleGoogleSignInSuccess() {
+        val session = supabase.auth.currentSessionOrNull()
+        if (session != null) {
+            val user = session.user
+            val companyId = user?.userMetadata?.get("company_id")?.jsonPrimitive?.content
+            if (companyId != null) {
+                pullAllDataFromCloud(supabase, database, companyId)
+                sessions.save(
+                    Session(
+                        userId = user.id,
+                        displayName = user.userMetadata?.get("full_name")?.jsonPrimitive?.content ?: "Google User",
+                        companyId = companyId,
+                        role = "ADMIN",
+                        permissions = com.company.billing.core.security.Permission.entries.toSet()
+                    )
+                )
+            }
+        }
     }
 
     private suspend fun pullAllDataFromCloud(supabase: SupabaseClient, database: BillingDatabase, companyId: String) {

@@ -52,6 +52,8 @@ import io.github.jan.supabase.SupabaseClient
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.compose.auth.ComposeAuth
+import io.github.jan.supabase.compose.auth.googleNativeLogin
 import io.github.jan.supabase.storage.Storage
 import com.company.billing.core.network.SupabaseConfig
 import com.company.billing.core.backup.data.SupabaseBackupManager
@@ -77,9 +79,15 @@ object CoreModule {
         supabaseUrl = SupabaseConfig.URL,
         supabaseKey = SupabaseConfig.ANON_KEY
     ) {
-        install(Auth)
+        install(Auth) {
+            scheme = "kadakutty"
+            host = "login-callback"
+        }
         install(Postgrest)
         install(Storage)
+        install(ComposeAuth) {
+            googleNativeLogin(serverClientId = "19685847230-3c3ha0fkcvk5aah7qn8gvljbsmvir9cb.apps.googleusercontent.com")
+        }
     }
     @Provides @Singleton fun authRepository(supabase: SupabaseClient, sessions: SessionStore, credentials: OfflineCredentialStore, verifier: OfflineCredentialVerifier, database: BillingDatabase): AuthRepository = DefaultAuthRepository(supabase, sessions, credentials, verifier, database)
     @Provides @Singleton fun logger(): AppLogger = AndroidLogger()

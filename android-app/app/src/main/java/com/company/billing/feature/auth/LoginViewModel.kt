@@ -29,4 +29,29 @@ data class LoginUiState(val username: String = "", val password: String = "", va
             }
         }
     }
+
+    fun signInWithGoogle() {
+        viewModelScope.launch {
+            mutableState.update { it.copy(loading = true, error = null) }
+            try {
+                authRepository.signInWithGoogle()
+                // Do not clear loading yet, because browser will open
+            } catch (e: Exception) {
+                mutableState.update { it.copy(loading = false, error = e.message) }
+            }
+        }
+    }
+
+    fun handleGoogleSignInSuccess(onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch {
+            try {
+                authRepository.handleGoogleSignInSuccess()
+                mutableState.update { it.copy(loading = false, complete = true) }
+                onResult(true, null)
+            } catch (e: Exception) {
+                mutableState.update { it.copy(loading = false, error = e.message) }
+                onResult(false, e.message)
+            }
+        }
+    }
 }

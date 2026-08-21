@@ -39,6 +39,8 @@ import com.company.billing.feature.auth.LoginScreen
 import com.company.billing.feature.auth.LoginViewModel
 import com.company.billing.feature.auth.RegisterScreen
 import com.company.billing.feature.auth.RegisterViewModel
+import com.company.billing.feature.auth.SetNewPasswordScreen
+import com.company.billing.feature.auth.SetNewPasswordViewModel
 import com.company.billing.feature.billing.presentation.BillingScreen
 import com.company.billing.feature.billing.presentation.BillingViewModel
 import com.company.billing.feature.masters.presentation.*
@@ -53,7 +55,7 @@ import androidx.compose.foundation.background
 val LocalLayoutMode = staticCompositionLocalOf { "Auto" }
 
 @Composable
-fun BillingApp() {
+fun BillingApp(isRecoveryFlow: Boolean = false) {
     val navController = rememberNavController()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val layoutMode by settingsViewModel.layoutMode.collectAsState()
@@ -68,7 +70,8 @@ fun BillingApp() {
 
     CompositionLocalProvider(LocalLayoutMode provides layoutMode) {
         BillingTheme(darkTheme = useDarkTheme) {
-            NavHost(navController = navController, startDestination = AppRoute.Login.path) {
+            val startDest = if (isRecoveryFlow) AppRoute.SetNewPassword.path else AppRoute.Login.path
+            NavHost(navController = navController, startDestination = startDest) {
                 composable(AppRoute.Login.path) {
                     val vm: LoginViewModel = hiltViewModel()
                     LoginScreen(
@@ -94,6 +97,18 @@ fun BillingApp() {
                         onRegisterSuccess = {
                             navController.navigate(AppRoute.Login.path) {
                                 popUpTo(AppRoute.Register.path) { inclusive = true }
+                            }
+                        }
+                    )
+                }
+
+                composable(AppRoute.SetNewPassword.path) {
+                    val vm: SetNewPasswordViewModel = hiltViewModel()
+                    SetNewPasswordScreen(
+                        viewModel = vm,
+                        onPasswordSetSuccess = {
+                            navController.navigate(AppRoute.Login.path) {
+                                popUpTo(0) { inclusive = true }
                             }
                         }
                     )
