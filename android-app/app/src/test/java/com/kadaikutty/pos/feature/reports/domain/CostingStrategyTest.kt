@@ -1,0 +1,62 @@
+package com.kadaikutty.pos.feature.reports.domain
+
+import com.kadaikutty.pos.core.common.Money
+import com.kadaikutty.pos.feature.billing.data.StockMovementEntity
+import com.kadaikutty.pos.feature.purchase.data.PurchaseDao
+import com.kadaikutty.pos.feature.purchase.data.PurchaseEntity
+import com.kadaikutty.pos.feature.purchase.data.PurchaseItemEntity
+import com.kadaikutty.pos.feature.stock.domain.ProductStock
+import com.kadaikutty.pos.feature.reports.data.DefaultCostingStrategy
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+import kotlinx.coroutines.flow.flowOf
+import org.mockito.Mockito.doReturn
+import org.mockito.Mockito.mock
+
+class CostingStrategyTest {
+    @Test
+    fun `calculates product costing based on average purchase price`() = runBlocking {
+        val fakeDao = object : PurchaseDao {
+            override suspend fun insertPurchase(purchase: PurchaseEntity) {}
+            override suspend fun insertPurchases(items: List<PurchaseEntity>) {}
+            override fun insertPurchasesSync(items: List<PurchaseEntity>) {}
+            override suspend fun insertItems(items: List<PurchaseItemEntity>) {}
+            override fun insertItemsSync(items: List<PurchaseItemEntity>) {}
+            override suspend fun insertStockMovements(movements: List<StockMovementEntity>) {}
+            override suspend fun savePurchase(purchase: PurchaseEntity, items: List<PurchaseItemEntity>, movements: List<StockMovementEntity>) {}
+            override suspend fun deletePurchasesByCompany(companyId: String) {}
+            override fun deletePurchasesByCompanySync(companyId: String) {}
+            override suspend fun deletePurchaseItemsByCompany(companyId: String) {}
+            override fun deletePurchaseItemsByCompanySync(companyId: String) {}
+            override fun getStockBalances(companyId: String): Flow<List<ProductStock>> = emptyFlow()
+            override fun getPurchases(companyId: String): Flow<List<PurchaseEntity>> = emptyFlow()
+            override fun getPurchaseItems(companyId: String, purchaseId: String): Flow<List<PurchaseItemEntity>> = emptyFlow()
+            override suspend fun getAveragePurchasePrice(companyId: String, productId: String): Double? {
+                return if (productId == "p1") 150.0 else null
+            }
+            override fun getPurchasesForSupplier(companyId: String, supplierId: String): Flow<List<PurchaseEntity>> = emptyFlow()
+        }
+        
+        val mockSessionStore = mock(com.kadaikutty.pos.core.auth.SessionStore::class.java)
+        val fakeSession = com.kadaikutty.pos.core.auth.Session(
+            userId = "user-123",
+            displayName = "Test User",
+            permissions = emptySet(),
+            accessToken = "token",
+            companyId = "company-123",
+            role = "COMPANY_ADMIN"
+        )
+        doReturn(flowOf(fakeSession)).`when`(mockSessionStore).activeSession
+
+        val costing = DefaultCostingStrategy(fakeDao, mockSessionStore)
+        val costP1 = costing.getProductCost("p1", 4)
+        val costP2 = costing.getProductCost("p2", 10)
+        
+        assertEquals(Money(600), costP1) // 150 * 4 = 600 minor units
+        assertEquals(Money.Zero, costP2)  // Null returns Zero
+    }
+}

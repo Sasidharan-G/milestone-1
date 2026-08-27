@@ -8,8 +8,8 @@ plugins {
     id("com.google.gms.google-services")
 }
 
-android { namespace = "com.company.billing"; compileSdk = 35
-    defaultConfig { applicationId = "com.company.billing"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+android { namespace = "com.kadaikutty.pos"; compileSdk = 35
+    defaultConfig { applicationId = "com.kadaikutty.pos"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SENTRY_DSN", "\"\"")
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
@@ -68,6 +68,13 @@ dependencies {
     implementation("com.google.firebase:firebase-firestore")
     implementation("com.google.firebase:firebase-storage")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+
+    // Razorpay
+    implementation("com.razorpay:checkout:1.6.40")
+
+    // Coil
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("io.coil-kt:coil-svg:2.6.0")
 
     // Security Dependencies
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
