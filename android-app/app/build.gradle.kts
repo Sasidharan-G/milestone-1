@@ -26,8 +26,16 @@ android { namespace = "com.company.billing"; compileSdk = 35
             excludes += "/META-INF/ASL2.0"
         }
     }
+    sourceSets {
+        getByName("androidTest") {
+            assets.srcDirs(files("$projectDir/schemas"))
+        }
+    }
 }
 kotlin { jvmToolchain(21) }
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
+}
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
     implementation(composeBom); androidTestImplementation(composeBom)
@@ -44,7 +52,6 @@ dependencies {
     implementation("com.google.dagger:hilt-android:2.52"); ksp("com.google.dagger:hilt-compiler:2.52")
     implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
     implementation("androidx.room:room-runtime:2.6.1"); implementation("androidx.room:room-ktx:2.6.1"); ksp("androidx.room:room-compiler:2.6.1")
-    implementation("androidx.room:room-testing:2.6.1")
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.datastore:datastore-preferences:1.1.2")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
@@ -78,9 +85,10 @@ dependencies {
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
     // Android Test dependencies
-    androidTestImplementation("androidx.test.ext:junit:1.2.1")
-    androidTestImplementation("androidx.test:runner:1.6.2")
-    androidTestImplementation("androidx.test:rules:1.6.1")
-    androidTestImplementation("androidx.test:core:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
+    androidTestImplementation("androidx.test:core:1.7.0")
+    androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.room:room-testing:2.6.1")
 }
