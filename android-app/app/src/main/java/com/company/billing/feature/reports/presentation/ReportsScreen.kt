@@ -166,6 +166,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
             ) {
                 val totalSalesSum by viewModel.totalSalesSum.collectAsState()
                 val purchaseCostSum by viewModel.purchaseCostSum.collectAsState()
+                val expensesSum by viewModel.expensesSum.collectAsState()
                 val netProfitSum by viewModel.netProfitSum.collectAsState()
 
                 ScrollableTabRow(
@@ -283,19 +284,19 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Surface(
                             color = MaterialTheme.colorScheme.primary,
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text("Total Sales", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
+                                Text("Sales", fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (totalSalesSum == 0L) "₹0" else Money(totalSalesSum).toString(),
-                                    fontSize = 14.sp,
+                                    text = Money(totalSalesSum).toString(),
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
@@ -306,12 +307,12 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text("Cost (COGS)", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
+                                Text("COGS", fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (purchaseCostSum == 0L) "₹0" else Money(purchaseCostSum).toString(),
-                                    fontSize = 14.sp,
+                                    text = Money(purchaseCostSum).toString(),
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color(0xFFFFD54F)
                                 )
@@ -322,12 +323,28 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(8.dp)) {
-                                Text("Net Profit", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
+                                Text("Expenses", fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = if (totalSalesSum == 0L && purchaseCostSum == 0L) "₹0" else Money(netProfitSum).toString(),
-                                    fontSize = 14.sp,
+                                    text = Money(expensesSum).toString(),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFAB91)
+                                )
+                            }
+                        }
+                        Surface(
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
+                                Text("Net Profit", fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = Money(netProfitSum).toString(),
+                                    fontSize = 13.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = if (netProfitSum >= 0) Color(0xFF69F0AE) else Color(0xFFFF8A80)
                                 )

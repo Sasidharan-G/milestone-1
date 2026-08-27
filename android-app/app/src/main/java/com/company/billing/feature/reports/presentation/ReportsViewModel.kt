@@ -58,6 +58,9 @@ class ReportsViewModel @Inject constructor(
     private val _netProfitSum = MutableStateFlow(0L)
     val netProfitSum: StateFlow<Long> = _netProfitSum.asStateFlow()
 
+    private val _expensesSum = MutableStateFlow(0L)
+    val expensesSum: StateFlow<Long> = _expensesSum.asStateFlow()
+
     init {
         loadReport()
     }
@@ -94,6 +97,7 @@ class ReportsViewModel @Inject constructor(
 
                 _totalSalesSum.value = salesSum
                 _purchaseCostSum.value = totalCogs
+                _expensesSum.value = expensesSum
                 _netProfitSum.value = salesSum - totalCogs - expensesSum
 
                 val query = ReportQuery(
