@@ -24,15 +24,8 @@ class HomeViewModel @Inject constructor(
     private val sessionStore: SessionStore,
     private val database: BillingDatabase
 ) : ViewModel() {
-    val activeSession: StateFlow<Session?> = MutableStateFlow(
-        Session(
-            userId = "dummy_user",
-            displayName = "Admin (Dev Mode)",
-            permissions = com.company.billing.core.security.Permission.entries.toSet(),
-            companyId = "dummy_company",
-            role = "ADMIN"
-        )
-    )
+    val activeSession: StateFlow<Session?> = sessionStore.activeSession
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val shiftHistory: StateFlow<List<ShiftEntity>> = sessionStore.activeSession

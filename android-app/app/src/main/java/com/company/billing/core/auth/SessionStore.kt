@@ -16,7 +16,7 @@ class SessionStore(private val store: DataStore<Preferences>) {
     private val roleKey = stringPreferencesKey("session_role")
 
     val activeSession: Flow<Session?> = store.data.map { preferences ->
-        val id = preferences[userId] ?: "admin_dev_01"
+        val id = preferences[userId] ?: return@map null
         val permsString = preferences[permissionsKey].orEmpty()
         val perms = if (permsString.isBlank()) Permission.entries.toSet() else permsString.split(",")
             .mapNotNull {
@@ -24,10 +24,10 @@ class SessionStore(private val store: DataStore<Preferences>) {
             }.toSet()
         Session(
             userId = id,
-            displayName = preferences[displayName]?.ifBlank { "Admin" } ?: "Admin",
+            displayName = preferences[displayName]?.ifBlank { "User" } ?: "User",
             permissions = if (perms.isEmpty()) Permission.entries.toSet() else perms,
             companyId = preferences[companyIdKey]?.ifBlank { "company_main" } ?: "company_main",
-            role = preferences[roleKey] ?: "OWNER"
+            role = preferences[roleKey] ?: "ADMIN"
         )
     }
 

@@ -16,12 +16,7 @@ import com.company.billing.core.printer.domain.PrinterResult
 import com.company.billing.core.security.BiometricAuthenticator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.company.billing.core.backup.data.BackupManager
@@ -53,6 +48,14 @@ class SettingsViewModel @Inject constructor(
     fun clearBiometricAuthPending() {
         _biometricAuthPending.value = null
     }
+
+    val isLoggedIn: StateFlow<Boolean?> = sessionStore.activeSession
+        .map { it != null }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.Eagerly,
+            initialValue = null
+        )
 
     val printerType: StateFlow<String?> = appPreferences.printerType.stateIn(
         scope = viewModelScope,

@@ -74,9 +74,23 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
         else -> isSystemInDarkTheme()
     }
 
+    val isLoggedIn by settingsViewModel.isLoggedIn.collectAsState()
+
+    if (isLoggedIn == null) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xFF0F172A)),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = Color(0xFF1E88E5))
+        }
+        return
+    }
+
     CompositionLocalProvider(LocalLayoutMode provides layoutMode) {
         BillingTheme(darkTheme = useDarkTheme) {
-            val startDest = AppRoute.Home.path
+            val startDest = if (isLoggedIn == true) AppRoute.Home.path else AppRoute.Login.path
             NavHost(navController = navController, startDestination = startDest) {
                 composable(AppRoute.Login.path) {
                     val vm: LoginViewModel = hiltViewModel()
@@ -101,8 +115,8 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                             navController.popBackStack()
                         },
                         onRegisterSuccess = {
-                            navController.navigate(AppRoute.Login.path) {
-                                popUpTo(AppRoute.Register.path) { inclusive = true }
+                            navController.navigate(AppRoute.Home.path) {
+                                popUpTo(AppRoute.Login.path) { inclusive = true }
                             }
                         }
                     )
@@ -135,7 +149,7 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                         onLogout = {
                             vm.logout()
                             navController.navigate(AppRoute.Login.path) {
-                                popUpTo(AppRoute.Home.path) { inclusive = true }
+                                popUpTo(0) { inclusive = true }
                             }
                         },
                         onCloseShiftClick = { showCloseShiftDialog = true }
