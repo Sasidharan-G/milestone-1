@@ -34,7 +34,8 @@ class SettingsViewModel @Inject constructor(
     private val syncScheduler: SyncScheduler,
     private val database: com.company.billing.core.database.BillingDatabase,
     private val sessionStore: com.company.billing.core.auth.SessionStore,
-    private val verifier: com.company.billing.core.auth.OfflineCredentialVerifier
+    private val verifier: com.company.billing.core.auth.OfflineCredentialVerifier,
+    private val firestore: com.google.firebase.firestore.FirebaseFirestore
 ) : ViewModel() {
 
     // Biometric authentication state
@@ -60,7 +61,7 @@ class SettingsViewModel @Inject constructor(
     val printerType: StateFlow<String?> = appPreferences.printerType.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = null
+        initialValue = "Bluetooth"
     )
 
     val printerDeviceId: StateFlow<String?> = appPreferences.printerDeviceId.stateIn(
@@ -78,7 +79,7 @@ class SettingsViewModel @Inject constructor(
     val layoutMode: StateFlow<String> = appPreferences.layoutMode.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = "Auto"
+        initialValue = "Grid"
     )
 
     val activeSession: StateFlow<com.company.billing.core.auth.Session?> = sessionStore.activeSession.stateIn(
@@ -92,12 +93,6 @@ class SettingsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
-
-    fun saveLayoutMode(mode: String) {
-        viewModelScope.launch {
-            appPreferences.saveLayoutMode(mode)
-        }
-    }
 
     val shopName: StateFlow<String> = appPreferences.shopName.stateIn(
         scope = viewModelScope,
@@ -150,30 +145,28 @@ class SettingsViewModel @Inject constructor(
     fun processAndSaveLogo(context: android.content.Context, uri: android.net.Uri): String? {
         return try {
             val contentResolver = context.contentResolver
-            var fileSize = 0L
-            contentResolver.openFileDescriptor(uri, "r")?.use { pfd ->
-                fileSize = pfd.statSize
-            }
-            if (fileSize > 5 * 1024 * 1024) {
-                return "SIZE_LIMIT_EXCEEDED"
-            }
-
             val inputStream = contentResolver.openInputStream(uri) ?: return null
             val originalBitmap = android.graphics.BitmapFactory.decodeStream(inputStream) ?: return null
             inputStream.close()
 
             val width = originalBitmap.width
             val height = originalBitmap.height
-            val scale = 512f / Math.max(width, height)
+            val maxSize = 512
+            val scale = Math.min(maxSize.toFloat() / width, maxSize.toFloat() / height)
+
             val newWidth = (width * scale).toInt()
             val newHeight = (height * scale).toInt()
-            val resizedBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, newWidth, newHeight, true)
+            val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, newWidth, newHeight, true)
 
-            val logoFile = java.io.File(context.filesDir, "shop_logo.png")
-            java.io.FileOutputStream(logoFile).use { fos ->
-                resizedBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 90, fos)
+            val dir = java.io.File(context.filesDir, "logos")
+            if (!dir.exists()) dir.mkdirs()
+            val file = java.io.File(dir, "shop_logo_${System.currentTimeMillis()}.png")
+
+            java.io.FileOutputStream(file).use { out ->
+                scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
             }
-            logoFile.absolutePath
+
+            file.absolutePath
         } catch (e: Exception) {
             e.printStackTrace()
             null
@@ -197,7 +190,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             sessionStore.activeSession.collect { session ->
                 if (session != null && session.userId != "admin-user") {
-                    syncScheduler.schedulePeriodicSupabaseBackup()
+                    syncScheduler.schedulePeriodicSync()
                 }
             }
         }
@@ -228,6 +221,32 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun clearPrintStatus() {
+        _printStatus.value = null
+    }
+
+    fun clearBackupRestoreStatus() {
+        _backupStatus.value = null
+        _restoreStatus.value = null
+    }
+
+    fun saveLayoutMode(mode: String) {
+        viewModelScope.launch {
+            appPreferences.saveLayoutMode(mode)
+        }
+    }
+
+    fun forceSyncNow() {
+        requireBiometricAuth {
+            viewModelScope.launch {
+                val session = sessionStore.activeSession.first()
+                if (session != null) {
+                    syncScheduler.request()
+                }
+            }
+        }
+    }
+
     fun printTestReceipt(onResult: (String) -> Unit) {
         viewModelScope.launch {
             _printStatus.value = "Preparing print job..."
@@ -251,7 +270,7 @@ class SettingsViewModel @Inject constructor(
                 return@launch
             }
 
-            _printStatus.value = "Printing test document..."
+            _printStatus.value = "Printing test receipt..."
             val testDoc = PrintDocument(
                 title = "TEST RECEIPT",
                 headers = listOf("Description", "Total"),
@@ -314,6 +333,30 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    fun runRestoreFromCloud(onFinished: (Boolean) -> Unit) {
+        requireBiometricAuth {
+            viewModelScope.launch {
+                _restoreStatus.value = "Fetching data from cloud..."
+                val session = sessionStore.activeSession.first()
+                if (session == null) {
+                    _restoreStatus.value = "Restore failed: User not logged in."
+                    onFinished(false)
+                    return@launch
+                }
+                when (val result = backupManager.restoreFromCloud(session.companyId, firestore)) {
+                    is BackupResult.Success -> {
+                        _restoreStatus.value = "Cloud restore completed successfully! All data recovered."
+                        onFinished(true)
+                    }
+                    is BackupResult.Failure -> {
+                        _restoreStatus.value = "Cloud restore failed: ${result.exception.message}"
+                        onFinished(false)
+                    }
+                }
+            }
+        }
+    }
+
     val geminiApiKey: StateFlow<String?> = appPreferences.geminiApi.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -335,7 +378,7 @@ class SettingsViewModel @Inject constructor(
     fun backupToSupabase() {
         requireBiometricAuth {
             viewModelScope.launch {
-                _supabaseBackupStatus.value = "Firebase Backup is not implemented yet."
+                _supabaseBackupStatus.value = "Cloud syncing happens automatically in the background when connected."
             }
         }
     }

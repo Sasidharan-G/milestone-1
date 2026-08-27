@@ -126,7 +126,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     }
                 }
 
-                val docRef = firestore.collection(collectionName).document(entityId)
+                val docRef = firestore.collection("users").document(companyId).collection(collectionName).document(entityId)
 
                 if (operation == "DELETE") {
                     docRef.delete().await()

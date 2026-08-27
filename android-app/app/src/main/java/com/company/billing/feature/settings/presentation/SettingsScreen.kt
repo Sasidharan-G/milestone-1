@@ -38,6 +38,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -762,6 +763,17 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                 ) {
                                     Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
                                 }
+
+                                Button(
+                                    onClick = {
+                                        viewModel.runRestoreFromCloud { success -> }
+                                    },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5))
+                                ) {
+                                    Text("Restore from Cloud (Firebase)", fontWeight = FontWeight.Bold)
+                                }
                             }
                         } else {
                             Row(
@@ -787,6 +799,17 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
                                 ) {
                                     Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
+                                }
+                                
+                                Button(
+                                    onClick = {
+                                        viewModel.runRestoreFromCloud { success -> }
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5))
+                                ) {
+                                    Text("Restore from Cloud", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }

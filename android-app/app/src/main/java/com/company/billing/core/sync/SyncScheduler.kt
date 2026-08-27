@@ -17,7 +17,14 @@ class SyncScheduler(private val context: Context) {
         OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(Constraints(requiredNetworkType = NetworkType.CONNECTED)).build(),
     )
 
-    fun schedulePeriodicSupabaseBackup() {
-        // Firebase Backup not implemented yet
+    fun schedulePeriodicSync() {
+        val request = PeriodicWorkRequestBuilder<SyncWorker>(15, TimeUnit.MINUTES)
+            .setConstraints(Constraints(requiredNetworkType = NetworkType.CONNECTED))
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "billing-periodic-sync",
+            ExistingPeriodicWorkPolicy.KEEP,
+            request
+        )
     }
 }

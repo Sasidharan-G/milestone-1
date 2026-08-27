@@ -12,6 +12,8 @@ import java.io.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 
 class BackupManager(
     private val context: Context,
@@ -230,6 +232,81 @@ class BackupManager(
             return false
         } finally {
             tempFile.delete()
+        }
+    }
+
+    suspend fun restoreFromCloud(companyId: String, firestore: FirebaseFirestore): BackupResult = withContext(Dispatchers.IO) {
+        try {
+            val backupJson = JSONObject()
+            val salesArray = JSONArray()
+            val saleItemsArray = JSONArray()
+            val purchasesArray = JSONArray()
+            val purchaseItemsArray = JSONArray()
+            
+            val simpleCollections = listOf(
+                "categories", "products", "customers", "suppliers", "expenses",
+                "customer_credits", "supplier_credits"
+            )
+
+            for (collection in simpleCollections) {
+                val array = JSONArray()
+                try {
+                    val snapshot = firestore.collection("users").document(companyId).collection(collection).get().await()
+                    for (doc in snapshot.documents) {
+                        doc.data?.let { array.put(JSONObject(it)) }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+                backupJson.put(collection, array)
+            }
+
+            // Fetch Sales and nested items
+            try {
+                val salesSnapshot = firestore.collection("users").document(companyId).collection("sales").get().await()
+                for (doc in salesSnapshot.documents) {
+                    val data = doc.data ?: continue
+                    salesArray.put(JSONObject(data))
+                    
+                    val itemsSnapshot = doc.reference.collection("items").get().await()
+                    for (itemDoc in itemsSnapshot.documents) {
+                        itemDoc.data?.let { saleItemsArray.put(JSONObject(it)) }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            backupJson.put("sales", salesArray)
+            backupJson.put("sale_items", saleItemsArray)
+
+            // Fetch Purchases and nested items
+            try {
+                val purchasesSnapshot = firestore.collection("users").document(companyId).collection("purchases").get().await()
+                for (doc in purchasesSnapshot.documents) {
+                    val data = doc.data ?: continue
+                    purchasesArray.put(JSONObject(data))
+                    
+                    val itemsSnapshot = doc.reference.collection("items").get().await()
+                    for (itemDoc in itemsSnapshot.documents) {
+                        itemDoc.data?.let { purchaseItemsArray.put(JSONObject(it)) }
+                    }
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            backupJson.put("purchases", purchasesArray)
+            backupJson.put("purchase_items", purchaseItemsArray)
+
+            // Restore from the constructed JSON
+            val success = restoreFromJson(backupJson)
+            if (success) {
+                BackupResult.Success(ByteArray(0)) // Success with empty byte array
+            } else {
+                BackupResult.Failure(Exception("Failed to restore from cloud data"))
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            BackupResult.Failure(e)
         }
     }
 }
