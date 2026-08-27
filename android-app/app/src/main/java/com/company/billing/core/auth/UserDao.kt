@@ -13,8 +13,8 @@ interface UserDao {
     @Query("SELECT * FROM users")
     fun getAllUsersFlow(): Flow<List<UserEntity>>
 
-    @Query("SELECT * FROM users WHERE username = :username LIMIT 1")
-    suspend fun getUserByUsername(username: String): UserEntity?
+    @Query("SELECT * FROM users WHERE username = :username OR username = '+91' || :username OR username = :cleanUsername LIMIT 1")
+    suspend fun getUserByUsername(username: String, cleanUsername: String = username.replace("[^0-9]".toRegex(), "").takeLast(10)): UserEntity?
 
     @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
     suspend fun getUserById(id: String): UserEntity?

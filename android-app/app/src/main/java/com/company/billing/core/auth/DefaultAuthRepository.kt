@@ -23,105 +23,96 @@ class DefaultAuthRepository(
     private val database: BillingDatabase
 ) : AuthRepository {
 
-    private fun getFakeEmail(mobileNumber: String): String {
-        val cleanPhone = mobileNumber.trim().replace(" ", "").replace("-", "").replace("+", "")
-        return "$cleanPhone@pos-app.com"
+    private fun normalizePhone(phone: String): String {
+        val digits = phone.replace("[^0-9]".toRegex(), "")
+        return if (digits.length >= 10) digits.takeLast(10) else digits
     }
 
-    override suspend fun loginOnline(username: String, password: CharArray): LoginResult = try {
-        val email = getFakeEmail(username)
-        val authResult = firebaseAuth.signInWithEmailAndPassword(email, String(password)).await()
-        val user = authResult.user ?: throw IOException("Authentication failed: user not established")
+    override suspend fun loginOnline(username: String, password: CharArray): LoginResult {
+        val cleanPhone = normalizePhone(username)
+        return try {
+            val userDoc = firestore.collection("users").document(cleanPhone).get().await()
+            if (userDoc.exists()) {
+                val saltStr = userDoc.getString("salt") ?: ""
+                val verifierStr = userDoc.getString("verifier") ?: ""
+                val userId = userDoc.getString("user_id") ?: cleanPhone
+                val displayName = userDoc.getString("full_name") ?: cleanPhone
+                val companyId = userDoc.getString("company_id") ?: ""
+                val role = userDoc.getString("role") ?: "ADMIN"
+                val permsList = userDoc.get("permissions") as? List<*>
+                val perms = permsList?.mapNotNull {
+                    try { Permission.valueOf(it.toString()) } catch (e: Exception) { null }
+                }?.toSet() ?: Permission.entries.toSet()
 
-        // Resolve company membership
-        val membershipsSnapshot = firestore.collection("company_users")
-            .whereEqualTo("user_id", user.uid)
-            .whereEqualTo("status", "active")
-            .get()
-            .await()
+                val saltBytes = java.util.Base64.getDecoder().decode(saltStr)
+                val verifierBytes = java.util.Base64.getDecoder().decode(verifierStr)
 
-        if (membershipsSnapshot.isEmpty) {
-            throw IOException("NO_COMPANY_MEMBERSHIP")
-        }
+                val cred = OfflineCredential(
+                    username = cleanPhone,
+                    userId = userId,
+                    displayName = displayName,
+                    salt = saltBytes,
+                    verifier = verifierBytes
+                )
 
-        val activeMembership = membershipsSnapshot.documents.first()
-        val companyId = activeMembership.getString("company_id") ?: ""
-        val role = activeMembership.getString("role") ?: "USER"
-        val permissionsList = activeMembership.get("permissions") as? List<*>
-        val perms = permissionsList?.mapNotNull {
-            try { Permission.valueOf(it.toString()) } catch (e: Exception) { null }
-        }?.toSet() ?: emptySet()
+                if (verifier.matches(cred, password)) {
+                    val session = Session(
+                        userId = userId,
+                        displayName = displayName,
+                        permissions = perms,
+                        accessToken = userId,
+                        companyId = companyId,
+                        role = role
+                    )
+                    sessions.save(session)
 
-        // Verify company status
-        val companyDoc = firestore.collection("companies").document(companyId).get().await()
-        if (companyDoc.getString("status") == "suspended") {
-            throw IOException("COMPANY_SUSPENDED")
-        }
+                    val nowMs = System.currentTimeMillis()
+                    val offlineValidityMs = 30 * 24 * 60 * 60 * 1000L
+                    val userEntity = UserEntity(
+                        id = userId,
+                        username = cleanPhone,
+                        displayName = displayName,
+                        salt = saltStr,
+                        verifier = verifierStr,
+                        permissions = perms.joinToString(",") { it.name },
+                        companyId = companyId,
+                        role = role,
+                        lastOnlineVerifiedAt = nowMs,
+                        offlineValidUntil = nowMs + offlineValidityMs
+                    )
+                    database.userDao().insertUser(userEntity)
 
-        // Resolve profile display name
-        val profileDoc = firestore.collection("profiles").document(user.uid).get().await()
-        val displayName = profileDoc.getString("full_name") ?: username
-
-        val session = Session(
-            userId = user.uid,
-            displayName = displayName,
-            permissions = perms,
-            accessToken = user.uid, // Dummy for offline sync marker
-            companyId = companyId,
-            role = role
-        )
-        sessions.save(session)
-
-        val nowMs = System.currentTimeMillis()
-        val offlineValidityMs = 7 * 24 * 60 * 60 * 1000L // 7 days
-        val offlineValidUntil = nowMs + offlineValidityMs
-
-        val offlineCred = verifier.create(username, password, session.userId, session.displayName)
-        offlineCredentials.save(offlineCred)
-
-        val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
-        val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
-        val userEntity = UserEntity(
-            id = session.userId,
-            username = username,
-            displayName = session.displayName,
-            salt = saltStr,
-            verifier = verifierStr,
-            permissions = perms.joinToString(",") { it.name },
-            companyId = session.companyId,
-            role = session.role,
-            lastOnlineVerifiedAt = nowMs,
-            offlineValidUntil = offlineValidUntil
-        )
-        database.userDao().insertUser(userEntity)
-
-        try {
-            // pullAllDataFromCloud(firestore, database, companyId)
-        } catch (syncError: Exception) {
-            syncError.printStackTrace()
-        }
-
-        password.fill('\u0000')
-        LoginResult.Success(session)
-    } catch (e: Exception) {
-        val msg = e.message ?: ""
-        if (msg.contains("NO_COMPANY_MEMBERSHIP") || msg.contains("COMPANY_SUSPENDED")) {
-            password.fill('\u0000')
-            LoginResult.Failure(if (msg == "COMPANY_SUSPENDED") "Your company account has been suspended." else "No active company membership found.")
-        } else {
+                    password.fill('\u0000')
+                    LoginResult.Success(session)
+                } else {
+                    password.fill('\u0000')
+                    LoginResult.Failure("Invalid mobile number or password.")
+                }
+            } else {
+                // Try local offline login fallback
+                val localResult = loginOffline(username, password)
+                if (localResult is LoginResult.Success) {
+                    localResult
+                } else {
+                    password.fill('\u0000')
+                    LoginResult.Failure("Invalid mobile number or password.")
+                }
+            }
+        } catch (e: Exception) {
             val localResult = loginOffline(username, password)
             if (localResult is LoginResult.Success) {
                 localResult
             } else {
                 password.fill('\u0000')
-                LoginResult.Failure(if (msg.contains("network", ignoreCase = true)) "Network unreachable. Cached login not found or expired." else "Invalid mobile number or password.")
+                LoginResult.Failure(if (e.message?.contains("network", ignoreCase = true) == true) "Network error. Please check your internet or switch to Offline mode." else "Invalid mobile number or password.")
             }
         }
     }
 
     override suspend fun loginOffline(username: String, password: CharArray): LoginResult {
+        val cleanPhone = normalizePhone(username)
         val userDao = database.userDao()
-        val userEntity = userDao.getUserByUsername(username) ?: return LoginResult.Failure("Invalid username or password")
+        val userEntity = userDao.getUserByUsername(username, cleanPhone) ?: return LoginResult.Failure("Invalid mobile number or password")
 
         val nowMs = System.currentTimeMillis()
         if (userEntity.offlineValidUntil > 0 && nowMs > userEntity.offlineValidUntil) {
@@ -152,7 +143,7 @@ class DefaultAuthRepository(
             sessions.save(session)
             LoginResult.Success(session)
         } else {
-            LoginResult.Failure("Invalid username or password")
+            LoginResult.Failure("Invalid mobile number or password")
         }
         password.fill('\u0000')
         return result
@@ -200,21 +191,15 @@ class DefaultAuthRepository(
             val authResult = firebaseAuth.signInWithCredential(credential).await()
             val user = authResult.user ?: return RegisterResult.Failure("Authentication failed")
 
-            val email = getFakeEmail(mobileNumber)
-            val emailCredential = EmailAuthProvider.getCredential(email, String(password))
-            
-            try {
-                user.linkWithCredential(emailCredential).await()
-            } catch (e: Exception) {
-                // If linking fails (e.g., email already in use), try creating/updating
-            }
+            val cleanPhone = normalizePhone(mobileNumber)
 
             val companyRef = firestore.collection("companies").document()
             val companyId = companyRef.id
             companyRef.set(mapOf(
                 "name" to businessName,
                 "owner_user_id" to user.uid,
-                "status" to "active"
+                "status" to "active",
+                "mobile" to cleanPhone
             )).await()
 
             firestore.collection("company_users").document().set(mapOf(
@@ -222,13 +207,34 @@ class DefaultAuthRepository(
                 "user_id" to user.uid,
                 "role" to "ADMIN",
                 "status" to "active",
+                "mobile" to cleanPhone,
                 "permissions" to Permission.entries.map { it.name }
             )).await()
 
             firestore.collection("profiles").document(user.uid).set(mapOf(
                 "full_name" to ownerName,
                 "business_name" to businessName,
-                "mobile" to mobileNumber
+                "mobile" to cleanPhone
+            )).await()
+
+            val offlineCred = verifier.create(cleanPhone, password, user.uid, ownerName)
+            offlineCredentials.save(offlineCred)
+
+            val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
+            val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
+
+            // Save to Firestore users collection for online multi-device authentication
+            firestore.collection("users").document(cleanPhone).set(mapOf(
+                "user_id" to user.uid,
+                "username" to cleanPhone,
+                "mobile" to cleanPhone,
+                "full_name" to ownerName,
+                "business_name" to businessName,
+                "company_id" to companyId,
+                "role" to "ADMIN",
+                "salt" to saltStr,
+                "verifier" to verifierStr,
+                "permissions" to Permission.entries.map { it.name }
             )).await()
 
             val nowMs = System.currentTimeMillis()
@@ -245,21 +251,15 @@ class DefaultAuthRepository(
             )
             sessions.save(session)
 
-            val cleanPhone = mobileNumber.trim().replace(" ", "").replace("-", "")
-            val offlineCred = verifier.create(cleanPhone, password, session.userId, session.displayName)
-            offlineCredentials.save(offlineCred)
-
-            val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
-            val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
             val userEntity = UserEntity(
-                id = session.userId,
+                id = user.uid,
                 username = cleanPhone,
-                displayName = session.displayName,
+                displayName = ownerName,
                 salt = saltStr,
                 verifier = verifierStr,
                 permissions = Permission.entries.joinToString(",") { it.name },
-                companyId = session.companyId,
-                role = session.role,
+                companyId = companyId,
+                role = "ADMIN",
                 lastOnlineVerifiedAt = nowMs,
                 offlineValidUntil = offlineValidUntil
             )
@@ -291,9 +291,25 @@ class DefaultAuthRepository(
             val credential = PhoneAuthProvider.getCredential(verificationId, otp)
             val authResult = firebaseAuth.signInWithCredential(credential).await()
             val user = authResult.user ?: return RecoveryResult.Failure("Authentication failed")
+            val phone = user.phoneNumber ?: ""
+            val cleanPhone = normalizePhone(phone)
 
-            user.updatePassword(String(newPassword)).await()
-            
+            val offlineCred = verifier.create(cleanPhone, newPassword, user.uid, cleanPhone)
+            val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
+            val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
+
+            if (cleanPhone.isNotBlank()) {
+                firestore.collection("users").document(cleanPhone).update(mapOf(
+                    "salt" to saltStr,
+                    "verifier" to verifierStr
+                )).await()
+
+                val localUser = database.userDao().getUserByUsername(cleanPhone)
+                if (localUser != null) {
+                    database.userDao().updateUser(localUser.copy(salt = saltStr, verifier = verifierStr))
+                }
+            }
+
             newPassword.fill('\u0000')
             RecoveryResult.Success
         } catch (e: Exception) {
