@@ -26,16 +26,17 @@ class ReportRepositoryImpl(
             ReportType.SALES -> {
                 val data = reportDao.getSaleBillReport(companyId, fromMs, toMs)
                 val rows = mutableListOf<List<String>>()
-                for (it in data) {
-                    rows.add(listOf(it.billNumber, it.date, it.customerName, Money(it.totalAmount).toString()))
+                data.forEachIndexed { index, it ->
+                    val cleanBillNum = if (it.billNumber.startsWith("Bill #")) it.billNumber.removePrefix("Bill #") else it.billNumber
+                    rows.add(listOf("${index + 1}", cleanBillNum, it.date, it.customerName, Money(it.totalAmount).toString()))
                 }
                 if (data.isNotEmpty()) {
                     val total = data.sumOf { it.totalAmount }
-                    rows.add(listOf("TOTAL", "", "${data.size} Bills", Money(total).toString()))
+                    rows.add(listOf("", "TOTAL", "", "${data.size} Bills", Money(total).toString()))
                 }
                 ReportData(
                     title = "Sales & Bills Summary",
-                    columns = listOf("Bill Number", "Date & Time", "Customer", "Amount"),
+                    columns = listOf("S.No", "Bill Number", "Date & Time", "Customer", "Amount"),
                     rows = rows
                 )
             }
@@ -43,7 +44,7 @@ class ReportRepositoryImpl(
                 val data = reportDao.getStockReport(companyId)
                 val rows = mutableListOf<List<String>>()
                 var totalStockValue = 0L
-                for (item in data) {
+                data.forEachIndexed { index, item ->
                     val qtyFormatted = if (item.unitType == "KG" || item.unitType == "LITER") {
                         String.format(java.util.Locale.US, "%.3f", item.currentStock / 1000.0)
                     } else {
@@ -56,6 +57,7 @@ class ReportRepositoryImpl(
                     }
                     totalStockValue += stockVal
                     rows.add(listOf(
+                        "${index + 1}",
                         item.productName,
                         item.categoryName,
                         item.unitType,
@@ -65,11 +67,11 @@ class ReportRepositoryImpl(
                     ))
                 }
                 if (data.isNotEmpty()) {
-                    rows.add(listOf("TOTAL INVENTORY VALUE", "", "", "", "", Money(totalStockValue).toString()))
+                    rows.add(listOf("", "TOTAL INVENTORY VALUE", "", "", "", "", Money(totalStockValue).toString()))
                 }
                 ReportData(
                     title = "Stock Inventory & Valuation Report",
-                    columns = listOf("Product", "Category", "Unit", "Current Stock", "Purchase Price", "Stock Value (Cost)"),
+                    columns = listOf("S.No", "Product", "Category", "Unit", "Current Stock", "Purchase Price", "Stock Value (Cost)"),
                     rows = rows
                 )
             }
@@ -82,7 +84,7 @@ class ReportRepositoryImpl(
                 var grandTotalRevenue = Money.Zero
                 var grandTotalCost = Money.Zero
 
-                for (item in raw) {
+                raw.forEachIndexed { index, item ->
                     val revenue = Money(item.totalRevenue)
                     val cost = costingStrategy.getProductCost(item.productId, item.totalQty)
                     val profit = revenue - cost
@@ -91,6 +93,7 @@ class ReportRepositoryImpl(
                     grandTotalCost += cost
 
                     rows.add(listOf(
+                        "${index + 1}",
                         item.productName,
                         item.totalQty.toString(),
                         revenue.toString(),
@@ -103,38 +106,38 @@ class ReportRepositoryImpl(
                 val netProfit = grossProfit - Money(totalExpenses)
 
                 if (rows.isNotEmpty() || totalExpenses > 0) {
-                    rows.add(listOf("---", "---", "---", "---", "---"))
-                    rows.add(listOf("1. TOTAL SALES REVENUE", "", grandTotalRevenue.toString(), "", ""))
-                    rows.add(listOf("2. COST OF GOODS SOLD (COGS)", "", "", grandTotalCost.toString(), ""))
-                    rows.add(listOf("3. GROSS PROFIT (Sales - Cost)", "", "", "", grossProfit.toString()))
-                    rows.add(listOf("4. OPERATING EXPENSES", "", "", "", "- " + Money(totalExpenses).toString()))
-                    rows.add(listOf("5. NET PROFIT / LOSS", "", "", "", netProfit.toString()))
+                    rows.add(listOf("", "---", "---", "---", "---", "---"))
+                    rows.add(listOf("", "1. TOTAL SALES REVENUE", "", grandTotalRevenue.toString(), "", ""))
+                    rows.add(listOf("", "2. COST OF GOODS SOLD (COGS)", "", "", grandTotalCost.toString(), ""))
+                    rows.add(listOf("", "3. GROSS PROFIT (Sales - Cost)", "", "", "", grossProfit.toString()))
+                    rows.add(listOf("", "4. OPERATING EXPENSES", "", "", "", "- " + Money(totalExpenses).toString()))
+                    rows.add(listOf("", "5. NET PROFIT / LOSS", "", "", "", netProfit.toString()))
                 }
 
                 ReportData(
                     title = "Profit & Loss Statement (Net Business Health)",
-                    columns = listOf("Item / Description", "Qty Sold", "Sales Revenue", "Purchase Cost", "Profit"),
+                    columns = listOf("S.No", "Item / Description", "Qty Sold", "Sales Revenue", "Purchase Cost", "Profit"),
                     rows = rows
                 )
             }
             ReportType.PURCHASES -> {
                 val data = reportDao.getPurchaseReport(companyId, fromMs, toMs)
                 val rows = mutableListOf<List<String>>()
-                for (it in data) {
+                data.forEachIndexed { index, it ->
                     val invDisplay = when {
                         !it.invoiceNumber.isNullOrBlank() -> it.invoiceNumber
                         !it.orderNumber.isNullOrBlank() -> "Order #${it.orderNumber}"
-                        else -> "Order #${it.purchaseId.take(4)}"
+                        else -> "Order #${String.format(java.util.Locale.US, "%02d", index + 1)}"
                     }
-                    rows.add(listOf(invDisplay, it.date, it.supplierName, it.paymentMode, Money(it.totalAmount).toString()))
+                    rows.add(listOf("${index + 1}", invDisplay, it.date, it.supplierName, it.paymentMode, Money(it.totalAmount).toString()))
                 }
                 if (data.isNotEmpty()) {
                     val total = data.sumOf { it.totalAmount }
-                    rows.add(listOf("TOTAL PURCHASES", "", "${data.size} Orders", "", Money(total).toString()))
+                    rows.add(listOf("", "TOTAL PURCHASES", "", "${data.size} Orders", "", Money(total).toString()))
                 }
                 ReportData(
                     title = "Purchases & Supplier Bills Report",
-                    columns = listOf("Supplier Inv / ID", "Date & Time", "Supplier", "Payment Mode", "Total Amount"),
+                    columns = listOf("S.No", "Supplier Inv / ID", "Date & Time", "Supplier", "Payment Mode", "Total Amount"),
                     rows = rows
                 )
             }

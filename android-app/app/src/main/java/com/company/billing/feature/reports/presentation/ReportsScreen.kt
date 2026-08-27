@@ -387,10 +387,11 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                     } else {
                                         when (selectedType) {
                                             ReportType.SALES -> {
-                                                val billNum = row.getOrNull(0) ?: ""
-                                                val dateTime = row.getOrNull(1) ?: ""
-                                                val customer = row.getOrNull(2) ?: "Walk-in Customer"
-                                                val amount = row.getOrNull(3) ?: "₹0"
+                                                val sNo = row.getOrNull(0) ?: ""
+                                                val billNum = row.getOrNull(1) ?: ""
+                                                val dateTime = row.getOrNull(2) ?: ""
+                                                val customer = row.getOrNull(3) ?: "Walk-in Customer"
+                                                val amount = row.getOrNull(4) ?: "₹0"
 
                                                 Card(
                                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -404,11 +405,21 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                                             horizontalArrangement = Arrangement.SpaceBetween,
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
-                                                            Surface(
-                                                                color = MaterialTheme.colorScheme.primaryContainer,
-                                                                shape = RoundedCornerShape(6.dp)
-                                                            ) {
-                                                                Text("Bill #$billNum", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                if (sNo.isNotBlank()) {
+                                                                    Surface(
+                                                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                                                        shape = RoundedCornerShape(4.dp)
+                                                                    ) {
+                                                                        Text("#$sNo", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                                    }
+                                                                }
+                                                                Surface(
+                                                                    color = MaterialTheme.colorScheme.primaryContainer,
+                                                                    shape = RoundedCornerShape(6.dp)
+                                                                ) {
+                                                                    Text("Bill #$billNum", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                                }
                                                             }
                                                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                                 Text(amount, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF2E7D32))
@@ -431,12 +442,13 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                                 }
                                             }
                                             ReportType.STOCK -> {
-                                                val prod = row.getOrNull(0) ?: ""
-                                                val cat = row.getOrNull(1) ?: "General"
-                                                val unit = row.getOrNull(2) ?: "PIECE"
-                                                val stock = row.getOrNull(3) ?: "0"
-                                                val cost = row.getOrNull(4) ?: "₹0"
-                                                val totalVal = row.getOrNull(5) ?: "₹0"
+                                                val sNo = row.getOrNull(0) ?: ""
+                                                val prod = row.getOrNull(1) ?: ""
+                                                val cat = row.getOrNull(2) ?: "General"
+                                                val unit = row.getOrNull(3) ?: "PIECE"
+                                                val stock = row.getOrNull(4) ?: "0"
+                                                val cost = row.getOrNull(5) ?: "₹0"
+                                                val totalVal = row.getOrNull(6) ?: "₹0"
                                                 val isOutOfStock = stock == "0" || stock == "0.000"
 
                                                 Card(
@@ -451,7 +463,17 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                                             horizontalArrangement = Arrangement.SpaceBetween,
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
-                                                            Text(prod, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                if (sNo.isNotBlank()) {
+                                                                    Surface(
+                                                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                                                        shape = RoundedCornerShape(4.dp)
+                                                                    ) {
+                                                                        Text("#$sNo", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                                    }
+                                                                }
+                                                                Text(prod, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                            }
                                                             Surface(
                                                                 color = if (isOutOfStock) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
                                                                 shape = RoundedCornerShape(6.dp)
@@ -484,11 +506,12 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                                 }
                                             }
                                             ReportType.PROFIT -> {
-                                                val prod = row.getOrNull(0) ?: ""
-                                                val qty = row.getOrNull(1) ?: "0"
-                                                val rev = row.getOrNull(2) ?: "₹0"
-                                                val cost = row.getOrNull(3) ?: "₹0"
-                                                val profit = row.getOrNull(4) ?: "₹0"
+                                                val sNo = row.getOrNull(0) ?: ""
+                                                val prod = row.getOrNull(1) ?: ""
+                                                val qty = row.getOrNull(2) ?: "0"
+                                                val rev = row.getOrNull(3) ?: "₹0"
+                                                val cost = row.getOrNull(4) ?: "₹0"
+                                                val profit = row.getOrNull(5) ?: "₹0"
                                                 val isNegative = profit.startsWith("-")
 
                                                 Card(
@@ -503,7 +526,17 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                                             horizontalArrangement = Arrangement.SpaceBetween,
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
-                                                            Text(prod, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                if (sNo.isNotBlank()) {
+                                                                    Surface(
+                                                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                                                        shape = RoundedCornerShape(4.dp)
+                                                                    ) {
+                                                                        Text("#$sNo", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                                    }
+                                                                }
+                                                                Text(prod, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                            }
                                                             Text(
                                                                 text = "Profit: $profit",
                                                                 fontWeight = FontWeight.Bold,
@@ -522,11 +555,12 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                                 }
                                             }
                                             ReportType.PURCHASES -> {
-                                                val invId = row.getOrNull(0) ?: ""
-                                                val date = row.getOrNull(1) ?: ""
-                                                val supplier = row.getOrNull(2) ?: "General Supplier"
-                                                val mode = row.getOrNull(3) ?: "CASH"
-                                                val total = row.getOrNull(4) ?: "₹0"
+                                                val sNo = row.getOrNull(0) ?: ""
+                                                val invId = row.getOrNull(1) ?: ""
+                                                val date = row.getOrNull(2) ?: ""
+                                                val supplier = row.getOrNull(3) ?: "General Supplier"
+                                                val mode = row.getOrNull(4) ?: "CASH"
+                                                val total = row.getOrNull(5) ?: "₹0"
 
                                                 Card(
                                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -540,11 +574,21 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                                             horizontalArrangement = Arrangement.SpaceBetween,
                                                             verticalAlignment = Alignment.CenterVertically
                                                         ) {
-                                                            Surface(
-                                                                color = MaterialTheme.colorScheme.secondaryContainer,
-                                                                shape = RoundedCornerShape(6.dp)
-                                                            ) {
-                                                                Text(invId, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                if (sNo.isNotBlank()) {
+                                                                    Surface(
+                                                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                                                        shape = RoundedCornerShape(4.dp)
+                                                                    ) {
+                                                                        Text("#$sNo", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                                    }
+                                                                }
+                                                                Surface(
+                                                                    color = MaterialTheme.colorScheme.secondaryContainer,
+                                                                    shape = RoundedCornerShape(6.dp)
+                                                                ) {
+                                                                    Text(invId, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                                }
                                                             }
                                                             Text(total, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
                                                         }
