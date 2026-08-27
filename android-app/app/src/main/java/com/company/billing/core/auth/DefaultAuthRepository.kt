@@ -227,8 +227,43 @@ class DefaultAuthRepository(
 
             firestore.collection("profiles").document(user.uid).set(mapOf(
                 "full_name" to ownerName,
-                "business_name" to businessName
+                "business_name" to businessName,
+                "mobile" to mobileNumber
             )).await()
+
+            val nowMs = System.currentTimeMillis()
+            val offlineValidityMs = 30 * 24 * 60 * 60 * 1000L // 30 days
+            val offlineValidUntil = nowMs + offlineValidityMs
+
+            val session = Session(
+                userId = user.uid,
+                displayName = ownerName,
+                permissions = Permission.entries.toSet(),
+                accessToken = user.uid,
+                companyId = companyId,
+                role = "ADMIN"
+            )
+            sessions.save(session)
+
+            val cleanPhone = mobileNumber.trim().replace(" ", "").replace("-", "")
+            val offlineCred = verifier.create(cleanPhone, password, session.userId, session.displayName)
+            offlineCredentials.save(offlineCred)
+
+            val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
+            val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
+            val userEntity = UserEntity(
+                id = session.userId,
+                username = cleanPhone,
+                displayName = session.displayName,
+                salt = saltStr,
+                verifier = verifierStr,
+                permissions = Permission.entries.joinToString(",") { it.name },
+                companyId = session.companyId,
+                role = session.role,
+                lastOnlineVerifiedAt = nowMs,
+                offlineValidUntil = offlineValidUntil
+            )
+            database.userDao().insertUser(userEntity)
 
             password.fill('\u0000')
             RegisterResult.Success(companyId)

@@ -9,7 +9,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
@@ -36,7 +35,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-
 data class RegisterUiState(
     val mobileNumber: String = "",
     val passwordString: String = "",
@@ -46,7 +44,6 @@ data class RegisterUiState(
     val loading: Boolean = false,
     val error: String? = null,
     val complete: Boolean = false,
-    val isGoogleSignIn: Boolean = false,
     val showOtpDialog: Boolean = false,
     val otp: String = "",
     val verificationId: String? = null
@@ -83,11 +80,10 @@ class RegisterViewModel @Inject constructor(
         }
         val cleanPhone = current.mobileNumber.trim().replace(" ", "").replace("-", "")
         if (cleanPhone.length < 10 || !cleanPhone.all { it.isDigit() || it == '+' }) {
-            _state.update { it.copy(error = "Please provide a valid mobile number") }
+            _state.update { it.copy(error = "Please provide a valid 10-digit mobile number") }
             return
         }
         
-        // Ensure phone has country code for Firebase
         val phoneWithCode = if (cleanPhone.startsWith("+")) cleanPhone else "+91$cleanPhone"
 
         _state.update { it.copy(loading = true, error = null) }
@@ -142,70 +138,6 @@ class RegisterViewModel @Inject constructor(
             }
         }
     }
-
-    fun signInWithGoogle() {
-        viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
-            try {
-                authRepository.signInWithGoogle()
-            } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = e.message) }
-            }
-        }
-    }
-
-    fun handleGoogleSignInSuccess(onResult: (Boolean, String?) -> Unit) {
-        viewModelScope.launch {
-            try {
-                val res = authRepository.handleGoogleSignInSuccess()
-                when (res) {
-                    is com.company.billing.core.auth.GoogleSignInResult.Success -> {
-                        // User already has an account, they shouldn't be registering!
-                        _state.update { it.copy(loading = false, error = "Account already exists. Please login instead.") }
-                        onResult(false, "Account already exists")
-                    }
-                    is com.company.billing.core.auth.GoogleSignInResult.NewUserNeedsCompanyDetails -> {
-                        // Perfect, it's a new user! Move them to step 2 of registration.
-                        _state.update { it.copy(loading = false, isGoogleSignIn = true) }
-                        onResult(true, null)
-                    }
-                    is com.company.billing.core.auth.GoogleSignInResult.Failure -> {
-                        _state.update { it.copy(loading = false, error = res.message) }
-                        onResult(false, res.message)
-                    }
-                }
-            } catch (e: Exception) {
-                _state.update { it.copy(loading = false, error = e.message) }
-                onResult(false, e.message)
-            }
-        }
-    }
-
-    fun completeGoogleRegistration(onSuccess: (String) -> Unit) {
-        val current = state.value
-        if (current.ownerName.isBlank() || current.businessName.isBlank()) {
-            _state.update { it.copy(error = "Owner Name and Business Name are required") }
-            return
-        }
-        viewModelScope.launch {
-            _state.update { it.copy(loading = true, error = null) }
-            val result = authRepository.completeGoogleRegistration(
-                ownerName = current.ownerName,
-                businessName = current.businessName
-            )
-            _state.update {
-                when (result) {
-                    is RegisterResult.Success -> {
-                        onSuccess(result.companyId)
-                        it.copy(loading = false, complete = true)
-                    }
-                    is RegisterResult.Failure -> {
-                        it.copy(loading = false, error = result.message)
-                    }
-                }
-            }
-        }
-    }
 }
 
 @Composable
@@ -216,9 +148,7 @@ fun RegisterScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val scrollState = rememberScrollState()
-    var message by remember { mutableStateOf("") }
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
-
 
     LaunchedEffect(state.complete) {
         if (state.complete) {
@@ -232,8 +162,9 @@ fun RegisterScreen(
             .background(
                 Brush.verticalGradient(
                     colors = listOf(
-                        MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f),
-                        MaterialTheme.colorScheme.background
+                        Color(0xFF2C3E50),
+                        Color(0xFF1A2536),
+                        Color(0xFF0F172A)
                     )
                 )
             ),
@@ -242,32 +173,32 @@ fun RegisterScreen(
         Card(
             modifier = Modifier
                 .fillMaxWidth()
-                .widthIn(max = 450.dp)
+                .widthIn(max = 440.dp)
                 .padding(24.dp)
                 .verticalScroll(scrollState)
                 .border(
                     width = 1.dp,
-                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f),
+                    color = Color(0xFF334155),
                     shape = RoundedCornerShape(24.dp)
                 ),
             shape = RoundedCornerShape(24.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF111C2E))
         ) {
             Column(
                 modifier = Modifier
-                    .padding(32.dp)
+                    .padding(28.dp)
                     .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // System Logo Placeholder
+                // Electric Blue Badge
                 Box(
                     modifier = Modifier
                         .size(64.dp)
                         .background(
-                            color = MaterialTheme.colorScheme.primaryContainer,
-                            shape = RoundedCornerShape(16.dp)
+                            color = Color(0xFF1976D2),
+                            shape = RoundedCornerShape(20.dp)
                         ),
                     contentAlignment = Alignment.Center
                 ) {
@@ -275,43 +206,43 @@ fun RegisterScreen(
                         imageVector = Icons.Default.Home,
                         contentDescription = null,
                         modifier = Modifier.size(32.dp),
-                        tint = MaterialTheme.colorScheme.primary
+                        tint = Color.White
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
+                Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
                     text = "Create Business Account",
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
+                    color = Color.White
                 )
                 Text(
-                    text = "Register a new business and admin owner profile",
+                    text = "Register with Mobile Number & Live SMS OTP",
                     fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = Color(0xFF94A3B8)
                 )
 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(4.dp))
 
                 OutlinedTextField(
-                        value = state.mobileNumber,
-                        onValueChange = { viewModel.updateMobileNumber(it) },
-                        label = { Text("Mobile Number") },
-                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                OutlinedTextField(
-                    value = state.ownerName,
-                    onValueChange = { viewModel.updateOwnerName(it) },
-                    label = { Text("Owner Name") },
-                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                    value = state.mobileNumber,
+                    onValueChange = { viewModel.updateMobileNumber(it) },
+                    label = { Text("Mobile Number", color = Color(0xFF94A3B8)) },
+                    placeholder = { Text("10-digit mobile number", color = Color(0xFF64748B)) },
+                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF162238),
+                        unfocusedContainerColor = Color(0xFF162238),
+                        focusedBorderColor = Color(0xFF1E88E5),
+                        unfocusedBorderColor = Color(0xFF334155),
+                        cursorColor = Color(0xFF1E88E5)
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -319,50 +250,89 @@ fun RegisterScreen(
                 OutlinedTextField(
                     value = state.businessName,
                     onValueChange = { viewModel.updateBusinessName(it) },
-                    label = { Text("Business Name") },
-                    leadingIcon = { Icon(Icons.Default.Home, contentDescription = null) },
+                    label = { Text("Shop / Business Name", color = Color(0xFF94A3B8)) },
+                    placeholder = { Text("e.g. Sasi Supermarket", color = Color(0xFF64748B)) },
+                    leadingIcon = { Icon(Icons.Default.Home, contentDescription = null, tint = Color(0xFF94A3B8)) },
                     shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF162238),
+                        unfocusedContainerColor = Color(0xFF162238),
+                        focusedBorderColor = Color(0xFF1E88E5),
+                        unfocusedBorderColor = Color(0xFF334155),
+                        cursorColor = Color(0xFF1E88E5)
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
 
                 OutlinedTextField(
-                        value = state.passwordString,
-                        onValueChange = { viewModel.updatePassword(it) },
-                        label = { Text("Password") },
-                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                    value = state.ownerName,
+                    onValueChange = { viewModel.updateOwnerName(it) },
+                    label = { Text("Owner / Admin Name", color = Color(0xFF94A3B8)) },
+                    placeholder = { Text("e.g. Sasi Dharan", color = Color(0xFF64748B)) },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF162238),
+                        unfocusedContainerColor = Color(0xFF162238),
+                        focusedBorderColor = Color(0xFF1E88E5),
+                        unfocusedBorderColor = Color(0xFF334155),
+                        cursorColor = Color(0xFF1E88E5)
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
 
-                    OutlinedTextField(
-                        value = state.confirmPasswordString,
-                        onValueChange = { viewModel.updateConfirmPassword(it) },
-                        label = { Text("Confirm Password") },
-                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                        visualTransformation = PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                OutlinedTextField(
+                    value = state.passwordString,
+                    onValueChange = { viewModel.updatePassword(it) },
+                    label = { Text("Password", color = Color(0xFF94A3B8)) },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF162238),
+                        unfocusedContainerColor = Color(0xFF162238),
+                        focusedBorderColor = Color(0xFF1E88E5),
+                        unfocusedBorderColor = Color(0xFF334155),
+                        cursorColor = Color(0xFF1E88E5)
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = state.confirmPasswordString,
+                    onValueChange = { viewModel.updateConfirmPassword(it) },
+                    label = { Text("Confirm Password", color = Color(0xFF94A3B8)) },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF162238),
+                        unfocusedContainerColor = Color(0xFF162238),
+                        focusedBorderColor = Color(0xFF1E88E5),
+                        unfocusedBorderColor = Color(0xFF334155),
+                        cursorColor = Color(0xFF1E88E5)
+                    ),
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
 
                 if (!state.error.isNullOrBlank()) {
                     Text(
                         text = state.error ?: "",
-                        color = MaterialTheme.colorScheme.error,
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.align(Alignment.Start)
-                    )
-                }
-                if (message.isNotBlank()) {
-                    Text(
-                        text = message,
-                        color = MaterialTheme.colorScheme.error,
+                        color = Color(0xFFFF6B6B),
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
                         modifier = Modifier.align(Alignment.Start)
@@ -373,35 +343,33 @@ fun RegisterScreen(
                     onClick = { 
                         if (activity != null) {
                             viewModel.register(activity)
-                        } else {
-                            message = "Could not get Activity context"
                         }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
                     shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF1E88E5),
+                        contentColor = Color.White
+                    ),
                     enabled = !state.loading
                 ) {
                     if (state.loading && !state.showOtpDialog) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            color = MaterialTheme.colorScheme.onPrimary
+                            color = Color.White
                         )
                     } else {
-                        Text("Create Account", fontWeight = FontWeight.Bold)
+                        Text("Send OTP & Register", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     }
                 }
-
-
-
-                Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
                     text = "Already have an account? Sign In",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.primary,
+                    color = Color(0xFF38BDF8),
                     modifier = Modifier
                         .clickable { onNavigateBackToLogin() }
                         .padding(vertical = 4.dp)
@@ -412,32 +380,48 @@ fun RegisterScreen(
         if (state.showOtpDialog) {
             AlertDialog(
                 onDismissRequest = { viewModel.dismissOtpDialog() },
-                title = { Text("Enter OTP") },
+                containerColor = Color(0xFF111C2E),
+                titleContentColor = Color.White,
+                textContentColor = Color(0xFFCBD5E1),
+                shape = RoundedCornerShape(20.dp),
+                title = { Text("Verify Phone Number", fontWeight = FontWeight.Bold) },
                 text = {
-                    Column {
-                        Text("Please enter the OTP sent to your mobile number.")
-                        Spacer(modifier = Modifier.height(8.dp))
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Please enter the 6-digit OTP sent to ${state.mobileNumber} via SMS.", fontSize = 13.sp)
                         OutlinedTextField(
                             value = state.otp,
                             onValueChange = { viewModel.updateOtp(it) },
+                            label = { Text("6-Digit OTP", color = Color(0xFF94A3B8)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
+                            shape = RoundedCornerShape(10.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = Color(0xFF162238),
+                                unfocusedContainerColor = Color(0xFF162238),
+                                focusedBorderColor = Color(0xFF1E88E5),
+                                unfocusedBorderColor = Color(0xFF334155)
+                            ),
                             modifier = Modifier.fillMaxWidth()
                         )
                         if (state.loading) {
-                            Spacer(modifier = Modifier.height(8.dp))
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFF1E88E5))
                         }
                     }
                 },
                 confirmButton = {
-                    TextButton(onClick = { viewModel.verifyOtpAndCompleteRegistration { onRegisterSuccess() } }, enabled = !state.loading) {
-                        Text("Verify")
+                    Button(
+                        onClick = { viewModel.verifyOtpAndCompleteRegistration { onRegisterSuccess() } },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
+                        enabled = !state.loading
+                    ) {
+                        Text("Verify & Create", color = Color.White, fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = { viewModel.dismissOtpDialog() }, enabled = !state.loading) {
-                        Text("Cancel")
+                        Text("Cancel", color = Color(0xFF94A3B8))
                     }
                 }
             )
