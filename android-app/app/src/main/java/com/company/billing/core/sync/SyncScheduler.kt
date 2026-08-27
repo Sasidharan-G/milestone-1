@@ -6,7 +6,6 @@ import androidx.work.ExistingWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.WorkManager
-
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.ExistingPeriodicWorkPolicy
 import java.util.concurrent.TimeUnit
@@ -18,39 +17,7 @@ class SyncScheduler(private val context: Context) {
         OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(Constraints(requiredNetworkType = NetworkType.CONNECTED)).build(),
     )
 
-    fun schedulePeriodicGoogleDriveBackup() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val backupRequest = PeriodicWorkRequestBuilder<com.company.billing.core.backup.data.GoogleDriveBackupWorker>(
-            24, TimeUnit.HOURS
-        )
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            "google-drive-backup",
-            ExistingPeriodicWorkPolicy.KEEP,
-            backupRequest
-        )
-    }
-
     fun schedulePeriodicSupabaseBackup() {
-        val constraints = Constraints.Builder()
-            .setRequiredNetworkType(NetworkType.CONNECTED)
-            .build()
-
-        val backupRequest = PeriodicWorkRequestBuilder<com.company.billing.core.backup.data.SupabaseBackupWorker>(
-            24, TimeUnit.HOURS
-        )
-            .setConstraints(constraints)
-            .build()
-
-        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
-            "supabase-backup",
-            ExistingPeriodicWorkPolicy.KEEP,
-            backupRequest
-        )
+        // Firebase Backup not implemented yet
     }
 }

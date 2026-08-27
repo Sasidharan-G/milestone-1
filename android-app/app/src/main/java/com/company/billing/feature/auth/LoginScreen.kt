@@ -11,6 +11,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.*
 import androidx.compose.ui.res.painterResource
 import androidx.compose.runtime.*
@@ -25,9 +26,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.company.billing.core.auth.LoginMode
 
-import io.github.jan.supabase.compose.auth.composeAuth
-import io.github.jan.supabase.compose.auth.composable.rememberSignInWithGoogle
-import io.github.jan.supabase.compose.auth.composable.NativeSignInResult
 
 @Composable
 fun LoginScreen(
@@ -37,32 +35,8 @@ fun LoginScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var message by remember { mutableStateOf("") }
-    val composeAuth = viewModel.supabaseClient.composeAuth
-    val googleSignInAction = composeAuth.rememberSignInWithGoogle(
-        onResult = { result ->
-            when (result) {
-                is NativeSignInResult.Success -> {
-                    viewModel.handleGoogleSignInSuccess { success, msg ->
-                        if (success) {
-                            onLoginSuccess()
-                        } else {
-                            message = msg ?: "Failed to initialize company data"
-                        }
-                    }
-                }
-                is NativeSignInResult.Error -> {
-                    message = result.message
-                }
-                is NativeSignInResult.ClosedByUser -> {
-                    // Do nothing
-                }
-                else -> {}
-            }
-        },
-        fallback = {
-            viewModel.signInWithGoogle()
-        }
-    )
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+
 
     LaunchedEffect(state.complete) {
         if (state.complete) {
@@ -140,10 +114,11 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
-                    value = state.username,
-                    onValueChange = { viewModel.updateUsername(it) },
-                    label = { Text("Username / Email") },
-                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
+                    value = state.mobileNumber,
+                    onValueChange = { viewModel.updateMobileNumber(it) },
+                    label = { Text("Mobile Number") },
+                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -184,17 +159,16 @@ fun LoginScreen(
                         fontWeight = FontWeight.Medium,
                         color = MaterialTheme.colorScheme.primary,
                         modifier = Modifier.clickable {
-                            val email = state.username.trim()
-                            if (email.isBlank() || !email.contains("@")) {
-                                message = "Please enter your email address in the username field first."
+                            val phone = state.mobileNumber.trim()
+                            if (phone.isBlank()) {
+                                message = "Please enter your mobile number first."
+                            } else if (activity != null) {
+                                viewModel.requestPasswordResetOtp(phone, activity, 
+                                    onCodeSent = { _ -> message = "OTP sent to your mobile." },
+                                    onError = { errMsg -> message = "Recovery failed: $errMsg" }
+                                )
                             } else {
-                                viewModel.recoverPassword(email) { success, errMsg ->
-                                    message = if (success) {
-                                        "Password recovery email dispatched. Check your inbox."
-                                    } else {
-                                        "Recovery failed: $errMsg"
-                                    }
-                                }
+                                message = "Activity context is missing."
                             }
                         }
                     )
@@ -227,21 +201,7 @@ fun LoginScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                Button(
-                    onClick = { googleSignInAction.startFlow() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F9)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray)
-                ) {
-                    Text("Continue with Google", color = Color.Black, fontWeight = FontWeight.Medium)
-                }
 
-                Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
                     text = "New business? Register here",
@@ -263,6 +223,59 @@ fun LoginScreen(
                     )
                 }
             }
+        }
+        
+        if (state.showResetOtpDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissResetDialog() },
+                title = { Text("Reset Password") },
+                text = {
+                    Column {
+                        Text("Please enter the OTP sent to your mobile number and your new password.")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = state.resetOtp,
+                            onValueChange = { viewModel.updateResetOtp(it) },
+                            label = { Text("OTP") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = state.newPasswordString,
+                            onValueChange = { viewModel.updateNewPassword(it) },
+                            label = { Text("New Password") },
+                            visualTransformation = PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (state.loading) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { 
+                        viewModel.verifyOtpAndResetPassword { success, errMsg ->
+                            if (success) {
+                                message = "Password updated successfully!"
+                            } else {
+                                message = "Failed to update password: $errMsg"
+                            }
+                        }
+                    }, enabled = !state.loading) {
+                        Text("Reset Password")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.dismissResetDialog() }, enabled = !state.loading) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }

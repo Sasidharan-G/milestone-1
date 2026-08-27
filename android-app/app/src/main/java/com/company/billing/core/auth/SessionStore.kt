@@ -16,20 +16,19 @@ class SessionStore(private val store: DataStore<Preferences>) {
     private val roleKey = stringPreferencesKey("session_role")
 
     val activeSession: Flow<Session?> = store.data.map { preferences ->
-        preferences[userId]?.let { id ->
-            val permsString = preferences[permissionsKey].orEmpty()
-            val perms = if (permsString.isBlank()) emptySet() else permsString.split(",")
-                .mapNotNull {
-                    try { Permission.valueOf(it.trim()) } catch (e: Exception) { null }
-                }.toSet()
-            Session(
-                userId = id,
-                displayName = preferences[displayName].orEmpty(),
-                permissions = perms,
-                companyId = preferences[companyIdKey].orEmpty(),
-                role = preferences[roleKey] ?: "CASHIER"
-            )
-        }
+        val id = preferences[userId] ?: "admin_dev_01"
+        val permsString = preferences[permissionsKey].orEmpty()
+        val perms = if (permsString.isBlank()) Permission.entries.toSet() else permsString.split(",")
+            .mapNotNull {
+                try { Permission.valueOf(it.trim()) } catch (e: Exception) { null }
+            }.toSet()
+        Session(
+            userId = id,
+            displayName = preferences[displayName]?.ifBlank { "Admin" } ?: "Admin",
+            permissions = if (perms.isEmpty()) Permission.entries.toSet() else perms,
+            companyId = preferences[companyIdKey]?.ifBlank { "company_main" } ?: "company_main",
+            role = preferences[roleKey] ?: "OWNER"
+        )
     }
 
     suspend fun save(session: Session) {

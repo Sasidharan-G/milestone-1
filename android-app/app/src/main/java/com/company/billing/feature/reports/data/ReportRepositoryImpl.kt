@@ -7,7 +7,6 @@ import com.company.billing.feature.reports.domain.ReportData
 import com.company.billing.feature.reports.domain.ReportQuery
 import com.company.billing.feature.reports.domain.ReportRepository
 import com.company.billing.feature.reports.domain.ReportType
-
 import com.company.billing.core.auth.SessionStore
 import kotlinx.coroutines.flow.first
 
@@ -24,54 +23,73 @@ class ReportRepositoryImpl(
         val toMs = query.toEpochMs
 
         return when (query.type) {
-            ReportType.SALE_AMOUNT -> {
-                val data = reportDao.getSaleAmountReport(companyId, fromMs, toMs)
-                ReportData(
-                    title = "Sale Amount Report",
-                    columns = listOf("Date", "Total Sales"),
-                    rows = data.map { listOf(it.date, Money(it.totalAmount).toString()) }
-                )
-            }
-            ReportType.SALE_BILL -> {
+            ReportType.SALES -> {
                 val data = reportDao.getSaleBillReport(companyId, fromMs, toMs)
+                val rows = mutableListOf<List<String>>()
+                for (it in data) {
+                    rows.add(listOf(it.billNumber, it.date, it.customerName, Money(it.totalAmount).toString()))
+                }
+                if (data.isNotEmpty()) {
+                    val total = data.sumOf { it.totalAmount }
+                    rows.add(listOf("TOTAL", "", "${data.size} Bills", Money(total).toString()))
+                }
                 ReportData(
-                    title = "Sale Bill Report",
-                    columns = listOf("Bill Number", "Date", "Total Amount", "Customer"),
-                    rows = data.map { listOf(it.billNumber, it.date, Money(it.totalAmount).toString(), it.customerName) }
-                )
-            }
-            ReportType.ITEM_WISE -> {
-                val data = reportDao.getItemWiseReport(companyId, fromMs, toMs)
-                ReportData(
-                    title = "Item-wise Report",
-                    columns = listOf("Product Name", "Category", "Quantity Sold", "Total Revenue"),
-                    rows = data.map { listOf(it.productName, it.categoryName, it.totalQty.toString(), Money(it.totalRevenue).toString()) }
+                    title = "Sales & Bills Summary",
+                    columns = listOf("Bill Number", "Date & Time", "Customer", "Amount"),
+                    rows = rows
                 )
             }
             ReportType.STOCK -> {
                 val data = reportDao.getStockReport(companyId)
+                val rows = mutableListOf<List<String>>()
+                var totalStockValue = 0L
+                for (item in data) {
+                    val qtyFormatted = if (item.unitType == "KG" || item.unitType == "LITER") {
+                        String.format(java.util.Locale.US, "%.3f", item.currentStock / 1000.0)
+                    } else {
+                        item.currentStock.toString()
+                    }
+                    val stockVal = if (item.unitType == "KG" || item.unitType == "LITER") {
+                        ((item.purchasePrice * item.currentStock) / 1000.0).toLong()
+                    } else {
+                        item.purchasePrice * item.currentStock
+                    }
+                    totalStockValue += stockVal
+                    rows.add(listOf(
+                        item.productName,
+                        item.categoryName,
+                        item.unitType,
+                        qtyFormatted,
+                        Money(item.purchasePrice).toString(),
+                        Money(stockVal).toString()
+                    ))
+                }
+                if (data.isNotEmpty()) {
+                    rows.add(listOf("TOTAL INVENTORY VALUE", "", "", "", "", Money(totalStockValue).toString()))
+                }
                 ReportData(
-                    title = "Stock Report",
-                    columns = listOf("Product Name", "Category", "Current Stock"),
-                    rows = data.map { listOf(it.productName, it.categoryName, it.currentStock.toString()) }
+                    title = "Stock Inventory & Valuation Report",
+                    columns = listOf("Product", "Category", "Unit", "Current Stock", "Purchase Price", "Stock Value (Cost)"),
+                    rows = rows
                 )
             }
             ReportType.PROFIT -> {
                 val raw = reportDao.getProfitReportRaw(companyId, fromMs, toMs)
+                val expenses = reportDao.getExpensesReport(companyId, fromMs, toMs)
+                val totalExpenses = expenses.sumOf { it.amount }
+
                 val rows = mutableListOf<List<String>>()
                 var grandTotalRevenue = Money.Zero
                 var grandTotalCost = Money.Zero
-                var grandTotalProfit = Money.Zero
-                
+
                 for (item in raw) {
                     val revenue = Money(item.totalRevenue)
                     val cost = costingStrategy.getProductCost(item.productId, item.totalQty)
                     val profit = revenue - cost
-                    
+
                     grandTotalRevenue += revenue
                     grandTotalCost += cost
-                    grandTotalProfit += profit
-                    
+
                     rows.add(listOf(
                         item.productName,
                         item.totalQty.toString(),
@@ -80,53 +98,44 @@ class ReportRepositoryImpl(
                         profit.toString()
                     ))
                 }
-                
-                if (rows.isNotEmpty()) {
-                    rows.add(listOf(
-                        "TOTAL",
-                        "",
-                        grandTotalRevenue.toString(),
-                        grandTotalCost.toString(),
-                        grandTotalProfit.toString()
-                    ))
+
+                val grossProfit = grandTotalRevenue - grandTotalCost
+                val netProfit = grossProfit - Money(totalExpenses)
+
+                if (rows.isNotEmpty() || totalExpenses > 0) {
+                    rows.add(listOf("---", "---", "---", "---", "---"))
+                    rows.add(listOf("1. TOTAL SALES REVENUE", "", grandTotalRevenue.toString(), "", ""))
+                    rows.add(listOf("2. COST OF GOODS SOLD (COGS)", "", "", grandTotalCost.toString(), ""))
+                    rows.add(listOf("3. GROSS PROFIT (Sales - Cost)", "", "", "", grossProfit.toString()))
+                    rows.add(listOf("4. OPERATING EXPENSES", "", "", "", "- " + Money(totalExpenses).toString()))
+                    rows.add(listOf("5. NET PROFIT / LOSS", "", "", "", netProfit.toString()))
                 }
 
                 ReportData(
-                    title = "Profit Report (Disclaimer: Estimations based on weighted average purchase price)",
-                    columns = listOf("Product Name", "Qty Sold", "Revenue", "Estimated Cost", "Estimated Profit"),
+                    title = "Profit & Loss Statement (Net Business Health)",
+                    columns = listOf("Item / Description", "Qty Sold", "Sales Revenue", "Purchase Cost", "Profit"),
                     rows = rows
                 )
             }
-            ReportType.PURCHASE -> {
+            ReportType.PURCHASES -> {
                 val data = reportDao.getPurchaseReport(companyId, fromMs, toMs)
+                val rows = mutableListOf<List<String>>()
+                for (it in data) {
+                    val invDisplay = when {
+                        !it.invoiceNumber.isNullOrBlank() -> it.invoiceNumber
+                        !it.orderNumber.isNullOrBlank() -> "Order #${it.orderNumber}"
+                        else -> "Order #${it.purchaseId.take(4)}"
+                    }
+                    rows.add(listOf(invDisplay, it.date, it.supplierName, it.paymentMode, Money(it.totalAmount).toString()))
+                }
+                if (data.isNotEmpty()) {
+                    val total = data.sumOf { it.totalAmount }
+                    rows.add(listOf("TOTAL PURCHASES", "", "${data.size} Orders", "", Money(total).toString()))
+                }
                 ReportData(
-                    title = "Purchase Report",
-                    columns = listOf("Purchase ID", "Date", "Supplier", "Total Amount"),
-                    rows = data.map { listOf(it.purchaseId, it.date, it.supplierName, Money(it.totalAmount).toString()) }
-                )
-            }
-            ReportType.CUSTOMER -> {
-                val data = reportDao.getCustomerReport(companyId, fromMs, toMs)
-                ReportData(
-                    title = "Customer Report",
-                    columns = listOf("Customer Name", "Total Bills", "Total Spent"),
-                    rows = data.map { listOf(it.customerName, it.totalBills.toString(), Money(it.totalSpent).toString()) }
-                )
-            }
-            ReportType.SUPPLIER -> {
-                val data = reportDao.getSupplierReport(companyId, fromMs, toMs)
-                ReportData(
-                    title = "Supplier Report",
-                    columns = listOf("Supplier Name", "Total Bills", "Total Purchased"),
-                    rows = data.map { listOf(it.supplierName, it.totalBills.toString(), Money(it.totalPurchased).toString()) }
-                )
-            }
-            ReportType.EXPENSES -> {
-                val data = reportDao.getExpensesReport(companyId, fromMs, toMs)
-                ReportData(
-                    title = "Expenses Report",
-                    columns = listOf("Expense ID", "Date", "Description", "Amount"),
-                    rows = data.map { listOf(it.expenseId, it.date, it.description, Money(it.amount).toString()) }
+                    title = "Purchases & Supplier Bills Report",
+                    columns = listOf("Supplier Inv / ID", "Date & Time", "Supplier", "Payment Mode", "Total Amount"),
+                    rows = rows
                 )
             }
         }

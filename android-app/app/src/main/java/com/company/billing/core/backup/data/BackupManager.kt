@@ -1,18 +1,14 @@
 package com.company.billing.core.backup.data
 
 import android.content.Context
-import androidx.sqlite.db.SupportSQLiteDatabase
+import android.database.sqlite.SQLiteDatabase
 import com.company.billing.core.database.BillingDatabase
 import com.company.billing.core.backup.domain.BackupResult
-import com.company.billing.core.security.SecurityShield
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.ByteArrayInputStream
-import java.io.ByteArrayOutputStream
-import java.io.File
-import java.io.FileOutputStream
-import java.io.IOException
-import java.security.MessageDigest
+import org.json.JSONArray
+import org.json.JSONObject
+import java.io.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
@@ -24,50 +20,67 @@ class BackupManager(
 
     suspend fun createBackup(): BackupResult = withContext(Dispatchers.IO) {
         try {
-            // 1. Checkpoint database to flush WAL frames
-            database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+            // 1. Checkpoint SQLite WAL
+            try {
+                database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
+            } catch (ignored: Exception) {}
 
-            val dbFile = context.getDatabasePath("billing.db")
-            if (!dbFile.exists()) {
-                return@withContext BackupResult.Failure(IOException("Database file not found"))
+            // 2. Query all tables directly from database
+            val rawDb = database.openHelper.readableDatabase
+
+            val backupJson = JSONObject()
+            backupJson.put("version", 18)
+            backupJson.put("timestamp", System.currentTimeMillis())
+
+            // Export all tables to JSON arrays
+            val tables = listOf(
+                "categories", "products", "customers", "suppliers", "expenses",
+                "sales", "sale_items", "purchases", "purchase_items",
+                "customer_credits", "supplier_credits", "stock_movements"
+            )
+
+            for (table in tables) {
+                val array = JSONArray()
+                try {
+                    rawDb.query("SELECT * FROM $table").use { cursor ->
+                        val colNames = cursor.columnNames
+                        while (cursor.moveToNext()) {
+                            val rowObj = JSONObject()
+                            for (col in colNames) {
+                                val idx = cursor.getColumnIndex(col)
+                                when (cursor.getType(idx)) {
+                                    android.database.Cursor.FIELD_TYPE_INTEGER -> rowObj.put(col, cursor.getLong(idx))
+                                    android.database.Cursor.FIELD_TYPE_FLOAT -> rowObj.put(col, cursor.getDouble(idx))
+                                    android.database.Cursor.FIELD_TYPE_STRING -> rowObj.put(col, cursor.getString(idx))
+                                    android.database.Cursor.FIELD_TYPE_BLOB -> rowObj.put(col, cursor.getBlob(idx)?.let { android.util.Base64.encodeToString(it, android.util.Base64.NO_WRAP) })
+                                    else -> rowObj.put(col, JSONObject.NULL)
+                                }
+                            }
+                            array.put(rowObj)
+                        }
+                    }
+                } catch (ignored: Exception) {}
+                backupJson.put(table, array)
             }
 
-            // 2. Export to a temporary unencrypted (plaintext) database
-            val tempPlaintext = File(context.cacheDir, "plaintext_backup.db")
-            if (tempPlaintext.exists()) tempPlaintext.delete()
-
-            val db = database.openHelper.readableDatabase
-            db.execSQL("ATTACH DATABASE '${tempPlaintext.absolutePath}' AS plaintext KEY '';")
-            db.query("SELECT sqlcipher_export('plaintext');").use { it.moveToFirst() }
-            db.execSQL("DETACH DATABASE plaintext;")
-
-            // 3. Read plaintext DB bytes and compute md5
-            val dbBytes = tempPlaintext.readBytes()
-            tempPlaintext.delete() // Clean up temp file
-
-            val md5 = computeMd5(dbBytes)
-            val timestamp = System.currentTimeMillis()
-            val version = database.openHelper.readableDatabase.version
-
-            // 4. Construct metadata JSON
+            val jsonBytes = backupJson.toString(2).toByteArray(Charsets.UTF_8)
             val metadataJson = """
                 {
-                  "timestampEpochMs": $timestamp,
-                  "dbVersion": $version,
-                  "checksumMd5": "$md5",
-                  "fileSize": ${dbBytes.size}
+                  "timestampEpochMs": ${System.currentTimeMillis()},
+                  "dbVersion": 18,
+                  "tablesCount": ${tables.size}
                 }
-            """.trimIndent()
+            """.trimIndent().toByteArray(Charsets.UTF_8)
 
-            // 5. ZIP database and metadata
+            // 3. Package into ZIP
             val bos = ByteArrayOutputStream()
             ZipOutputStream(bos).use { zos ->
-                zos.putNextEntry(ZipEntry("billing.db"))
-                zos.write(dbBytes)
+                zos.putNextEntry(ZipEntry("backup_data.json"))
+                zos.write(jsonBytes)
                 zos.closeEntry()
 
                 zos.putNextEntry(ZipEntry("metadata.json"))
-                zos.write(metadataJson.toByteArray(Charsets.UTF_8))
+                zos.write(metadataJson)
                 zos.closeEntry()
             }
 
@@ -79,89 +92,145 @@ class BackupManager(
 
     suspend fun restoreBackup(zipBytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
         try {
-            var dbBytes: ByteArray? = null
-            var metadataStr: String? = null
+            var jsonContent: String? = null
+            var legacyDbBytes: ByteArray? = null
 
             // 1. Extract ZIP entries
             ZipInputStream(ByteArrayInputStream(zipBytes)).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
-                    when (entry.name) {
-                        "billing.db" -> dbBytes = zis.readBytes()
-                        "metadata.json" -> metadataStr = String(zis.readBytes(), Charsets.UTF_8)
+                    when {
+                        entry.name.endsWith("backup_data.json") -> {
+                            jsonContent = String(zis.readBytes(), Charsets.UTF_8)
+                        }
+                        entry.name.endsWith(".db") -> {
+                            legacyDbBytes = zis.readBytes()
+                        }
                     }
                     zis.closeEntry()
                     entry = zis.nextEntry
                 }
             }
 
-            val extractedDbBytes = dbBytes ?: return@withContext false
-            val extractedMetadata = metadataStr ?: return@withContext false
-
-            // 2. Validate metadata values (extract MD5)
-            val expectedMd5 = parseJsonField(extractedMetadata, "checksumMd5") ?: return@withContext false
-            val computedMd5 = computeMd5(extractedDbBytes)
-            if (expectedMd5 != computedMd5) {
-                return@withContext false
+            // Path A: Restore from structured JSON (Ultra Reliable)
+            if (!jsonContent.isNullOrBlank()) {
+                return@withContext restoreFromJson(JSONObject(jsonContent!!))
             }
 
-            // 3. Close active database connections and delete existing encrypted files
-            database.close()
-            val encryptedDbFile = context.getDatabasePath("billing.db")
-            File(encryptedDbFile.path + "-shm").delete()
-            File(encryptedDbFile.path + "-wal").delete()
-            encryptedDbFile.delete()
-
-            // 4. Write unencrypted bytes to a temp file
-            val tempRestoreFile = File(context.cacheDir, "plaintext_restore.db")
-            if (tempRestoreFile.exists()) tempRestoreFile.delete()
-            FileOutputStream(tempRestoreFile).use { fos ->
-                fos.write(extractedDbBytes)
+            // Path B: Restore from legacy SQLite / SQLCipher DB file
+            if (legacyDbBytes != null && legacyDbBytes!!.isNotEmpty()) {
+                return@withContext restoreFromSqliteBytes(legacyDbBytes!!)
             }
 
-            // 5. Open the unencrypted database via SQLCipher (empty password)
-            val factory = net.sqlcipher.database.SupportFactory("".toByteArray())
-            val plaintextHelper = factory.create(
-                androidx.sqlite.db.SupportSQLiteOpenHelper.Configuration.builder(context)
-                    .name(tempRestoreFile.absolutePath)
-                    .callback(object : androidx.sqlite.db.SupportSQLiteOpenHelper.Callback(1) {
-                        override fun onCreate(db: SupportSQLiteDatabase) {}
-                        override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {}
-                    })
-                    .build()
-            )
-            val plaintextDb = plaintextHelper.writableDatabase
-
-            // 6. Attach a new encrypted database using the current device's key
-            val keyBytes = SecurityShield.getOrCreateDatabaseKey(context)
-            val keyHex = keyBytes.joinToString("") { "%02x".format(it) }
-            
-            plaintextDb.execSQL("ATTACH DATABASE '${encryptedDbFile.absolutePath}' AS encrypted KEY 'x''$keyHex''';")
-            plaintextDb.query("SELECT sqlcipher_export('encrypted');").use { it.moveToFirst() }
-            plaintextDb.execSQL("DETACH DATABASE encrypted;")
-            
-            // 7. Cleanup
-            plaintextDb.close()
-            plaintextHelper.close()
-            tempRestoreFile.delete()
-
-            // 8. Re-open standard database connection
-            database.openHelper.writableDatabase
-            true
+            false
         } catch (e: Exception) {
             e.printStackTrace()
             false
         }
     }
 
-    private fun computeMd5(bytes: ByteArray): String {
-        val digest = MessageDigest.getInstance("MD5").digest(bytes)
-        return digest.joinToString("") { "%02x".format(it) }
+    private fun restoreFromJson(json: JSONObject): Boolean {
+        try {
+            val db = database.openHelper.writableDatabase
+
+            db.beginTransaction()
+            try {
+                val tables = listOf(
+                    "categories", "products", "customers", "suppliers", "expenses",
+                    "sales", "sale_items", "purchases", "purchase_items",
+                    "customer_credits", "supplier_credits", "stock_movements"
+                )
+
+                for (table in tables) {
+                    val array = json.optJSONArray(table) ?: continue
+                    for (i in 0 until array.length()) {
+                        val row = array.getJSONObject(i)
+                        val cv = android.content.ContentValues()
+                        val keys = row.keys()
+                        while (keys.hasNext()) {
+                            val key = keys.next()
+                            val value = row.get(key)
+                            if (value == JSONObject.NULL) {
+                                cv.putNull(key)
+                            } else when (value) {
+                                is Long -> cv.put(key, value)
+                                is Int -> cv.put(key, value)
+                                is Double -> cv.put(key, value)
+                                is Boolean -> cv.put(key, if (value) 1 else 0)
+                                is String -> cv.put(key, value)
+                            }
+                        }
+                        try {
+                            db.insert(table, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, cv)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                        }
+                    }
+                }
+                db.setTransactionSuccessful()
+                return true
+            } finally {
+                db.endTransaction()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        }
     }
 
-    private fun parseJsonField(json: String, field: String): String? {
-        val regex = "\"$field\"\\s*:\\s*\"?([^\",\\s}]+)\"?".toRegex()
-        val match = regex.find(json)
-        return match?.groupValues?.get(1)?.replace("\"", "")
+    private fun restoreFromSqliteBytes(dbBytes: ByteArray): Boolean {
+        val tempFile = File(context.cacheDir, "legacy_restore_temp.db")
+        try {
+            if (tempFile.exists()) tempFile.delete()
+            FileOutputStream(tempFile).use { it.write(dbBytes) }
+
+            // Try opening as standard SQLite database
+            val legacyDb = SQLiteDatabase.openDatabase(tempFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
+            val currentDb = database.openHelper.writableDatabase
+
+            currentDb.beginTransaction()
+            try {
+                val tables = listOf(
+                    "categories", "products", "customers", "suppliers", "expenses",
+                    "sales", "sale_items", "purchases", "purchase_items",
+                    "customer_credits", "supplier_credits", "stock_movements"
+                )
+
+                for (table in tables) {
+                    try {
+                        legacyDb.rawQuery("SELECT * FROM $table", null).use { cursor ->
+                            val colNames = cursor.columnNames
+                            while (cursor.moveToNext()) {
+                                val cv = android.content.ContentValues()
+                                for (col in colNames) {
+                                    val idx = cursor.getColumnIndex(col)
+                                    when (cursor.getType(idx)) {
+                                        android.database.Cursor.FIELD_TYPE_INTEGER -> cv.put(col, cursor.getLong(idx))
+                                        android.database.Cursor.FIELD_TYPE_FLOAT -> cv.put(col, cursor.getDouble(idx))
+                                        android.database.Cursor.FIELD_TYPE_STRING -> cv.put(col, cursor.getString(idx))
+                                        android.database.Cursor.FIELD_TYPE_BLOB -> cv.put(col, cursor.getBlob(idx))
+                                        else -> cv.putNull(col)
+                                    }
+                                }
+                                try {
+                                    currentDb.insert(table, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, cv)
+                                } catch (ignored: Exception) {}
+                            }
+                        }
+                    } catch (ignored: Exception) {}
+                }
+                currentDb.setTransactionSuccessful()
+                return true
+            } finally {
+                currentDb.endTransaction()
+                legacyDb.close()
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return false
+        } finally {
+            tempFile.delete()
+        }
     }
 }
+

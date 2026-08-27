@@ -88,15 +88,19 @@ class DefaultAuthRepositoryTest {
         val mockUserDao = mock(com.company.billing.core.auth.UserDao::class.java)
         `when`(database.userDao()).thenReturn(mockUserDao)
         `when`(mockUserDao.getUserByUsername(username)).thenReturn(validUser)
-        `when`(verifier.matches(anyKotlin(), anyKotlin())).thenReturn(true)
+        `when`(verifier.matches(anyCredential(), anyCharArray())).thenReturn(true)
         
         val result = authRepository.loginOffline(username, password)
         assertTrue(result is LoginResult.Success)
     }
 
-    @Suppress("UNCHECKED_CAST")
-    private fun <T> anyKotlin(): T {
-        any<T>()
-        return null as T
+    private fun anyCredential(): OfflineCredential {
+        org.mockito.ArgumentMatchers.any<OfflineCredential>()
+        return OfflineCredential("", "", "", byteArrayOf(), byteArrayOf())
+    }
+
+    private fun anyCharArray(): CharArray {
+        org.mockito.ArgumentMatchers.any<CharArray>()
+        return charArrayOf()
     }
 }

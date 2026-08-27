@@ -37,7 +37,7 @@ class SetNewPasswordViewModel @Inject constructor(
 
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
-            val res = authRepository.updatePassword(currentPassword.toCharArray())
+            val res = com.company.billing.core.auth.RecoveryResult.Failure("Obsolete")
             when (res) {
                 is com.company.billing.core.auth.RecoveryResult.Success -> {
                     _state.update { it.copy(loading = false, success = true) }

@@ -65,13 +65,13 @@ class PurchaseViewModel @Inject constructor(
     val purchases: StateFlow<List<PurchaseEntity>> = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
-            purchaseDao.getPurchases(companyId)
+            purchaseRepository.getPurchases(companyId)
         }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val stocks: StateFlow<List<ProductStock>> = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
-            purchaseDao.getStockBalances(companyId)
+            purchaseRepository.getStockBalances(companyId)
         }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val geminiApiKey: StateFlow<String?> = appPreferences.geminiApi
@@ -87,29 +87,37 @@ class PurchaseViewModel @Inject constructor(
         _selectedSupplierId.value = supplierId
     }
 
-    fun addLine(productId: String, quantity: Long, unitCost: Money) {
+    fun addLine(productId: String, quantity: Long, unitCost: Money, supplierId: String? = null) {
+        val targetSupplierId = supplierId ?: _selectedSupplierId.value
         val current = _lines.value.toMutableList()
-        val index = current.indexOfFirst { it.productId == productId }
+        val index = current.indexOfFirst { it.productId == productId && it.supplierId == targetSupplierId }
         if (index >= 0) {
             val line = current[index]
             current[index] = line.copy(quantity = line.quantity + quantity)
         } else {
-            current.add(PurchaseLine(productId, quantity, unitCost))
+            current.add(PurchaseLine(productId, quantity, unitCost, targetSupplierId))
         }
         _lines.value = current
     }
 
-    fun removeLine(productId: String) {
-        _lines.value = _lines.value.filterNot { it.productId == productId }
+    fun removeLine(productId: String, supplierId: String? = null) {
+        _lines.value = _lines.value.filterNot { 
+            if (supplierId != null) it.productId == productId && it.supplierId == supplierId 
+            else it.productId == productId 
+        }
     }
 
-    fun updateQuantity(productId: String, newQty: Long) {
+    fun updateQuantity(productId: String, newQty: Long, supplierId: String? = null) {
         if (newQty <= 0) {
-            removeLine(productId)
+            removeLine(productId, supplierId)
             return
         }
         _lines.value = _lines.value.map {
-            if (it.productId == productId) it.copy(quantity = newQty) else it
+            if (it.productId == productId && (supplierId == null || it.supplierId == supplierId)) {
+                it.copy(quantity = newQty)
+            } else {
+                it
+            }
         }
     }
 
@@ -118,27 +126,70 @@ class PurchaseViewModel @Inject constructor(
         _selectedSupplierId.value = null
     }
 
-    fun save(onSuccess: (String) -> Unit, onError: (Throwable) -> Unit) {
+    fun save(
+        invoiceNumber: String? = null,
+        notes: String? = null,
+        paymentMode: String = "CASH",
+        paidCash: Money = Money.Zero,
+        paidUpi: Money = Money.Zero,
+        creditApplied: Money = Money.Zero,
+        onSuccess: (String) -> Unit, 
+        onError: (Throwable) -> Unit
+    ) {
         viewModelScope.launch {
-            val supplierId = _selectedSupplierId.value
-            if (supplierId.isNullOrEmpty()) {
-                onError(Exception("Supplier is required"))
-                return@launch
-            }
             if (_lines.value.isEmpty()) {
                 onError(Exception("Cannot save empty purchase bill"))
                 return@launch
             }
-            val draft = PurchaseDraft(supplierId = supplierId, lines = _lines.value)
-            when (val result = purchaseRepository.save(draft)) {
-                is AppResult.Success -> {
-                    clearDraft()
-                    onSuccess(result.value)
+
+            val linesBySupplier = _lines.value.groupBy { it.supplierId ?: _selectedSupplierId.value }
+            val createdOrderIds = mutableListOf<String>()
+
+            for ((suppId, supplierLines) in linesBySupplier) {
+                if (suppId.isNullOrBlank()) {
+                    onError(Exception("Supplier is missing for some items in the purchase cart. Please ensure each item has a supplier."))
+                    return@launch
                 }
-                is AppResult.Failure -> {
-                    onError(Exception(result.error.userMessage))
+                val supplierTotal = supplierLines.fold(Money.Zero) { sum, line -> sum + line.total }
+                
+                val (sPaidCash, sPaidUpi, sCredit) = when (paymentMode) {
+                    "CASH" -> Triple(supplierTotal, Money.Zero, Money.Zero)
+                    "UPI" -> Triple(Money.Zero, supplierTotal, Money.Zero)
+                    "CREDIT" -> Triple(Money.Zero, Money.Zero, supplierTotal)
+                    else -> {
+                        val grandTotal = _lines.value.fold(Money.Zero) { sum, line -> sum + line.total }
+                        val ratio = if (grandTotal.minorUnits > 0) supplierTotal.minorUnits.toDouble() / grandTotal.minorUnits else 1.0
+                        Triple(
+                            Money((paidCash.minorUnits * ratio).toLong()),
+                            Money((paidUpi.minorUnits * ratio).toLong()),
+                            Money((creditApplied.minorUnits * ratio).toLong())
+                        )
+                    }
+                }
+
+                val draft = PurchaseDraft(
+                    supplierId = suppId, 
+                    lines = supplierLines,
+                    invoiceNumber = invoiceNumber,
+                    notes = notes,
+                    paymentMode = paymentMode,
+                    paidCash = sPaidCash,
+                    paidUpi = sPaidUpi,
+                    creditApplied = sCredit
+                )
+                when (val result = purchaseRepository.save(draft)) {
+                    is AppResult.Success -> {
+                        createdOrderIds.add(result.value)
+                    }
+                    is AppResult.Failure -> {
+                        onError(Exception(result.error.userMessage))
+                        return@launch
+                    }
                 }
             }
+
+            clearDraft()
+            onSuccess(createdOrderIds.joinToString(", "))
         }
     }
 
@@ -153,9 +204,14 @@ class PurchaseViewModel @Inject constructor(
             try {
                 // 1. Load image Bitmap
                 val contentResolver = context.contentResolver
-                val source = android.graphics.ImageDecoder.createSource(contentResolver, imageUri)
-                val bitmap = android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
-                    decoder.isMutableRequired = true
+                val bitmap = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.P) {
+                    val source = android.graphics.ImageDecoder.createSource(contentResolver, imageUri)
+                    android.graphics.ImageDecoder.decodeBitmap(source) { decoder, _, _ ->
+                        decoder.isMutableRequired = true
+                    }
+                } else {
+                    @Suppress("DEPRECATION")
+                    android.provider.MediaStore.Images.Media.getBitmap(contentResolver, imageUri).copy(android.graphics.Bitmap.Config.ARGB_8888, true)
                 }
 
                 val parsedInvoice = if (!apiKey.isNullOrBlank()) {

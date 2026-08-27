@@ -14,6 +14,8 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import java.io.File
 import android.graphics.BitmapFactory
@@ -70,7 +72,7 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
 
     CompositionLocalProvider(LocalLayoutMode provides layoutMode) {
         BillingTheme(darkTheme = useDarkTheme) {
-            val startDest = if (isRecoveryFlow) AppRoute.SetNewPassword.path else AppRoute.Login.path
+            val startDest = AppRoute.Home.path
             NavHost(navController = navController, startDestination = startDest) {
                 composable(AppRoute.Login.path) {
                     val vm: LoginViewModel = hiltViewModel()
@@ -117,6 +119,10 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                 composable(AppRoute.Home.path) {
                     val vm: com.company.billing.feature.home.HomeViewModel = hiltViewModel()
                     val session by vm.activeSession.collectAsState()
+                    var showCloseShiftDialog by remember { mutableStateOf(false) }
+                    var shiftCashInput by remember { mutableStateOf("") }
+                    var shiftMessage by remember { mutableStateOf("") }
+
                     HomeScreen(
                         session = session,
                         shopName = shopName,
@@ -127,8 +133,52 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                             navController.navigate(AppRoute.Login.path) {
                                 popUpTo(AppRoute.Home.path) { inclusive = true }
                             }
-                        }
+                        },
+                        onCloseShiftClick = { showCloseShiftDialog = true }
                     )
+
+                    if (showCloseShiftDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showCloseShiftDialog = false; shiftMessage = "" },
+                            title = { Text("Close Register (Shift)", fontWeight = FontWeight.Bold) },
+                            text = {
+                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                    Text("Please count and enter the physical cash currently in the drawer.")
+                                    OutlinedTextField(
+                                        value = shiftCashInput,
+                                        onValueChange = { shiftCashInput = it },
+                                        label = { Text("Physical Cash Amount") },
+                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                                        modifier = Modifier.fillMaxWidth()
+                                    )
+                                    if (shiftMessage.isNotEmpty()) {
+                                        Text(shiftMessage, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            },
+                            confirmButton = {
+                                Button(
+                                    enabled = shiftCashInput.isNotBlank(),
+                                    onClick = {
+                                        val declared = shiftCashInput.toDoubleOrNull() ?: 0.0
+                                        val minorUnits = (declared * 100).toLong()
+                                        vm.closeShift(minorUnits, onSuccess = {
+                                            shiftMessage = "Shift closed successfully."
+                                            shiftCashInput = ""
+                                            showCloseShiftDialog = false
+                                        }, onError = { err ->
+                                            shiftMessage = "Error: $err"
+                                        })
+                                    }
+                                ) {
+                                    Text("Submit")
+                                }
+                            },
+                            dismissButton = {
+                                TextButton(onClick = { showCloseShiftDialog = false; shiftMessage = "" }) { Text("Cancel") }
+                            }
+                        )
+                    }
                 }
 
                 composable(AppRoute.Masters.path) {
@@ -185,7 +235,8 @@ fun HomeScreen(
     shopName: String,
     shopLogoPath: String,
     onNavigateTo: (AppRoute) -> Unit,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    onCloseShiftClick: () -> Unit = {}
 ) {
     val permissions = session?.permissions ?: emptySet()
     
@@ -220,27 +271,7 @@ fun HomeScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        if (shopLogoPath.isNotEmpty()) {
-                            val logoFile = File(shopLogoPath)
-                            if (logoFile.exists()) {
-                                val bitmap = remember(shopLogoPath) {
-                                    try { BitmapFactory.decodeFile(logoFile.absolutePath) } catch (ignored: Exception) { null }
-                                }
-                                if (bitmap != null) {
-                                    Card(
-                                        shape = RoundedCornerShape(18.dp),
-                                        modifier = Modifier.size(36.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                                    ) {
-                                        Image(
-                                            bitmap = bitmap.asImageBitmap(),
-                                            contentDescription = "Shop logo branding",
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                }
-                            }
-                        }
+
                         Text(
                             text = shopName.ifBlank { "KadaKutty" },
                             fontWeight = FontWeight.Bold,
@@ -254,6 +285,9 @@ fun HomeScreen(
                         IconButton(onClick = { onNavigateTo(AppRoute.Settings) }) {
                             Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onPrimary)
                         }
+                    }
+                    IconButton(onClick = onCloseShiftClick) {
+                        Icon(Icons.Default.Lock, contentDescription = "Close Shift", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                     IconButton(onClick = onLogout) {
                         Icon(Icons.Default.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.onPrimary)

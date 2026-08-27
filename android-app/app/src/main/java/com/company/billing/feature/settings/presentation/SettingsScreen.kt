@@ -4,13 +4,13 @@ import com.company.billing.core.ui.LocalLayoutMode
 import com.company.billing.core.auth.UserEntity
 import kotlinx.serialization.json.jsonPrimitive
 import com.company.billing.core.security.Permission
+import com.company.billing.core.security.BiometricAuthenticator
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
 import com.google.android.gms.common.api.Scope
 import com.google.android.gms.common.api.ApiException
-import com.google.api.services.drive.DriveScopes
 import androidx.compose.ui.platform.LocalContext
 
 import androidx.activity.compose.BackHandler
@@ -73,6 +73,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
     val backupStatus by viewModel.backupStatus.collectAsState()
     val restoreStatus by viewModel.restoreStatus.collectAsState()
+    val biometricAuthPending by viewModel.biometricAuthPending.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var selectedType by remember { mutableStateOf("Bluetooth") }
@@ -137,6 +138,22 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         }
     }
 
+    // Handle biometric authentication callbacks
+    LaunchedEffect(biometricAuthPending) {
+        biometricAuthPending?.let { onAuthenticated ->
+            BiometricAuthenticator.authenticate(
+                activity = context as androidx.fragment.app.FragmentActivity,
+                onSuccess = {
+                    onAuthenticated()
+                    viewModel.clearBiometricAuthPending()
+                },
+                onError = { error ->
+                    viewModel.clearBiometricAuthPending()
+                }
+            )
+        }
+    }
+
     val brandingShopName by viewModel.shopName.collectAsState()
     val brandingLogoPath by viewModel.shopLogoPath.collectAsState()
 
@@ -148,25 +165,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        val logoFile = File(brandingLogoPath)
-                        if (logoFile.exists()) {
-                            val bitmap = remember(brandingLogoPath) {
-                                try { BitmapFactory.decodeFile(logoFile.absolutePath) } catch (ignored: Exception) { null }
-                            }
-                            if (bitmap != null) {
-                                Card(
-                                    shape = RoundedCornerShape(18.dp),
-                                    modifier = Modifier.size(36.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-                                ) {
-                                    Image(
-                                        bitmap = bitmap.asImageBitmap(),
-                                        contentDescription = "Shop logo branding",
-                                        modifier = Modifier.fillMaxSize()
-                                    )
-                                }
-                            }
-                        }
+
                         Text(
                             text = brandingShopName.ifBlank { "Settings & Maintenance" },
                             fontWeight = FontWeight.Bold,
@@ -268,44 +267,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                                 if (backupsList.isEmpty()) {
                                                     Text("No backup files found. Click refresh to check again.")
                                                 } else {
-                                                    backupsList.forEach { file ->
-                                                        val timestampStr = file.name.substringAfter("billing_backup_").substringBefore(".zip")
-                                                        val formattedTime = remember(file.name) {
-                                                            try {
-                                                                val ts = timestampStr.toLong()
-                                                                java.text.SimpleDateFormat("dd MMM yyyy, HH:mm", java.util.Locale.getDefault())
-                                                                    .format(java.util.Date(ts))
-                                                            } catch (e: Exception) {
-                                                                "Unknown Date"
-                                                            }
-                                                        }
-                                                        val sizeBytes = file.metadata?.get("size")?.jsonPrimitive?.content?.toLongOrNull() 
-                                                            ?: file.metadata?.get("size")?.toString()?.toLongOrNull() 
-                                                            ?: 0L
-                                                        val sizeKb = sizeBytes / 1024
-                                                        Card(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                                            onClick = {
-                                                                viewModel.restoreFromSupabase(file.name) { success ->
-                                                                    if (success) {
-                                                                        showBackupsDialog = false
-                                                                    }
-                                                                }
-                                                            }
-                                                        ) {
-                                                            Column(modifier = Modifier.padding(12.dp)) {
-                                                                Text(file.name, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                                                Row(
-                                                                    modifier = Modifier.fillMaxWidth(),
-                                                                    horizontalArrangement = Arrangement.SpaceBetween
-                                                                ) {
-                                                                    Text(formattedTime, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                                                    Text("${sizeKb} KB", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                                                }
-                                                            }
-                                                        }
-                                                    }
+                                                    Text("Firebase Backup is not implemented yet.")
                                                 }
                                             }
                                         },

@@ -1,6 +1,7 @@
 .gradle/
 **/build/
 local.properties
+gradle.properties
 .idea/
 *.iml
 .env
@@ -17,3 +18,10 @@ dist/
 .kotlin/
 *.apk
 *.aab
+__pycache__/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+logcat.txt
+*_dump.xml

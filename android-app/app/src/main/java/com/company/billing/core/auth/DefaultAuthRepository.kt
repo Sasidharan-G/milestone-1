@@ -1,125 +1,84 @@
 package com.company.billing.core.auth
 
+import android.app.Activity
 import com.company.billing.core.database.BillingDatabase
 import com.company.billing.core.security.Permission
-import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.auth.auth
-import io.github.jan.supabase.auth.providers.builtin.Email
-import io.github.jan.supabase.postgrest.from
-import io.github.jan.supabase.postgrest.postgrest
-import io.github.jan.supabase.compose.auth.composeAuth
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 import com.company.billing.core.sync.*
-import kotlinx.coroutines.flow.first
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonPrimitive
+import com.google.firebase.auth.EmailAuthProvider
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.PhoneAuthCredential
+import com.google.firebase.auth.PhoneAuthOptions
+import com.google.firebase.auth.PhoneAuthProvider
+import com.google.firebase.firestore.FirebaseFirestore
+import kotlinx.coroutines.tasks.await
 import java.io.IOException
+import java.util.concurrent.TimeUnit
 
 class DefaultAuthRepository(
-    private val supabase: SupabaseClient,
+    private val firebaseAuth: FirebaseAuth,
+    private val firestore: FirebaseFirestore,
     private val sessions: SessionStore,
     private val offlineCredentials: OfflineCredentialStore,
     private val verifier: OfflineCredentialVerifier,
     private val database: BillingDatabase
 ) : AuthRepository {
+
+    private fun getFakeEmail(mobileNumber: String): String {
+        val cleanPhone = mobileNumber.trim().replace(" ", "").replace("-", "").replace("+", "")
+        return "$cleanPhone@pos-app.com"
+    }
+
     override suspend fun loginOnline(username: String, password: CharArray): LoginResult = try {
-        val emailClean = username.trim()
-        supabase.auth.signInWith(Email) {
-            this.email = emailClean
-            this.password = password.concatToString()
-        }
+        val email = getFakeEmail(username)
+        val authResult = firebaseAuth.signInWithEmailAndPassword(email, String(password)).await()
+        val user = authResult.user ?: throw IOException("Authentication failed: user not established")
 
-        val sessionOrNull = supabase.auth.currentSessionOrNull() ?: throw IOException("Authentication failed: session not established")
-        val user = sessionOrNull.user ?: throw IOException("Authentication failed: user not established")
+        // Resolve company membership
+        val membershipsSnapshot = firestore.collection("company_users")
+            .whereEqualTo("user_id", user.uid)
+            .whereEqualTo("status", "active")
+            .get()
+            .await()
 
-        if (user.emailConfirmedAt == null) {
-            throw IOException("EMAIL_NOT_VERIFIED")
-        }
-
-        // Resolve company membership and check company status
-        var memberships = supabase.from("company_users").select {
-            filter {
-                eq("user_id", user.id)
-                eq("status", "active")
-            }
-        }.decodeList<SupabaseCompanyUser>()
-
-        if (memberships.isEmpty()) {
-            val metadata = user.userMetadata
-            val metaBusinessName = metadata?.get("business_name")?.jsonPrimitive?.content
-            val metaDisplayName = metadata?.get("display_name")?.jsonPrimitive?.content
-
-            if (!metaBusinessName.isNullOrBlank() && !metaDisplayName.isNullOrBlank()) {
-                supabase.postgrest.rpc(
-                    function = "initialize_new_company",
-                    parameters = buildJsonObject {
-                        put("business_name", metaBusinessName)
-                        put("owner_name", metaDisplayName)
-                    }
-                )
-                memberships = supabase.from("company_users").select {
-                    filter {
-                        eq("user_id", user.id)
-                        eq("status", "active")
-                    }
-                }.decodeList<SupabaseCompanyUser>()
-            } else {
-                throw IOException("NO_COMPANY_MEMBERSHIP")
-            }
-        }
-
-        if (memberships.isEmpty()) {
+        if (membershipsSnapshot.isEmpty) {
             throw IOException("NO_COMPANY_MEMBERSHIP")
         }
 
-        val activeMembership = memberships.first()
-        val companyId = activeMembership.company_id
-        val role = activeMembership.role
+        val activeMembership = membershipsSnapshot.documents.first()
+        val companyId = activeMembership.getString("company_id") ?: ""
+        val role = activeMembership.getString("role") ?: "USER"
+        val permissionsList = activeMembership.get("permissions") as? List<*>
+        val perms = permissionsList?.mapNotNull {
+            try { Permission.valueOf(it.toString()) } catch (e: Exception) { null }
+        }?.toSet() ?: emptySet()
 
         // Verify company status
-        val company = supabase.from("companies").select {
-            filter {
-                eq("id", companyId)
-            }
-        }.decodeSingleOrNull<SupabaseCompany>() ?: throw IOException("NO_COMPANY_MEMBERSHIP")
-
-        if (company.status == "suspended") {
+        val companyDoc = firestore.collection("companies").document(companyId).get().await()
+        if (companyDoc.getString("status") == "suspended") {
             throw IOException("COMPANY_SUSPENDED")
         }
 
-        val perms = activeMembership.permissions.mapNotNull {
-            try { Permission.valueOf(it) } catch (e: Exception) { null }
-        }.toSet()
-
         // Resolve profile display name
-        val profile = supabase.from("profiles").select {
-            filter {
-                eq("id", user.id)
-            }
-        }.decodeSingleOrNull<SupabaseProfile>()
-        val displayName = profile?.full_name ?: user.userMetadata?.get("display_name")?.jsonPrimitive?.content ?: emailClean.substringBefore("@")
+        val profileDoc = firestore.collection("profiles").document(user.uid).get().await()
+        val displayName = profileDoc.getString("full_name") ?: username
 
-        val token = sessionOrNull.accessToken
         val session = Session(
-            userId = user.id,
+            userId = user.uid,
             displayName = displayName,
             permissions = perms,
-            accessToken = token,
+            accessToken = user.uid, // Dummy for offline sync marker
             companyId = companyId,
             role = role
         )
         sessions.save(session)
 
         val nowMs = System.currentTimeMillis()
-        val offlineValidityMs = 7 * 24 * 60 * 60 * 1000L // 7 days validity window
+        val offlineValidityMs = 7 * 24 * 60 * 60 * 1000L // 7 days
         val offlineValidUntil = nowMs + offlineValidityMs
 
         val offlineCred = verifier.create(username, password, session.userId, session.displayName)
         offlineCredentials.save(offlineCred)
 
-        // Cache in SQLite database users table to allow offline login later
         val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
         val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
         val userEntity = UserEntity(
@@ -137,35 +96,26 @@ class DefaultAuthRepository(
         database.userDao().insertUser(userEntity)
 
         try {
-            pullAllDataFromCloud(supabase, database, companyId)
+            // pullAllDataFromCloud(firestore, database, companyId)
         } catch (syncError: Exception) {
             syncError.printStackTrace()
         }
 
+        password.fill('\u0000')
         LoginResult.Success(session)
-    } catch (ioe: IOException) {
-        val msg = ioe.message ?: ""
-        if (msg == "EMAIL_NOT_VERIFIED" || msg == "NO_COMPANY_MEMBERSHIP" || msg == "COMPANY_SUSPENDED") {
-            LoginResult.Failure(
-                when (msg) {
-                    "EMAIL_NOT_VERIFIED" -> "Email verification is pending. Please verify your email first."
-                    "COMPANY_SUSPENDED" -> "Your company account has been suspended."
-                    else -> "No active company membership found."
-                }
-            )
+    } catch (e: Exception) {
+        val msg = e.message ?: ""
+        if (msg.contains("NO_COMPANY_MEMBERSHIP") || msg.contains("COMPANY_SUSPENDED")) {
+            password.fill('\u0000')
+            LoginResult.Failure(if (msg == "COMPANY_SUSPENDED") "Your company account has been suspended." else "No active company membership found.")
         } else {
             val localResult = loginOffline(username, password)
             if (localResult is LoginResult.Success) {
                 localResult
             } else {
-                LoginResult.Failure("Network unreachable. Cached login not found or expired.")
+                password.fill('\u0000')
+                LoginResult.Failure(if (msg.contains("network", ignoreCase = true)) "Network unreachable. Cached login not found or expired." else "Invalid mobile number or password.")
             }
-        }
-    } catch (e: Exception) {
-        val msg = e.message ?: ""
-        when {
-            msg.contains("invalid_credentials", ignoreCase = true) || msg.contains("invalid login", ignoreCase = true) -> LoginResult.Failure("Invalid email or password.")
-            else -> LoginResult.Failure(e.message ?: "Authentication failed")
         }
     }
 
@@ -173,8 +123,11 @@ class DefaultAuthRepository(
         val userDao = database.userDao()
         val userEntity = userDao.getUserByUsername(username) ?: return LoginResult.Failure("Invalid username or password")
 
-        // Offline validity check removed as per user request
-        // eppo offline la login pannalum work aaganum
+        val nowMs = System.currentTimeMillis()
+        if (userEntity.offlineValidUntil > 0 && nowMs > userEntity.offlineValidUntil) {
+            password.fill('\u0000')
+            return LoginResult.Failure("Offline login expired. Please connect to the internet to sign in.")
+        }
 
         val saltBytes = java.util.Base64.getDecoder().decode(userEntity.salt)
         val verifierBytes = java.util.Base64.getDecoder().decode(userEntity.verifier)
@@ -187,7 +140,7 @@ class DefaultAuthRepository(
             verifier = verifierBytes
         )
 
-        if (verifier.matches(offlineCred, password)) {
+        val result = if (verifier.matches(offlineCred, password)) {
             val permissions = userEntity.toPermissionsSet()
             val session = Session(
                 userId = userEntity.id,
@@ -197,199 +150,124 @@ class DefaultAuthRepository(
                 role = userEntity.role
             )
             sessions.save(session)
-            return LoginResult.Success(session)
+            LoginResult.Success(session)
+        } else {
+            LoginResult.Failure("Invalid username or password")
         }
-        return LoginResult.Failure("Invalid username or password")
+        password.fill('\u0000')
+        return result
     }
 
     override suspend fun logout() {
-        try {
-            supabase.auth.signOut()
-        } catch (_: Exception) {}
+        firebaseAuth.signOut()
         sessions.clear()
     }
 
-    override suspend fun registerCompany(email: String, password: CharArray, ownerName: String, businessName: String): RegisterResult = try {
-        val emailClean = email.trim()
-        val meta = kotlinx.serialization.json.buildJsonObject {
-            put("display_name", kotlinx.serialization.json.JsonPrimitive(ownerName))
-            put("business_name", kotlinx.serialization.json.JsonPrimitive(businessName))
-        }
-        supabase.auth.signUpWith(Email) {
-            this.email = emailClean
-            this.password = password.concatToString()
-            this.data = meta
-        }
-
-        val sessionOrNull = supabase.auth.currentSessionOrNull()
-        if (sessionOrNull != null) {
-            val companyId = supabase.postgrest.rpc(
-                function = "initialize_new_company",
-                parameters = buildJsonObject {
-                    put("business_name", businessName)
-                    put("owner_name", ownerName)
+    override fun sendRegistrationOtp(
+        mobileNumber: String,
+        activity: Activity,
+        onCodeSent: (String) -> Unit,
+        onVerificationFailed: (String) -> Unit
+    ) {
+        val formattedNumber = if (mobileNumber.startsWith("+")) mobileNumber else "+91$mobileNumber"
+        val options = PhoneAuthOptions.newBuilder(firebaseAuth)
+            .setPhoneNumber(formattedNumber)
+            .setTimeout(60L, TimeUnit.SECONDS)
+            .setActivity(activity)
+            .setCallbacks(object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
+                override fun onVerificationCompleted(credential: PhoneAuthCredential) {}
+                override fun onVerificationFailed(e: com.google.firebase.FirebaseException) {
+                    onVerificationFailed(e.message ?: "Verification failed")
                 }
-            ).decodeAs<String>()
+                override fun onCodeSent(verificationId: String, token: PhoneAuthProvider.ForceResendingToken) {
+                    onCodeSent(verificationId)
+                }
+            })
+            .build()
+        PhoneAuthProvider.verifyPhoneNumber(options)
+    }
+
+    override suspend fun verifyRegistrationOtpAndRegister(
+        verificationId: String,
+        otp: String,
+        mobileNumber: String,
+        password: CharArray,
+        ownerName: String,
+        businessName: String
+    ): RegisterResult {
+        return try {
+            val credential = PhoneAuthProvider.getCredential(verificationId, otp)
+            val authResult = firebaseAuth.signInWithCredential(credential).await()
+            val user = authResult.user ?: return RegisterResult.Failure("Authentication failed")
+
+            val email = getFakeEmail(mobileNumber)
+            val emailCredential = EmailAuthProvider.getCredential(email, String(password))
+            
+            try {
+                user.linkWithCredential(emailCredential).await()
+            } catch (e: Exception) {
+                // If linking fails (e.g., email already in use), try creating/updating
+            }
+
+            val companyRef = firestore.collection("companies").document()
+            val companyId = companyRef.id
+            companyRef.set(mapOf(
+                "name" to businessName,
+                "owner_user_id" to user.uid,
+                "status" to "active"
+            )).await()
+
+            firestore.collection("company_users").document().set(mapOf(
+                "company_id" to companyId,
+                "user_id" to user.uid,
+                "role" to "ADMIN",
+                "status" to "active",
+                "permissions" to Permission.entries.map { it.name }
+            )).await()
+
+            firestore.collection("profiles").document(user.uid).set(mapOf(
+                "full_name" to ownerName,
+                "business_name" to businessName
+            )).await()
+
+            password.fill('\u0000')
             RegisterResult.Success(companyId)
-        } else {
-            RegisterResult.Success("")
-        }
-    } catch (e: Exception) {
-        RegisterResult.Failure(e.message ?: "Registration failed")
-    }
-
-    override suspend fun recoverPassword(email: String): RecoveryResult = try {
-        supabase.auth.resetPasswordForEmail(email = email.trim(), redirectUrl = "kadakutty://login-callback")
-        RecoveryResult.Success
-    } catch (e: Exception) {
-        RecoveryResult.Failure(e.message ?: "Password recovery failed")
-    }
-
-    override suspend fun updatePassword(password: CharArray): RecoveryResult = try {
-        supabase.auth.updateUser {
-            this.password = String(password)
-        }
-        RecoveryResult.Success
-    } catch (e: Exception) {
-        RecoveryResult.Failure(e.message ?: "Failed to update password")
-    }
-
-    override suspend fun signInWithGoogle() {
-        supabase.auth.signInWith(io.github.jan.supabase.auth.providers.Google)
-    }
-
-    override suspend fun handleGoogleSignInSuccess() {
-        val session = supabase.auth.currentSessionOrNull()
-        if (session != null) {
-            val user = session.user
-            val companyId = user?.userMetadata?.get("company_id")?.jsonPrimitive?.content
-            if (companyId != null) {
-                pullAllDataFromCloud(supabase, database, companyId)
-                sessions.save(
-                    Session(
-                        userId = user.id,
-                        displayName = user.userMetadata?.get("full_name")?.jsonPrimitive?.content ?: "Google User",
-                        companyId = companyId,
-                        role = "ADMIN",
-                        permissions = com.company.billing.core.security.Permission.entries.toSet()
-                    )
-                )
-            }
+        } catch (e: Exception) {
+            password.fill('\u0000')
+            RegisterResult.Failure(e.message ?: "Registration failed")
         }
     }
 
-    private suspend fun pullAllDataFromCloud(supabase: SupabaseClient, database: BillingDatabase, companyId: String) {
-        val cloudCategories = supabase.from("categories").select { filter { eq("company_id", companyId) } }.decodeList<SupabaseCategory>()
-        val cloudProducts = supabase.from("products").select { filter { eq("company_id", companyId) } }.decodeList<SupabaseProduct>()
-        val cloudCustomers = supabase.from("customers").select { filter { eq("company_id", companyId) } }.decodeList<SupabaseCustomer>()
-        val cloudSuppliers = supabase.from("suppliers").select { filter { eq("company_id", companyId) } }.decodeList<SupabaseSupplier>()
-        val cloudExpenses = supabase.from("expenses").select { filter { eq("company_id", companyId) } }.decodeList<SupabaseExpense>()
-        val cloudSales = supabase.from("sales").select { filter { eq("company_id", companyId) } }.decodeList<SupabaseSale>()
-        val cloudSaleItems = supabase.from("sale_items").select { filter { eq("company_id", companyId) } }.decodeList<SupabaseSaleItem>()
-        val cloudPurchases = supabase.from("purchases").select { filter { eq("company_id", companyId) } }.decodeList<SupabasePurchase>()
-        val cloudPurchaseItems = supabase.from("purchase_items").select { filter { eq("company_id", companyId) } }.decodeList<SupabasePurchaseItem>()
-        val cloudCustomerCredits = supabase.from("customer_credits").select { filter { eq("company_id", companyId) } }.decodeList<SupabaseCustomerCredit>()
-        val cloudSupplierCredits = supabase.from("supplier_credits").select { filter { eq("company_id", companyId) } }.decodeList<SupabaseSupplierCredit>()
+    override fun sendPasswordResetOtp(
+        mobileNumber: String,
+        activity: Activity,
+        onCodeSent: (String) -> Unit,
+        onVerificationFailed: (String) -> Unit
+    ) {
+        sendRegistrationOtp(mobileNumber, activity, onCodeSent, onVerificationFailed)
+    }
 
-        database.runInTransaction {
-            database.openHelper.writableDatabase.execSQL("DELETE FROM categories WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM products WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM customers WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM suppliers WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM expenses WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM sales WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM sale_items WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM purchases WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM purchase_items WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM stock_movements WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM customer_credits WHERE companyId = '$companyId'")
-            database.openHelper.writableDatabase.execSQL("DELETE FROM supplier_credits WHERE companyId = '$companyId'")
+    override suspend fun verifyOtpAndResetPassword(
+        verificationId: String,
+        otp: String,
+        newPassword: CharArray
+    ): RecoveryResult {
+        return try {
+            val credential = PhoneAuthProvider.getCredential(verificationId, otp)
+            val authResult = firebaseAuth.signInWithCredential(credential).await()
+            val user = authResult.user ?: return RecoveryResult.Failure("Authentication failed")
 
-            cloudCategories.forEach { c ->
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO categories (id, companyId, name, createdAtEpochMs, updatedAtEpochMs, syncStatus) VALUES ('${c.id}', '$companyId', '${c.name.replace("'", "''")}', ${c.createdAtEpochMs}, ${c.updatedAtEpochMs}, 'SYNCED')"
-                )
-            }
-            cloudProducts.forEach { p ->
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO products (id, companyId, name, categoryId, purchasePriceMinorUnits, salePriceMinorUnits, unitType, createdAtEpochMs, updatedAtEpochMs, syncStatus) VALUES ('${p.id}', '$companyId', '${p.name.replace("'", "''")}', '${p.categoryId}', ${p.purchasePriceMinorUnits}, ${p.salePriceMinorUnits}, '${p.unitType}', ${p.createdAtEpochMs}, ${p.updatedAtEpochMs}, 'SYNCED')"
-                )
-            }
-            cloudCustomers.forEach { cust ->
-                val phoneVal = cust.phone?.let { "'${it.replace("'", "''")}'" } ?: "NULL"
-                val addressVal = cust.address?.let { "'${it.replace("'", "''")}'" } ?: "NULL"
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO customers (id, companyId, name, phone, address, createdAtEpochMs, updatedAtEpochMs, syncStatus) VALUES ('${cust.id}', '$companyId', '${cust.name.replace("'", "''")}', $phoneVal, $addressVal, ${cust.createdAtEpochMs}, ${cust.updatedAtEpochMs}, 'SYNCED')"
-                )
-            }
-            cloudSuppliers.forEach { sup ->
-                val phoneVal = sup.phone?.let { "'${it.replace("'", "''")}'" } ?: "NULL"
-                val addressVal = sup.address?.let { "'${it.replace("'", "''")}'" } ?: "NULL"
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO suppliers (id, companyId, name, phone, address, createdAtEpochMs, updatedAtEpochMs, syncStatus) VALUES ('${sup.id}', '$companyId', '${sup.name.replace("'", "''")}', $phoneVal, $addressVal, ${sup.createdAtEpochMs}, ${sup.updatedAtEpochMs}, 'SYNCED')"
-                )
-            }
-            cloudExpenses.forEach { exp ->
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO expenses (id, companyId, amountMinorUnits, description, createdAtEpochMs, updatedAtEpochMs, syncStatus) VALUES ('${exp.id}', '$companyId', ${exp.amountMinorUnits}, '${exp.description.replace("'", "''")}', ${exp.createdAtEpochMs}, ${exp.updatedAtEpochMs}, 'SYNCED')"
-                )
-            }
-            cloudSales.forEach { s ->
-                val custIdVal = s.customerId?.let { "'$it'" } ?: "NULL"
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO sales (id, companyId, billNumber, totalMinorUnits, createdAtEpochMs, syncStatus, customerId) VALUES ('${s.id}', '$companyId', '${s.billNumber}', ${s.totalMinorUnits}, ${s.createdAtEpochMs}, 'SYNCED', $custIdVal)"
-                )
-            }
-            cloudSaleItems.forEach { si ->
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO sale_items (companyId, saleId, productId, quantity, unitPriceMinorUnits, lineTotalMinorUnits) VALUES ('$companyId', '${si.saleId}', '${si.productId}', ${si.quantity}, ${si.unitPriceMinorUnits}, ${si.lineTotalMinorUnits})"
-                )
-            }
-            cloudPurchases.forEach { pur ->
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO purchases (id, companyId, supplierId, totalMinorUnits, createdAtEpochMs, syncStatus) VALUES ('${pur.id}', '$companyId', '${pur.supplierId}', ${pur.totalMinorUnits}, ${pur.createdAtEpochMs}, 'SYNCED')"
-                )
-            }
-            cloudPurchaseItems.forEach { pi ->
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO purchase_items (companyId, purchaseId, productId, quantity, unitValueMinorUnits, lineTotalMinorUnits) VALUES ('$companyId', '${pi.purchaseId}', '${pi.productId}', ${pi.quantity}, ${pi.unitValueMinorUnits}, ${pi.lineTotalMinorUnits})"
-                )
-            }
-            cloudCustomerCredits.forEach { c ->
-                val reasonVal = "'${c.reason.replace("'", "''")}'"
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO customer_credits (id, companyId, customerId, amountMinorUnits, reason, dateEpochMs, syncStatus) VALUES ('${c.id}', '$companyId', '${c.customerId}', ${c.amountMinorUnits}, $reasonVal, ${c.dateEpochMs}, 'SYNCED')"
-                )
-            }
-            cloudSupplierCredits.forEach { s ->
-                val termsVal = "'${s.terms.replace("'", "''")}'"
-                database.openHelper.writableDatabase.execSQL(
-                    "INSERT INTO supplier_credits (id, companyId, supplierId, amountMinorUnits, terms, dueDateEpochMs, dateEpochMs, syncStatus) VALUES ('${s.id}', '$companyId', '${s.supplierId}', ${s.amountMinorUnits}, $termsVal, ${s.dueDateEpochMs}, ${s.dateEpochMs}, 'SYNCED')"
-                )
-            }
+            user.updatePassword(String(newPassword)).await()
+            
+            newPassword.fill('\u0000')
+            RecoveryResult.Success
+        } catch (e: Exception) {
+            newPassword.fill('\u0000')
+            RecoveryResult.Failure(e.message ?: "Failed to reset password")
         }
     }
 
-    @kotlinx.serialization.Serializable
-    private data class SupabaseCompanyUser(
-        val company_id: String,
-        val user_id: String,
-        val role: String,
-        val status: String,
-        val permissions: List<String>
-    )
-
-    @kotlinx.serialization.Serializable
-    private data class SupabaseCompany(
-        val id: String,
-        val name: String,
-        val owner_user_id: String,
-        val status: String
-    )
-
-    @kotlinx.serialization.Serializable
-    private data class SupabaseProfile(
-        val id: String,
-        val full_name: String
-    )
+    override suspend fun signInWithGoogle() {}
+    override suspend fun handleGoogleSignInSuccess(): GoogleSignInResult = GoogleSignInResult.Failure("Google Sign In not supported with Firebase yet")
+    override suspend fun completeGoogleRegistration(ownerName: String, businessName: String): RegisterResult = RegisterResult.Failure("Not supported")
 }

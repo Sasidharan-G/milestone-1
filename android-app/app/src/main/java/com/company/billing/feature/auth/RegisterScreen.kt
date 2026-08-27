@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -35,15 +36,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
+
 data class RegisterUiState(
-    val email: String = "",
+    val mobileNumber: String = "",
     val passwordString: String = "",
     val confirmPasswordString: String = "",
     val ownerName: String = "",
     val businessName: String = "",
     val loading: Boolean = false,
     val error: String? = null,
-    val complete: Boolean = false
+    val complete: Boolean = false,
+    val isGoogleSignIn: Boolean = false,
+    val showOtpDialog: Boolean = false,
+    val otp: String = "",
+    val verificationId: String? = null
 )
 
 @HiltViewModel
@@ -53,15 +59,17 @@ class RegisterViewModel @Inject constructor(
     private val _state = MutableStateFlow(RegisterUiState())
     val state = _state.asStateFlow()
 
-    fun updateEmail(value: String) = _state.update { it.copy(email = value, error = null) }
+    fun updateMobileNumber(value: String) = _state.update { it.copy(mobileNumber = value, error = null) }
     fun updateOwnerName(value: String) = _state.update { it.copy(ownerName = value, error = null) }
     fun updateBusinessName(value: String) = _state.update { it.copy(businessName = value, error = null) }
     fun updatePassword(value: String) = _state.update { it.copy(passwordString = value, error = null) }
     fun updateConfirmPassword(value: String) = _state.update { it.copy(confirmPasswordString = value, error = null) }
+    fun updateOtp(value: String) = _state.update { it.copy(otp = value, error = null) }
+    fun dismissOtpDialog() = _state.update { it.copy(showOtpDialog = false, otp = "", verificationId = null) }
 
-    fun register(onSuccess: (String) -> Unit) {
+    fun register(activity: android.app.Activity) {
         val current = state.value
-        if (current.email.isBlank() || current.ownerName.isBlank() || current.businessName.isBlank() || current.passwordString.isBlank() || current.confirmPasswordString.isBlank()) {
+        if (current.mobileNumber.isBlank() || current.ownerName.isBlank() || current.businessName.isBlank() || current.passwordString.isBlank() || current.confirmPasswordString.isBlank()) {
             _state.update { it.copy(error = "All fields are required") }
             return
         }
@@ -73,25 +81,59 @@ class RegisterViewModel @Inject constructor(
             _state.update { it.copy(error = "Password must be at least 6 characters") }
             return
         }
-        if (!com.company.billing.core.auth.EmailValidator.isValidEmail(current.email.trim())) {
-            _state.update { it.copy(error = "Please provide a valid, non-disposable email address") }
+        val cleanPhone = current.mobileNumber.trim().replace(" ", "").replace("-", "")
+        if (cleanPhone.length < 10 || !cleanPhone.all { it.isDigit() || it == '+' }) {
+            _state.update { it.copy(error = "Please provide a valid mobile number") }
             return
         }
+        
+        // Ensure phone has country code for Firebase
+        val phoneWithCode = if (cleanPhone.startsWith("+")) cleanPhone else "+91$cleanPhone"
+
+        _state.update { it.copy(loading = true, error = null) }
+        
+        authRepository.sendRegistrationOtp(
+            mobileNumber = phoneWithCode,
+            activity = activity,
+            onCodeSent = { verificationId ->
+                _state.update { it.copy(loading = false, showOtpDialog = true, verificationId = verificationId) }
+            },
+            onVerificationFailed = { error ->
+                _state.update { it.copy(loading = false, error = error) }
+            }
+        )
+    }
+
+    fun verifyOtpAndCompleteRegistration(onSuccess: (String) -> Unit) {
+        val current = state.value
+        val verificationId = current.verificationId
+        if (verificationId == null || current.otp.isBlank()) {
+            _state.update { it.copy(error = "Please enter the OTP") }
+            return
+        }
+
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             val passChars = current.passwordString.toCharArray()
-            val result = authRepository.registerCompany(
-                email = current.email,
+            
+            val cleanPhone = current.mobileNumber.trim().replace(" ", "").replace("-", "")
+            val phoneWithCode = if (cleanPhone.startsWith("+")) cleanPhone else "+91$cleanPhone"
+
+            val result = authRepository.verifyRegistrationOtpAndRegister(
+                verificationId = verificationId,
+                otp = current.otp,
+                mobileNumber = phoneWithCode,
                 password = passChars,
                 ownerName = current.ownerName,
                 businessName = current.businessName
             )
             passChars.fill('\u0000')
+            
             _state.update {
                 when (result) {
                     is RegisterResult.Success -> {
                         onSuccess(result.companyId)
-                        it.copy(loading = false, complete = true, passwordString = "", confirmPasswordString = "")
+                        it.copy(loading = false, showOtpDialog = false, complete = true, passwordString = "", confirmPasswordString = "")
                     }
                     is RegisterResult.Failure -> {
                         it.copy(loading = false, error = result.message)
@@ -106,7 +148,6 @@ class RegisterViewModel @Inject constructor(
             _state.update { it.copy(loading = true, error = null) }
             try {
                 authRepository.signInWithGoogle()
-                // Do not clear loading yet, because browser will open
             } catch (e: Exception) {
                 _state.update { it.copy(loading = false, error = e.message) }
             }
@@ -116,12 +157,52 @@ class RegisterViewModel @Inject constructor(
     fun handleGoogleSignInSuccess(onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             try {
-                authRepository.handleGoogleSignInSuccess()
-                _state.update { it.copy(loading = false, complete = true) }
-                onResult(true, null)
+                val res = authRepository.handleGoogleSignInSuccess()
+                when (res) {
+                    is com.company.billing.core.auth.GoogleSignInResult.Success -> {
+                        // User already has an account, they shouldn't be registering!
+                        _state.update { it.copy(loading = false, error = "Account already exists. Please login instead.") }
+                        onResult(false, "Account already exists")
+                    }
+                    is com.company.billing.core.auth.GoogleSignInResult.NewUserNeedsCompanyDetails -> {
+                        // Perfect, it's a new user! Move them to step 2 of registration.
+                        _state.update { it.copy(loading = false, isGoogleSignIn = true) }
+                        onResult(true, null)
+                    }
+                    is com.company.billing.core.auth.GoogleSignInResult.Failure -> {
+                        _state.update { it.copy(loading = false, error = res.message) }
+                        onResult(false, res.message)
+                    }
+                }
             } catch (e: Exception) {
                 _state.update { it.copy(loading = false, error = e.message) }
                 onResult(false, e.message)
+            }
+        }
+    }
+
+    fun completeGoogleRegistration(onSuccess: (String) -> Unit) {
+        val current = state.value
+        if (current.ownerName.isBlank() || current.businessName.isBlank()) {
+            _state.update { it.copy(error = "Owner Name and Business Name are required") }
+            return
+        }
+        viewModelScope.launch {
+            _state.update { it.copy(loading = true, error = null) }
+            val result = authRepository.completeGoogleRegistration(
+                ownerName = current.ownerName,
+                businessName = current.businessName
+            )
+            _state.update {
+                when (result) {
+                    is RegisterResult.Success -> {
+                        onSuccess(result.companyId)
+                        it.copy(loading = false, complete = true)
+                    }
+                    is RegisterResult.Failure -> {
+                        it.copy(loading = false, error = result.message)
+                    }
+                }
             }
         }
     }
@@ -135,6 +216,9 @@ fun RegisterScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val scrollState = rememberScrollState()
+    var message by remember { mutableStateOf("") }
+    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+
 
     LaunchedEffect(state.complete) {
         if (state.complete) {
@@ -212,19 +296,20 @@ fun RegisterScreen(
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
-                    value = state.businessName,
-                    onValueChange = { viewModel.updateBusinessName(it) },
-                    label = { Text("Business / Shop Name") },
-                    leadingIcon = { Icon(Icons.Default.Home, contentDescription = null) },
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                        value = state.mobileNumber,
+                        onValueChange = { viewModel.updateMobileNumber(it) },
+                        label = { Text("Mobile Number") },
+                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
 
                 OutlinedTextField(
                     value = state.ownerName,
                     onValueChange = { viewModel.updateOwnerName(it) },
-                    label = { Text("Owner / Admin Full Name") },
+                    label = { Text("Owner Name") },
                     leadingIcon = { Icon(Icons.Default.Person, contentDescription = null) },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
@@ -232,52 +317,64 @@ fun RegisterScreen(
                 )
 
                 OutlinedTextField(
-                    value = state.email,
-                    onValueChange = { viewModel.updateEmail(it) },
-                    label = { Text("Owner Email Address") },
-                    leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
+                    value = state.businessName,
+                    onValueChange = { viewModel.updateBusinessName(it) },
+                    label = { Text("Business Name") },
+                    leadingIcon = { Icon(Icons.Default.Home, contentDescription = null) },
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
 
                 OutlinedTextField(
-                    value = state.passwordString,
-                    onValueChange = { viewModel.updatePassword(it) },
-                    label = { Text("Password") },
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                        value = state.passwordString,
+                        onValueChange = { viewModel.updatePassword(it) },
+                        label = { Text("Password") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
 
-                OutlinedTextField(
-                    value = state.confirmPasswordString,
-                    onValueChange = { viewModel.updateConfirmPassword(it) },
-                    label = { Text("Confirm Password") },
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                    visualTransformation = PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
+                    OutlinedTextField(
+                        value = state.confirmPasswordString,
+                        onValueChange = { viewModel.updateConfirmPassword(it) },
+                        label = { Text("Confirm Password") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        visualTransformation = PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
 
                 if (!state.error.isNullOrBlank()) {
                     Text(
                         text = state.error ?: "",
                         color = MaterialTheme.colorScheme.error,
                         fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.align(Alignment.Start)
+                    )
+                }
+                if (message.isNotBlank()) {
+                    Text(
+                        text = message,
+                        color = MaterialTheme.colorScheme.error,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium,
+                        modifier = Modifier.align(Alignment.Start)
                     )
                 }
 
                 Button(
-                    onClick = {
-                        viewModel.register { companyId ->
-                            // Optional check or message
+                    onClick = { 
+                        if (activity != null) {
+                            viewModel.register(activity)
+                        } else {
+                            message = "Could not get Activity context"
                         }
                     },
                     modifier = Modifier
@@ -286,29 +383,17 @@ fun RegisterScreen(
                     shape = RoundedCornerShape(12.dp),
                     enabled = !state.loading
                 ) {
-                    if (state.loading) {
+                    if (state.loading && !state.showOtpDialog) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     } else {
-                        Text("Register Business", fontWeight = FontWeight.Bold)
+                        Text("Create Account", fontWeight = FontWeight.Bold)
                     }
                 }
 
-                Spacer(modifier = Modifier.height(12.dp))
-                
-                Button(
-                    onClick = { viewModel.signInWithGoogle() },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1F5F9)),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color.LightGray)
-                ) {
-                    Text("Register with Google", color = Color.Black, fontWeight = FontWeight.Medium)
-                }
+
 
                 Spacer(modifier = Modifier.height(4.dp))
 
@@ -322,6 +407,40 @@ fun RegisterScreen(
                         .padding(vertical = 4.dp)
                 )
             }
+        }
+        
+        if (state.showOtpDialog) {
+            AlertDialog(
+                onDismissRequest = { viewModel.dismissOtpDialog() },
+                title = { Text("Enter OTP") },
+                text = {
+                    Column {
+                        Text("Please enter the OTP sent to your mobile number.")
+                        Spacer(modifier = Modifier.height(8.dp))
+                        OutlinedTextField(
+                            value = state.otp,
+                            onValueChange = { viewModel.updateOtp(it) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        if (state.loading) {
+                            Spacer(modifier = Modifier.height(8.dp))
+                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { viewModel.verifyOtpAndCompleteRegistration { onRegisterSuccess() } }, enabled = !state.loading) {
+                        Text("Verify")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { viewModel.dismissOtpDialog() }, enabled = !state.loading) {
+                        Text("Cancel")
+                    }
+                }
+            )
         }
     }
 }

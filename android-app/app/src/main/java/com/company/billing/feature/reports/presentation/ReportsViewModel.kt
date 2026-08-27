@@ -15,21 +15,23 @@ import javax.inject.Inject
 import com.company.billing.core.export.domain.PdfExporter
 import com.company.billing.core.export.domain.ExcelExporter
 
+import com.company.billing.feature.billing.domain.SaleRepository
 import com.company.billing.core.database.BillingDatabase
-
 import com.company.billing.core.auth.SessionStore
 import kotlinx.coroutines.flow.first
 
 @HiltViewModel
 class ReportsViewModel @Inject constructor(
     private val reportService: ReportService,
+    private val costingStrategy: com.company.billing.feature.reports.domain.CostingStrategy,
     private val pdfExporter: PdfExporter,
     private val excelExporter: ExcelExporter,
     private val database: BillingDatabase,
+    private val saleRepository: SaleRepository,
     private val sessionStore: SessionStore
 ) : ViewModel() {
 
-    private val _selectedType = MutableStateFlow(ReportType.SALE_AMOUNT)
+    private val _selectedType = MutableStateFlow(ReportType.SALES)
     val selectedType: StateFlow<ReportType> = _selectedType.asStateFlow()
 
     private val _fromEpochMs = MutableStateFlow<Long?>(null)
@@ -78,14 +80,21 @@ class ReportsViewModel @Inject constructor(
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val companyId = session.companyId
+                
                 // Query live KPI sums
                 val salesSum = database.reportDao().getTotalSalesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
-                val purchasesSum = database.reportDao().getTotalPurchasesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
                 val expensesSum = database.reportDao().getTotalExpensesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
+                val profitRaw = database.reportDao().getProfitReportRaw(companyId, _fromEpochMs.value, _toEpochMs.value)
+                
+                var totalCogs = 0L
+                for (item in profitRaw) {
+                    val cost = costingStrategy.getProductCost(item.productId, item.totalQty)
+                    totalCogs += cost.minorUnits
+                }
 
                 _totalSalesSum.value = salesSum
-                _purchaseCostSum.value = purchasesSum
-                _netProfitSum.value = salesSum - purchasesSum - expensesSum
+                _purchaseCostSum.value = totalCogs
+                _netProfitSum.value = salesSum - totalCogs - expensesSum
 
                 val query = ReportQuery(
                     type = _selectedType.value,
@@ -111,5 +120,19 @@ class ReportsViewModel @Inject constructor(
     fun exportExcel(): ByteArray {
         val data = _reportData.value ?: throw java.lang.IllegalStateException("No report data loaded to export")
         return excelExporter.export(data)
+    }
+
+    fun deleteSale(saleId: String, billNumber: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            when (val result = saleRepository.deleteSale(saleId, billNumber)) {
+                is com.company.billing.core.common.AppResult.Success -> {
+                    loadReport()
+                    onSuccess()
+                }
+                is com.company.billing.core.common.AppResult.Failure -> {
+                    onError(Exception(result.error.userMessage))
+                }
+            }
+        }
     }
 }

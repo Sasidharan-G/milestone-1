@@ -4,6 +4,14 @@ import android.content.Context
 import androidx.datastore.preferences.preferencesDataStore
 import androidx.room.Room
 import com.company.billing.core.database.BillingDatabase
+import com.company.billing.core.database.migration10To11
+import com.company.billing.core.database.migration11To12
+import com.company.billing.core.database.migration12To13
+import com.company.billing.core.database.migration13To14
+import com.company.billing.core.database.migration14To15
+import com.company.billing.core.database.migration15To16
+import com.company.billing.core.database.migration16To17
+import com.company.billing.core.database.migration17To18
 import com.company.billing.core.database.migration1To2
 import com.company.billing.core.database.migration2To3
 import com.company.billing.core.database.migration3To4
@@ -48,15 +56,10 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
-import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.createSupabaseClient
-import io.github.jan.supabase.postgrest.Postgrest
-import io.github.jan.supabase.auth.Auth
-import io.github.jan.supabase.compose.auth.ComposeAuth
-import io.github.jan.supabase.compose.auth.googleNativeLogin
-import io.github.jan.supabase.storage.Storage
-import com.company.billing.core.network.SupabaseConfig
-import com.company.billing.core.backup.data.SupabaseBackupManager
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.storage.FirebaseStorage
+// import com.company.billing.core.backup.data.FirebaseBackupManager // To be created
 
 private val Context.billingDataStore by preferencesDataStore("billing_preferences")
 
@@ -66,37 +69,53 @@ object CoreModule {
     @Provides @Singleton fun database(@ApplicationContext context: Context): BillingDatabase {
         val keyBytes = com.company.billing.core.security.SecurityShield.getOrCreateDatabaseKey(context)
         val factory = net.sqlcipher.database.SupportFactory(keyBytes)
-        return Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
+        
+        var db = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
             .openHelperFactory(factory)
-            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10)
+            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18)
             .build()
+            
+        try {
+            // Eagerly verify the database integrity. 
+            // If the key is wrong or the file is corrupted (e.g. bad restore), this throws an exception.
+            db.openHelper.writableDatabase.query("SELECT 1").use { it.moveToFirst() }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            // Delete the corrupted database safely
+            db.close()
+            context.deleteDatabase("billing.db")
+            
+            // Re-build a fresh database instance
+            db = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
+                .openHelperFactory(factory)
+                .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18)
+                .build()
+        }
+        return db
     }
     @Provides @Singleton fun preferences(@ApplicationContext context: Context) = AppPreferences(context.billingDataStore)
     @Provides @Singleton fun sessionStore(@ApplicationContext context: Context) = SessionStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialStore(@ApplicationContext context: Context) = OfflineCredentialStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialVerifier() = OfflineCredentialVerifier()
-    @Provides @Singleton fun supabaseClient(): SupabaseClient = createSupabaseClient(
-        supabaseUrl = SupabaseConfig.URL,
-        supabaseKey = SupabaseConfig.ANON_KEY
-    ) {
-        install(Auth) {
-            scheme = "kadakutty"
-            host = "login-callback"
-        }
-        install(Postgrest)
-        install(Storage)
-        install(ComposeAuth) {
-            googleNativeLogin(serverClientId = "19685847230-3c3ha0fkcvk5aah7qn8gvljbsmvir9cb.apps.googleusercontent.com")
-        }
-    }
-    @Provides @Singleton fun authRepository(supabase: SupabaseClient, sessions: SessionStore, credentials: OfflineCredentialStore, verifier: OfflineCredentialVerifier, database: BillingDatabase): AuthRepository = DefaultAuthRepository(supabase, sessions, credentials, verifier, database)
+    @Provides @Singleton fun firebaseAuth(): FirebaseAuth = FirebaseAuth.getInstance()
+    @Provides @Singleton fun firebaseFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
+    @Provides @Singleton fun firebaseStorage(): FirebaseStorage = FirebaseStorage.getInstance()
+    
+    @Provides @Singleton fun authRepository(
+        firebaseAuth: FirebaseAuth, 
+        firestore: FirebaseFirestore,
+        sessions: SessionStore, 
+        credentials: OfflineCredentialStore, 
+        verifier: OfflineCredentialVerifier, 
+        database: BillingDatabase
+    ): AuthRepository = DefaultAuthRepository(firebaseAuth, firestore, sessions, credentials, verifier, database)
     @Provides @Singleton fun logger(): AppLogger = AndroidLogger()
     @Provides @Singleton fun syncScheduler(@ApplicationContext context: Context) = SyncScheduler(context)
     @Provides @Singleton fun syncManager(database: BillingDatabase, syncScheduler: SyncScheduler, sessionStore: SessionStore) = SyncManager(database, syncScheduler, sessionStore)
 
     @Provides @Singleton fun saleRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore): SaleRepository = SaleRepositoryImpl(database.saleDao(), syncManager, sessionStore)
     @Provides @Singleton fun purchaseRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore): PurchaseRepository = PurchaseRepositoryImpl(database.purchaseDao(), syncManager, sessionStore)
-    @Provides @Singleton fun costingStrategy(database: BillingDatabase, sessionStore: SessionStore): CostingStrategy = DefaultCostingStrategy(database.purchaseDao(), sessionStore)
+    @Provides @Singleton fun costingStrategy(database: BillingDatabase, sessionStore: SessionStore): CostingStrategy = DefaultCostingStrategy(database.purchaseDao(), database.masterDao(), sessionStore)
     @Provides @Singleton fun reportRepository(database: BillingDatabase, costingStrategy: CostingStrategy, sessionStore: SessionStore): ReportRepository = ReportRepositoryImpl(database.reportDao(), costingStrategy, sessionStore)
     @Provides @Singleton fun reportService(reportRepository: ReportRepository): ReportService = DefaultReportService(reportRepository)
     @Provides @Singleton fun pdfExporter(): PdfExporter = AndroidPdfExporter()
@@ -106,6 +125,5 @@ object CoreModule {
     @Provides @Singleton fun printerManager(btDriver: BluetoothPrinterDriver, usbDriver: UsbPrinterDriver): PrinterManager = PrinterManager(btDriver, usbDriver)
     @Provides @Singleton fun shareManager(@ApplicationContext context: Context) = ShareManager(context)
     @Provides @Singleton fun backupManager(@ApplicationContext context: Context, database: BillingDatabase) = BackupManager(context, database)
-    @Provides @Singleton fun googleDriveBackupManager(@ApplicationContext context: Context, appPreferences: AppPreferences, backupManager: BackupManager) = com.company.billing.core.backup.data.GoogleDriveBackupManager(context, appPreferences, backupManager)
-    @Provides @Singleton fun supabaseBackupManager(@ApplicationContext context: Context, supabase: SupabaseClient, backupManager: BackupManager) = SupabaseBackupManager(context, supabase, backupManager)
+    // @Provides @Singleton fun firebaseBackupManager(@ApplicationContext context: Context, storage: FirebaseStorage, backupManager: BackupManager) = FirebaseBackupManager(context, storage, backupManager)
 }

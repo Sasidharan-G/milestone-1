@@ -179,4 +179,96 @@ val migration9To10 = object : Migration(9, 10) {
     }
 }
 
+val migration10To11 = object : Migration(10, 11) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `sales` ADD COLUMN `paymentMode` TEXT NOT NULL DEFAULT 'CASH'")
+    }
+}
+
+val migration11To12 = object : Migration(11, 12) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `sales` ADD COLUMN `paidCashMinorUnits` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `sales` ADD COLUMN `paidUpiMinorUnits` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `sales` ADD COLUMN `creditAppliedMinorUnits` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+val migration12To13 = object : Migration(12, 13) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `draft_cart_items` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `productId` TEXT NOT NULL, `productName` TEXT NOT NULL, `quantity` INTEGER NOT NULL, `unitPriceMinorUnits` INTEGER NOT NULL, `unitType` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_draft_cart_items_companyId` ON `draft_cart_items` (`companyId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_draft_cart_items_productId` ON `draft_cart_items` (`productId`)")
+        
+        db.execSQL("CREATE TABLE IF NOT EXISTS `shifts` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `closedAtEpochMs` INTEGER NOT NULL, `expectedCashMinorUnits` INTEGER NOT NULL, `declaredCashMinorUnits` INTEGER NOT NULL, `discrepancyMinorUnits` INTEGER NOT NULL, `closedByUserId` TEXT NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_shifts_companyId` ON `shifts` (`companyId`)")
+    }
+}
+
+val migration13To14 = object : Migration(13, 14) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `sync_queue` ADD COLUMN `lastSyncedAtEpochMs` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+val migration14To15 = object : Migration(14, 15) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `sync_dead_letter` (
+                `id` TEXT NOT NULL,
+                `companyId` TEXT NOT NULL,
+                `entityType` TEXT NOT NULL,
+                `entityId` TEXT NOT NULL,
+                `operation` TEXT NOT NULL,
+                `payload` TEXT NOT NULL,
+                `lastError` TEXT NOT NULL,
+                `attemptCount` INTEGER NOT NULL,
+                `createdAtEpochMs` INTEGER NOT NULL,
+                `lastAttemptAtEpochMs` INTEGER NOT NULL,
+                `originalQueueId` TEXT NOT NULL,
+                PRIMARY KEY(`id`)
+            )
+        """)
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_dead_letter_companyId` ON `sync_dead_letter` (`companyId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_dead_letter_entityType` ON `sync_dead_letter` (`entityType`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_dead_letter_entityId` ON `sync_dead_letter` (`entityId`)")
+    }
+}
+
+val migration15To16 = object : Migration(15, 16) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        // Covering indexes for report queries
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sales_companyId_createdAt` ON `sales` (`companyId`, `createdAtEpochMs`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sale_items_companyId_saleId` ON `sale_items` (`companyId`, `saleId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_purchases_companyId_createdAt` ON `purchases` (`companyId`, `createdAtEpochMs`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_purchase_items_companyId_purchaseId` ON `purchase_items` (`companyId`, `purchaseId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_stock_movements_companyId_productId_createdAt` ON `stock_movements` (`companyId`, `productId`, `createdAtEpochMs`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_categories_companyId_syncStatus` ON `categories` (`companyId`, `syncStatus`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_companyId_syncStatus` ON `products` (`companyId`, `syncStatus`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_customers_companyId_syncStatus` ON `customers` (`companyId`, `syncStatus`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_suppliers_companyId_syncStatus` ON `suppliers` (`companyId`, `syncStatus`)")
+    }
+}
+
+val migration16To17 = object : Migration(16, 17) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `products` ADD COLUMN `barcode` TEXT")
+        db.execSQL("ALTER TABLE `products` ADD COLUMN `minStockLevel` REAL NOT NULL DEFAULT 0.0")
+        
+        db.execSQL("ALTER TABLE `sales` ADD COLUMN `discountMinorUnits` INTEGER NOT NULL DEFAULT 0")
+        
+        db.execSQL("ALTER TABLE `sale_items` ADD COLUMN `discountMinorUnits` INTEGER NOT NULL DEFAULT 0")
+    }
+}
+
+val migration17To18 = object : Migration(17, 18) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `purchases` ADD COLUMN `invoiceNumber` TEXT")
+        db.execSQL("ALTER TABLE `purchases` ADD COLUMN `notes` TEXT")
+        db.execSQL("ALTER TABLE `purchases` ADD COLUMN `paymentMode` TEXT NOT NULL DEFAULT 'CASH'")
+        db.execSQL("ALTER TABLE `purchases` ADD COLUMN `paidCashMinorUnits` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `purchases` ADD COLUMN `paidUpiMinorUnits` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `purchases` ADD COLUMN `creditAppliedMinorUnits` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `purchases` ADD COLUMN `orderNumber` TEXT")
+    }
+}
 

@@ -22,9 +22,18 @@ class SaleRepositoryImpl(
             val saleId = newRecordId()
             val epochMs = System.currentTimeMillis()
             
-            // In a production app, the bill number would use a configurable strategy.
-            // For now, we generate a unique bill number based on timestamp & random digits.
-            val billNumber = "BILL-${epochMs}-${(100..999).random()}"
+            // Generate clean sequential bill numbers starting from 01, 02, 03...
+            val existingBills = saleDao.getAllBillNumbers(companyId)
+            var maxSeq = 0
+            for (b in existingBills) {
+                val cleanDigits = b.filter { it.isDigit() }.toIntOrNull()
+                // Ignore legacy timestamp based huge numbers
+                if (cleanDigits != null && cleanDigits in 1..99999 && cleanDigits > maxSeq) {
+                    maxSeq = cleanDigits
+                }
+            }
+            val nextSeq = maxSeq + 1
+            val billNumber = String.format(java.util.Locale.US, "%02d", nextSeq)
             
             val sale = SaleEntity(
                 id = saleId,
@@ -33,7 +42,12 @@ class SaleRepositoryImpl(
                 totalMinorUnits = draft.total.minorUnits,
                 createdAtEpochMs = epochMs,
                 syncStatus = SyncStatus.LOCAL_ONLY,
-                customerId = draft.customerId
+                customerId = draft.customerId,
+                paymentMode = draft.paymentMode,
+                paidCashMinorUnits = draft.paidCash.minorUnits,
+                paidUpiMinorUnits = draft.paidUpi.minorUnits,
+                creditAppliedMinorUnits = draft.creditApplied.minorUnits,
+                discountMinorUnits = draft.globalDiscount.minorUnits
             )
             
             val items = draft.lines.map { line ->
@@ -43,7 +57,8 @@ class SaleRepositoryImpl(
                     productId = line.productId,
                     quantity = line.quantity,
                     unitPriceMinorUnits = line.unitPrice.minorUnits,
-                    lineTotalMinorUnits = line.lineTotal.minorUnits
+                    lineTotalMinorUnits = line.lineTotal.minorUnits,
+                    discountMinorUnits = line.discount.minorUnits
                 )
             }
             
@@ -58,10 +73,44 @@ class SaleRepositoryImpl(
                     createdAtEpochMs = epochMs
                 )
             }
+
+            var customerCredit: com.company.billing.feature.masters.data.CustomerCreditEntity? = null
+            if (draft.creditApplied.minorUnits > 0 && draft.customerId != null) {
+                customerCredit = com.company.billing.feature.masters.data.CustomerCreditEntity(
+                    id = newRecordId(),
+                    companyId = companyId,
+                    customerId = draft.customerId,
+                    amountMinorUnits = draft.creditApplied.minorUnits, // Positive amount means customer owes money
+                    reason = "Bill #$billNumber",
+                    dateEpochMs = epochMs,
+                    syncStatus = SyncStatus.LOCAL_ONLY
+                )
+            }
             
-            saleDao.saveSale(sale, items, movements)
+            saleDao.saveSale(sale, items, movements, customerCredit)
             syncManager.enqueueSale(sale, items)
             AppResult.Success(billNumber)
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.Unexpected(e.message ?: "Unexpected error"))
+        }
+    }
+
+    override suspend fun deleteSale(saleId: String, billNumber: String): AppResult<Unit> {
+        return try {
+            val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+            val companyId = session.companyId
+            saleDao.deleteSaleCascade(companyId, saleId, billNumber)
+            // Enqueue delete for cloud sync
+            val dummySale = SaleEntity(
+                id = saleId,
+                companyId = companyId,
+                billNumber = billNumber,
+                totalMinorUnits = 0L,
+                createdAtEpochMs = 0L,
+                syncStatus = SyncStatus.LOCAL_ONLY
+            )
+            syncManager.enqueueSale(dummySale, emptyList(), "DELETE")
+            AppResult.Success(Unit)
         } catch (e: Exception) {
             AppResult.Failure(AppError.Unexpected(e.message ?: "Unexpected error"))
         }

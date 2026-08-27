@@ -167,6 +167,12 @@ object SecurityShield {
             }
         }
 
+        // If we reach here, we are about to generate a new key because the old key is lost 
+        // (e.g. Keystore wiped after failed biometric attempts) or it's a fresh install.
+        // If an old database exists, it is permanently unreadable with the new key, so we MUST delete it 
+        // to prevent 'file is not a database' crash.
+        context.deleteDatabase("billing.db")
+
         // Generate new key
         val secureKey = ByteArray(32)
         SecureRandom().nextBytes(secureKey)

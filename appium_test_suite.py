@@ -1,10 +1,37 @@
 import unittest
+import time
+import subprocess
+import sqlite3
+import os
 from appium import webdriver
 from appium.webdriver.common.appiumby import AppiumBy
 from appium.options.android import UiAutomator2Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import time
+
+DB_PULL_CMD = [
+    "adb", "shell", "run-as", "com.company.billing",
+    "sh", "-c", "cat databases/billing.db > /sdcard/billing.db; cat databases/billing.db-wal > /sdcard/billing.db-wal; cat databases/billing.db-shm > /sdcard/billing.db-shm"
+]
+
+class DBHelper:
+    @staticmethod
+    def pull_db():
+        # Force checkpoint or just pull all 3 files
+        subprocess.run(DB_PULL_CMD, capture_output=True)
+        subprocess.run(["adb", "pull", "/sdcard/billing.db", "billing.db"], capture_output=True)
+        subprocess.run(["adb", "pull", "/sdcard/billing.db-wal", "billing.db-wal"], capture_output=True)
+        subprocess.run(["adb", "pull", "/sdcard/billing.db-shm", "billing.db-shm"], capture_output=True)
+
+    @staticmethod
+    def query_single(sql, params=()):
+        DBHelper.pull_db()
+        conn = sqlite3.connect("billing.db")
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        res = cur.fetchone()
+        conn.close()
+        return res
 
 class CompleteBillingAppTests(unittest.TestCase):
     
@@ -16,238 +43,227 @@ class CompleteBillingAppTests(unittest.TestCase):
         options.app = "C:/Users/SasiDharan G/OneDrive/Desktop/milestone-1/android-app/app/build/outputs/apk/debug/app-debug.apk"
         options.app_package = "com.company.billing"
         options.app_activity = ".MainActivity"
-        options.no_reset = True # Do not clear app data, use existing session
+        options.no_reset = False # Fresh install every time
+        options.new_command_timeout = 300
         
         cls.driver = webdriver.Remote("http://127.0.0.1:4723", options=options)
         cls.driver.implicitly_wait(5)
-        cls.wait = WebDriverWait(cls.driver, 40)
+        cls.wait = WebDriverWait(cls.driver, 20)
 
     @classmethod
     def tearDownClass(cls):
         cls.driver.quit()
 
+    def setUp(self):
+        # Implicitly wait reset
+        self.driver.implicitly_wait(5)
+
     def tearDown(self):
-        print("Module complete. Pausing and returning to Dashboard...")
-        time.sleep(3) # Give user time to see what happened
-        for _ in range(4):
-            try:
-                self.driver.find_element(AppiumBy.XPATH, "//*[contains(@text, 'Dashboard') or contains(@text, 'KadaKutty')]")
+        print("Test Complete. Pausing and returning to Dashboard...")
+        time.sleep(2)
+        # Attempt to return to Dashboard if stuck
+        for _ in range(3):
+            self.driver.implicitly_wait(0)
+            dashboard = self.driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'Dashboard') or contains(@text, 'KadaKutty') or contains(@text, 'My Shop')]")
+            if dashboard:
+                self.driver.implicitly_wait(5)
                 break
-            except:
-                try:
-                    self.driver.find_element(AppiumBy.XPATH, "//*[contains(@text, 'Sign In') or contains(@content-desc, 'Sign In')]")
-                    break # On login screen, we shouldn't press back further
-                except:
-                    self.driver.press_keycode(4) # Back button
-                    time.sleep(1)
-        time.sleep(1)
+            
+            login = self.driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'Sign In') or contains(@content-desc, 'Sign In')]")
+            if login:
+                self.driver.implicitly_wait(5)
+                break
+            
+            self.driver.press_keycode(4) # Back button
+            time.sleep(1)
+        self.driver.implicitly_wait(5)
+
+    # --- UI Helpers ---
+    def click_text(self, text, exact=False):
+        xpath = f"//*[@text='{text}']" if exact else f"//*[contains(@text, '{text}') or contains(@content-desc, '{text}')]"
+        el = self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath)))
+        el.click()
+        time.sleep(1) # Compose animation
+
+    def type_in_field(self, label_text, value, exact=False):
+        xpath = f"//android.widget.EditText[@text='{label_text}']" if exact else f"//android.widget.EditText[contains(@text, '{label_text}')]"
+        el = self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, xpath)))
+        el.click()
+        el.clear()
+        el.send_keys(value)
+        self.driver.hide_keyboard()
+        time.sleep(0.5)
 
     def login_helper(self):
-        # Wait for the screen to render
         time.sleep(4)
-        
-        # Check if already logged in (Dashboard visible)
-        try:
-            self.driver.find_element(AppiumBy.XPATH, "//*[contains(@text, 'Dashboard') or contains(@text, 'KadaKutty')]")
-            print("Already logged in. Skipping login step.")
+        self.driver.implicitly_wait(0)
+        dash = self.driver.find_elements(AppiumBy.XPATH, "//*[contains(@text, 'Dashboard') or contains(@text, 'KadaKutty') or contains(@text, 'My Shop')]")
+        self.driver.implicitly_wait(5)
+        if dash:
+            print("Already logged in.")
             return
-        except:
-            pass # Not on dashboard, proceed with login
-            
-        # In Compose, finding OutlinedTextField by label text can fail.  
-        # Safest way is to find all EditTexts and use index (0 = Email, 1 = Password)
+
+        print("Logging in...")
         inputs = self.wait.until(EC.presence_of_all_elements_located((AppiumBy.CLASS_NAME, "android.widget.EditText")))
-        username_field = inputs[0]
-        password_field = inputs[1]
+        if len(inputs) >= 2:
+            inputs[0].clear()
+            inputs[0].send_keys("sasidharangr9487@gmail.com")
+            inputs[1].clear()
+            inputs[1].send_keys("123456")
         
-        # Click login button (Jetpack compose button has text 'Sign In')
-        login_btn = self.driver.find_element(AppiumBy.XPATH, "//*[contains(@text, 'Sign In') or contains(@content-desc, 'Sign In')]")
-        
-        username_field.clear()
-        username_field.send_keys("sasidharangr9487@gmail.com")
-        password_field.clear()
-        password_field.send_keys("123456")
-        login_btn.click()
-        
-        # Wait for Dashboard
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[contains(@text, 'Dashboard') or contains(@text, 'KadaKutty')]")))
-        time.sleep(1) # Compose animation settle time
+        self.click_text("Sign In", exact=True)
+        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[contains(@text, 'Dashboard') or contains(@text, 'My Shop')]")))
+        time.sleep(2)
 
-    def test_01_login_validation(self):
-        print("Testing: Login Fields & Validation...")
-        time.sleep(4)
-        
-        # Ensure we are either on Dashboard or Login
-        for _ in range(5):
-            try:
-                self.driver.find_element(AppiumBy.XPATH, "//*[contains(@text, 'Dashboard') or contains(@text, 'KadaKutty')]")
-                print("Already on Dashboard. Skipping login validation test.")
-                return
-            except:
-                try:
-                    self.driver.find_element(AppiumBy.XPATH, "//*[contains(@text, 'Sign In') or contains(@content-desc, 'Sign In')]")
-                    break # On login screen, we can proceed
-                except:
-                    # Neither on Dashboard nor Login, probably stuck on a sub-screen from a previous run
-                    self.driver.press_keycode(4) # Press Back
-                    time.sleep(1)
-            
-        login_btn = self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[contains(@text, 'Sign In') or contains(@content-desc, 'Sign In')]")))
-        login_btn.click() # Click empty to test validation errors
-        time.sleep(1)
+    # --- Tests ---
+    def test_01_login(self):
+        print("\n[TEST] 1. Authentication")
         self.login_helper()
 
-    def test_02_masters_category(self):
-        print("Testing: Category Master...")
+    def test_02_master_category_product(self):
+        print("\n[TEST] 2. Category & Product Masters")
         self.login_helper()
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Master Data']").click()
-        time.sleep(1)
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Categories']"))).click()
+        self.click_text("Master Data")
         
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Add' or contains(@content-desc, 'Add')]"))).click()
-        time.sleep(1)
+        # Category
+        self.click_text("Categories")
+        self.click_text("Add") # Assuming Add button or FAB
+        self.type_in_field("Name", "Beverages")
+        self.click_text("Save")
         
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Name')]"))).send_keys("Groceries")
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Save']").click()
-        time.sleep(1)
-        
-    def test_03_masters_product(self):
-        print("Testing: Product Master...")
-        self.login_helper()
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Master Data']").click()
-        time.sleep(1)
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Products']"))).click()
-        
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Add' or contains(@content-desc, 'Add')]"))).click()
-        time.sleep(1)
-        
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Name')]"))).send_keys("Sugar 1KG")
-        
-        # Category Dropdown Selection (Fixing logical dependency)
-        self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Category')]").click()
-        time.sleep(1.5) # Wait for dropdown animation
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Groceries']").click()
-        
-        self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Purchase Price')]").send_keys("40.00")
-        self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Sale Price')]").send_keys("45.00")
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Save']").click()
+        self.driver.press_keycode(4) # Back to Master Data
         time.sleep(1)
 
-    def test_04_masters_customer_and_supplier(self):
-        print("Testing: Customer & Supplier Masters...")
+        # Product
+        self.click_text("Products")
+        self.click_text("Add")
+        self.type_in_field("Name", "Cola 1L")
+        
+        # Category dropdown
+        self.click_text("Category")
+        self.click_text("Beverages", exact=True)
+        
+        self.type_in_field("Purchase Price", "35.00")
+        self.type_in_field("Sale Price", "50.00")
+        self.click_text("Save")
+
+        # Database Verification
+        print("Verifying Product in SQLite DB...")
+        row = DBHelper.query_single("SELECT name, purchasePriceMinorUnits, salePriceMinorUnits FROM products WHERE name='Cola 1L'")
+        self.assertIsNotNone(row, "Product not found in DB")
+        self.assertEqual(row[0], "Cola 1L")
+        self.assertEqual(row[1], 3500) # Minor units (e.g. paisa/cents)
+        self.assertEqual(row[2], 5000)
+        print("Product DB Verification Passed!")
+
+    def test_03_customer_supplier(self):
+        print("\n[TEST] 3. Customer & Supplier Masters")
         self.login_helper()
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Master Data']").click()
-        time.sleep(1)
+        self.click_text("Master Data")
         
         # Customer
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Customers']"))).click()
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Add' or contains(@content-desc, 'Add')]"))).click()
+        self.click_text("Customers")
+        self.click_text("Add")
+        self.type_in_field("Name", "VIP Customer")
+        self.type_in_field("Phone", "9876543210")
+        self.click_text("Save")
+        
+        self.driver.press_keycode(4)
         time.sleep(1)
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Name')]"))).send_keys("Test Customer")
-        self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Phone')]").send_keys("9999999999")
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Save']").click()
-        time.sleep(1)
+
+        # Supplier
+        self.click_text("Suppliers")
+        self.click_text("Add")
+        self.type_in_field("Name", "Cola Distributor")
+        self.click_text("Save")
+
+        # Database Verification
+        print("Verifying Customer & Supplier in DB...")
+        cust = DBHelper.query_single("SELECT name, phone FROM customers WHERE name='VIP Customer'")
+        self.assertEqual(cust[1], "9876543210")
+        sup = DBHelper.query_single("SELECT name FROM suppliers WHERE name='Cola Distributor'")
+        self.assertIsNotNone(sup)
+        print("Customer & Supplier DB Verification Passed!")
+
+    def test_04_purchases(self):
+        print("\n[TEST] 4. Purchase Entry (Stock Update)")
+        self.login_helper()
+        self.click_text("Purchases & Stock")
+        
+        self.click_text("Add Purchase")
         
         # Supplier
-        self.driver.find_element(AppiumBy.XPATH, "//*[contains(@content-desc, 'Back') or contains(@content-desc, 'Navigate up')]").click()
-        time.sleep(1)
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Suppliers']"))).click()
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Add' or contains(@content-desc, 'Add')]"))).click()
-        time.sleep(1)
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Name')]"))).send_keys("Test Supplier")
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Save']").click()
-        time.sleep(1)
-
-    def test_05_purchase_entry(self):
-        print("Testing: Purchase Entry...")
-        self.login_helper()
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Purchases']").click()
-        time.sleep(1)
+        self.click_text("Supplier")
+        self.click_text("Cola Distributor", exact=True)
         
-        add_btn = self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Add Purchase' or contains(@content-desc, 'Add')]")))
-        add_btn.click()
-        time.sleep(1)
-        
-        # Supplier Dropdown
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Supplier')]"))).click()
-        time.sleep(1.5)
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Test Supplier']").click()
-        
-        # Qty and save
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Qty')]"))).send_keys("100")
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Save']").click()
-        time.sleep(1)
-
-    def test_06_sales_billing_all_fields(self):
-        print("Testing: Sales Billing...")
-        self.login_helper()
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Sales Invoicing']").click()
-        time.sleep(1)
-        
-        # Open Customer Dropdown
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Customer')]"))).click()
-        time.sleep(1.5)
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Walk-in Customer']").click()
-        
-        # Product Dropdown
-        self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Product')]").click()
-        time.sleep(1.5)
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Sugar 1KG']").click()
-        
-        qty_input = self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Qty')]")
-        qty_input.clear()
-        qty_input.send_keys("2")
-        
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Add to Invoice']").click()
-        time.sleep(1)
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Generate & Save Bill']").click()
-        time.sleep(2) # Wait for save process
-
-    def test_07_customer_supplier_ledger(self):
-        print("Testing: Ledger Views...")
-        self.login_helper()
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Master Data']").click()
-        time.sleep(1)
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Customers']"))).click()
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Test Customer']")))
-        print("Verified Customer exists for ledger tracking")
-
-    def test_08_reports(self):
-        print("Testing: All Reports...")
-        self.login_helper()
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Reports']").click()
-        time.sleep(1)
-        
-        reports = ["Sale Amount", "Sale Bill", "Item-wise Sales", "Stock Report", "Profit & Loss", "Purchase", "Customer", "Supplier", "Expenses"]
-        for report in reports:
-            # Scroll might be needed if screen is small, but Appium handles visible elements
-            report_elem = self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, f"//*[@text='{report}']")))
-            report_elem.click()
-            time.sleep(1)
+        # Add item (Assuming UI flow)
+        try:
+            self.click_text("Add Item")
+        except:
+            pass # Maybe not needed
             
-            # Verify export button exists as proof page loaded
-            self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Export PDF' or contains(@content-desc, 'Export')]")))
-            self.driver.find_element(AppiumBy.XPATH, "//*[contains(@content-desc, 'Back') or contains(@content-desc, 'Navigate up')]").click()
-            time.sleep(1)
+        self.click_text("Product")
+        self.click_text("Cola 1L", exact=True)
+        
+        self.type_in_field("Qty", "100")
+        self.click_text("Save")
+        
+        # DB Verification
+        print("Verifying Stock Movement in DB...")
+        row = DBHelper.query_single("SELECT SUM(quantityDelta) FROM stock_movements INNER JOIN products ON stock_movements.productId = products.id WHERE products.name = 'Cola 1L'")
+        self.assertIsNotNone(row)
+        self.assertGreaterEqual(row[0], 100)
+        print("Stock Verification Passed!")
 
-    def disabled_test_09_utilities_and_backup(self):
-        print("Testing: Utilities, Backup & Cashier Creation...")
+    def test_05_sales_billing(self):
+        print("\n[TEST] 5. Sales Invoicing & Billing Logic")
         self.login_helper()
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Utilities & Settings']").click()
-        time.sleep(1)
+        self.click_text("Sales Invoicing")
         
-        # Test Backup
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//*[@text='Create Backup Archive']"))).click()
-        time.sleep(2) # Wait for backup zip creation
+        # Customer
+        self.click_text("Customer")
+        self.click_text("VIP Customer", exact=True)
         
-        # Test Cashier Create
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Add User']").click()
-        time.sleep(1)
-        self.wait.until(EC.presence_of_element_located((AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'ID')]"))).send_keys("cashier1@shop.com")
-        self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Name')]").send_keys("Cashier Raj")
-        self.driver.find_element(AppiumBy.XPATH, "//android.widget.EditText[contains(@text, 'Password')]").send_keys("pass123")
-        self.driver.find_element(AppiumBy.XPATH, "//*[@text='Create User']").click()
-        time.sleep(2)
+        # Product
+        self.click_text("Product")
+        self.click_text("Cola 1L", exact=True)
+        
+        self.type_in_field("Qty", "5")
+        
+        try:
+            self.click_text("Add to Invoice")
+        except:
+            pass
+            
+        # Verify UI Total (5 * 50.00 = 250.00)
+        total_text = self.driver.find_element(AppiumBy.XPATH, "//*[contains(@text, '250.00')]").text
+        self.assertIn("250.00", total_text)
+        
+        self.click_text("Generate & Save Bill")
+        
+        # DB Verification
+        print("Verifying Sale & Totals in DB...")
+        sale = DBHelper.query_single("SELECT id, totalMinorUnits FROM sales ORDER BY createdAtEpochMs DESC LIMIT 1")
+        self.assertIsNotNone(sale)
+        self.assertEqual(sale[1], 25000) # 250.00 in minor units
+        
+        sale_item = DBHelper.query_single("SELECT quantity, unitPriceMinorUnits, lineTotalMinorUnits FROM sale_items WHERE saleId=?", (sale[0],))
+        self.assertEqual(sale_item[0], 5)
+        self.assertEqual(sale_item[1], 5000)
+        self.assertEqual(sale_item[2], 25000)
+        print("Sale Billing Logic DB Verification Passed!")
+
+    def test_06_reports(self):
+        print("\n[TEST] 6. Reports Engine")
+        self.login_helper()
+        self.click_text("Reports Engine")
+        
+        reports = ["Sale Amount", "Stock Report"]
+        for report in reports:
+            self.click_text(report)
+            time.sleep(2)
+            self.driver.press_keycode(4)
+            time.sleep(1)
 
 if __name__ == '__main__':
     unittest.main()

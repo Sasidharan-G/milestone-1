@@ -17,6 +17,7 @@ data class SyncQueueEntity(
     val attemptCount: Int,
     val createdAtEpochMs: Long,
     val updatedAtEpochMs: Long,
+    val lastSyncedAtEpochMs: Long = 0,
     val lastError: String? = null,
 )
 

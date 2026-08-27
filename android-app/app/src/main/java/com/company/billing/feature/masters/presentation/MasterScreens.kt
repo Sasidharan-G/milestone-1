@@ -1,5 +1,6 @@
 package com.company.billing.feature.masters.presentation
 
+import com.company.billing.core.ui.CameraBarcodeScannerDialog
 import com.company.billing.core.ui.LocalLayoutMode
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -291,9 +292,7 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                                 Spacer(Modifier.width(8.dp))
                                 Text("Add Category")
                             }
-                            if (message.isNotBlank()) {
-                                Text(message, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            }
+
                         }
                     }
                 }
@@ -449,6 +448,7 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
 @Composable
 fun ProductTabScreen(viewModel: ProductViewModel) {
     val products by viewModel.products.collectAsState()
+    val lowStockProducts by viewModel.lowStockProducts.collectAsState()
     val categories by viewModel.categories.collectAsState()
     var name by remember { mutableStateOf("") }
     var selectedCategoryId by remember { mutableStateOf("") }
@@ -456,13 +456,34 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var salePrice by remember { mutableStateOf("") }
     var unitType by remember { mutableStateOf("PIECE") }
     var unitTypeExpanded by remember { mutableStateOf(false) }
+    var barcode by remember { mutableStateOf("") }
+    var minStockLevel by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(false) }
+    var showBarcodeScanner by remember { mutableStateOf(false) }
+
+    if (showBarcodeScanner) {
+        CameraBarcodeScannerDialog(
+            title = "Scan Product Barcode",
+            continuousScan = false,
+            onBarcodeScanned = {
+                barcode = it
+                showBarcodeScanner = false
+            },
+            onDismiss = { showBarcodeScanner = false }
+        )
+    }
 
     var editingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var deletingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    LaunchedEffect(categories) {
+        if (selectedCategoryId.isBlank() && categories.isNotEmpty()) {
+            selectedCategoryId = categories.first().id
+        }
+    }
 
     if (editingProduct != null) {
         ProductEditDialog(
@@ -503,6 +524,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                 modifier = Modifier.fillMaxSize(),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                item { LowStockAlertsBanner(lowStockProducts) }
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -569,6 +591,28 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                             )
 
+                            OutlinedTextField(
+                                value = barcode,
+                                onValueChange = { barcode = it },
+                                label = { Text("Barcode / EAN (Optional)") },
+                                trailingIcon = {
+                                    IconButton(onClick = { showBarcodeScanner = true }) {
+                                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            OutlinedTextField(
+                                value = minStockLevel,
+                                onValueChange = { minStockLevel = it },
+                                label = { Text("Min Stock Level (Alerts)") },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                            )
+
                             ExposedDropdownMenuBox(
                                 expanded = unitTypeExpanded,
                                 onExpandedChange = { unitTypeExpanded = !unitTypeExpanded }
@@ -613,18 +657,24 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                             Button(
                                 onClick = {
-                                    if (name.isNotBlank() && selectedCategoryId.isNotBlank()) {
+                                    if (name.isBlank()) {
+                                        android.widget.Toast.makeText(context, "Please enter Product Name", android.widget.Toast.LENGTH_SHORT).show()
+                                    } else {
                                         val purVal = ((purchasePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                         val saleVal = ((salePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
-                                        viewModel.addProduct(name, selectedCategoryId, purVal, saleVal, unitType, onSuccess = {
+                                        val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
+                                        viewModel.addProduct(name, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
                                             name = ""
-                                            selectedCategoryId = ""
                                             purchasePrice = ""
                                             salePrice = ""
                                             unitType = "PIECE"
+                                            barcode = ""
+                                            minStockLevel = ""
                                             message = "Product added successfully"
+                                            android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                         }, onError = {
                                             message = "Error: ${it.message}"
+                                            android.widget.Toast.makeText(context, "Error: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
                                         })
                                     }
                                 },
@@ -702,12 +752,14 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
             }
         } else {
             Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Card(
-                    modifier = Modifier.weight(1.2f).fillMaxHeight(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                ) {
+                Column(modifier = Modifier.weight(1.2f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LowStockAlertsBanner(lowStockProducts)
+                    Card(
+                        modifier = Modifier.fillMaxWidth().fillMaxHeight(),
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    ) {
                     Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Create Product", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
@@ -758,14 +810,36 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                         )
 
-                        OutlinedTextField(
-                            value = salePrice,
-                            onValueChange = { salePrice = it },
-                            label = { Text("Sale Price (₹)") },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                        )
+                            OutlinedTextField(
+                                value = salePrice,
+                                onValueChange = { salePrice = it },
+                                label = { Text("Sale Price (₹)") },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                            )
+
+                            OutlinedTextField(
+                                value = barcode,
+                                onValueChange = { barcode = it },
+                                label = { Text("Barcode / EAN (Optional)") },
+                                trailingIcon = {
+                                    IconButton(onClick = { showBarcodeScanner = true }) {
+                                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = MaterialTheme.colorScheme.primary)
+                                    }
+                                },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            OutlinedTextField(
+                                value = minStockLevel,
+                                onValueChange = { minStockLevel = it },
+                                label = { Text("Min Stock Level (Alerts)") },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                            )
 
                         ExposedDropdownMenuBox(
                             expanded = unitTypeExpanded,
@@ -811,18 +885,24 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                         Button(
                             onClick = {
-                                if (name.isNotBlank() && selectedCategoryId.isNotBlank()) {
+                                if (name.isBlank()) {
+                                    android.widget.Toast.makeText(context, "Please enter Product Name", android.widget.Toast.LENGTH_SHORT).show()
+                                } else {
                                     val purVal = ((purchasePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                     val saleVal = ((salePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
-                                    viewModel.addProduct(name, selectedCategoryId, purVal, saleVal, unitType, onSuccess = {
+                                    val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
+                                    viewModel.addProduct(name, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
                                         name = ""
-                                        selectedCategoryId = ""
                                         purchasePrice = ""
                                         salePrice = ""
                                         unitType = "PIECE"
+                                        barcode = ""
+                                        minStockLevel = ""
                                         message = "Product added successfully"
+                                        android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                     }, onError = {
                                         message = "Error: ${it.message}"
+                                        android.widget.Toast.makeText(context, "Error: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
                                     })
                                 }
                             },
@@ -838,6 +918,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         }
                     }
                 }
+                } // End of Column for LowStockAlertsBanner + Card
 
                 Column(modifier = Modifier.weight(1.8f).fillMaxHeight()) {
                     OutlinedTextField(
@@ -909,6 +990,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
     var name by remember { mutableStateOf("") }
     var phone by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
+    var initialDebtText by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var selectedCustomerForCredit by remember { mutableStateOf<CustomerEntity?>(null) }
@@ -990,21 +1072,32 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             OutlinedTextField(
                                 value = address,
                                 onValueChange = { address = it },
-                                label = { Text("Address") },
+                                label = { Text("Address (Optional)") },
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            OutlinedTextField(
+                                value = initialDebtText,
+                                onValueChange = { initialDebtText = it },
+                                label = { Text("Opening Debt / Balance (₹)") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Button(
                                 onClick = {
                                     if (name.isNotBlank()) {
+                                        val initialDebtVal = ((initialDebtText.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                         viewModel.addCustomer(
                                             name = name,
                                             phone = phone.trim().takeIf { it.isNotBlank() },
                                             address = address.trim().takeIf { it.isNotBlank() },
+                                            initialDebtMinorUnits = initialDebtVal,
                                             onSuccess = {
                                                 name = ""
                                                 phone = ""
                                                 address = ""
+                                                initialDebtText = ""
                                                 message = "Customer added successfully"
                                             },
                                             onError = {
@@ -1099,7 +1192,15 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                         )
                                     }
                                 }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    FilledTonalButton(
+                                        onClick = { selectedCustomerForCredit = customer },
+                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                        shape = RoundedCornerShape(8.dp),
+                                        modifier = Modifier.height(32.dp)
+                                    ) {
+                                        Text("Ledger", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                    }
                                     IconButton(onClick = { editingCustomer = customer }) {
                                         Icon(Icons.Default.Edit, contentDescription = "Edit Customer", tint = MaterialTheme.colorScheme.primary)
                                     }
@@ -1140,21 +1241,32 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         OutlinedTextField(
                             value = address,
                             onValueChange = { address = it },
-                            label = { Text("Address") },
+                            label = { Text("Address (Optional)") },
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        OutlinedTextField(
+                            value = initialDebtText,
+                            onValueChange = { initialDebtText = it },
+                            label = { Text("Opening Debt / Balance (₹)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                         Button(
                             onClick = {
                                 if (name.isNotBlank()) {
+                                    val initialDebtVal = ((initialDebtText.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                     viewModel.addCustomer(
                                         name = name,
                                         phone = phone.trim().takeIf { it.isNotBlank() },
                                         address = address.trim().takeIf { it.isNotBlank() },
+                                        initialDebtMinorUnits = initialDebtVal,
                                         onSuccess = {
                                             name = ""
                                             phone = ""
                                             address = ""
+                                            initialDebtText = ""
                                             message = "Customer added successfully"
                                         },
                                         onError = {
@@ -1248,7 +1360,15 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                                 )
                                             }
                                         }
-                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                            FilledTonalButton(
+                                                onClick = { selectedCustomerForCredit = customer },
+                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+                                                shape = RoundedCornerShape(8.dp),
+                                                modifier = Modifier.height(32.dp)
+                                            ) {
+                                                Text("Ledger", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                            }
                                             IconButton(onClick = { editingCustomer = customer }) {
                                                 Icon(Icons.Default.Edit, contentDescription = "Edit Customer", tint = MaterialTheme.colorScheme.primary)
                                             }
@@ -2805,11 +2925,26 @@ fun ProductEditDialog(
     var purchasePrice by remember { mutableStateOf(Money(product.purchasePriceMinorUnits).toString()) }
     var salePrice by remember { mutableStateOf(Money(product.salePriceMinorUnits).toString()) }
     var unitType by remember { mutableStateOf(product.unitType) }
+    var barcode by remember { mutableStateOf(product.barcode ?: "") }
+    var minStockLevel by remember { mutableStateOf(product.minStockLevel.toString()) }
     
     var catExpanded by remember { mutableStateOf(false) }
     var unitExpanded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    var showBarcodeScanner by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
+
+    if (showBarcodeScanner) {
+        CameraBarcodeScannerDialog(
+            title = "Scan Product Barcode",
+            continuousScan = false,
+            onBarcodeScanned = {
+                barcode = it
+                showBarcodeScanner = false
+            },
+            onDismiss = { showBarcodeScanner = false }
+        )
+    }
     
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -2874,6 +3009,28 @@ fun ProductEditDialog(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
                 )
+
+                OutlinedTextField(
+                    value = barcode,
+                    onValueChange = { barcode = it },
+                    label = { Text("Barcode / EAN (Optional)") },
+                    trailingIcon = {
+                        IconButton(onClick = { showBarcodeScanner = true }) {
+                            Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = MaterialTheme.colorScheme.primary)
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                OutlinedTextField(
+                    value = minStockLevel,
+                    onValueChange = { minStockLevel = it },
+                    label = { Text("Min Stock Level (Alerts)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
                 
                 ExposedDropdownMenuBox(
                     expanded = unitExpanded,
@@ -2914,6 +3071,7 @@ fun ProductEditDialog(
                 onClick = {
                     val pPrice = purchasePrice.toDoubleOrNull()?.let { (it * 100).toLong() }
                     val sPrice = salePrice.toDoubleOrNull()?.let { (it * 100).toLong() }
+                    val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
                     if (name.isBlank() || selectedCategoryId.isBlank() || pPrice == null || sPrice == null) {
                         error = "Please fill in all fields correctly"
                     } else {
@@ -2924,6 +3082,8 @@ fun ProductEditDialog(
                             newPurchasePriceMinorUnits = pPrice,
                             newSalePriceMinorUnits = sPrice,
                             newUnitType = unitType,
+                            newBarcode = barcode.ifBlank { null },
+                            newMinStockLevel = minStockVal,
                             onSuccess = {
                                 android.widget.Toast.makeText(context, "Product updated successfully", android.widget.Toast.LENGTH_SHORT).show()
                                 onDismiss()
@@ -3171,4 +3331,33 @@ fun ExpenseEditDialog(
             }
         }
     )
+}
+
+@Composable
+fun LowStockAlertsBanner(lowStockProducts: List<com.company.billing.core.database.LowStockRow>) {
+    if (lowStockProducts.isEmpty()) return
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Text(
+                text = "⚠️ Low Stock Alerts",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            lowStockProducts.forEach { item ->
+                Text(
+                    text = "• ${item.productName}: ${item.currentStock} remaining (Min: ${item.minStockLevel})",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+        }
+    }
 }

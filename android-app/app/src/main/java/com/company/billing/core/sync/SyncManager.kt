@@ -13,6 +13,8 @@ class SyncManager(
     private val sessionStore: SessionStore
 ) {
 
+    private val OPERATION_PRECEDENCE = mapOf("DELETE" to 3, "INSERT" to 2, "UPDATE" to 1)
+
     suspend fun enqueueCategory(category: com.company.billing.feature.masters.data.CategoryEntity, operation: String) {
         val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
         val companyId = session.companyId
@@ -37,6 +39,8 @@ class SyncManager(
             "purchasePriceMinorUnits" to product.purchasePriceMinorUnits,
             "salePriceMinorUnits" to product.salePriceMinorUnits,
             "unitType" to product.unitType,
+            "barcode" to product.barcode,
+            "minStockLevel" to product.minStockLevel,
             "createdAtEpochMs" to product.createdAtEpochMs,
             "updatedAtEpochMs" to product.updatedAtEpochMs
         ))
@@ -88,7 +92,7 @@ class SyncManager(
         enqueueItem(companyId, "Expense", expense.id, operation, payload)
     }
 
-    suspend fun enqueueSale(sale: com.company.billing.feature.billing.data.SaleEntity, items: List<com.company.billing.feature.billing.data.SaleItemEntity>) {
+    suspend fun enqueueSale(sale: com.company.billing.feature.billing.data.SaleEntity, items: List<com.company.billing.feature.billing.data.SaleItemEntity>, operation: String = "INSERT") {
         val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
         val companyId = session.companyId
         val itemsList = items.map { item ->
@@ -109,7 +113,7 @@ class SyncManager(
             "customerId" to sale.customerId,
             "items" to itemsList
         ))
-        enqueueItem(companyId, "Sale", sale.id, "INSERT", payload)
+        enqueueItem(companyId, "Sale", sale.id, operation, payload)
     }
 
     suspend fun enqueuePurchase(purchase: com.company.billing.feature.purchase.data.PurchaseEntity, items: List<com.company.billing.feature.purchase.data.PurchaseItemEntity>) {
@@ -171,6 +175,20 @@ class SyncManager(
         operation: String,
         payloadJson: String
     ) {
+        val existing = database.syncQueueDao().findPending(companyId, entityType, entityId)
+        val now = System.currentTimeMillis()
+
+        if (existing != null) {
+            val incomingPrec = OPERATION_PRECEDENCE[operation] ?: 1
+            val existingPrec = OPERATION_PRECEDENCE[existing.operation] ?: 1
+
+            if (incomingPrec >= existingPrec) {
+                database.syncQueueDao().updatePending(existing.id, operation, payloadJson, now)
+            }
+            syncScheduler.request()
+            return
+        }
+
         val syncItem = SyncQueueEntity(
             id = newRecordId(),
             companyId = companyId,
@@ -180,8 +198,8 @@ class SyncManager(
             payload = payloadJson,
             status = SyncStatus.PENDING,
             attemptCount = 0,
-            createdAtEpochMs = System.currentTimeMillis(),
-            updatedAtEpochMs = System.currentTimeMillis()
+            createdAtEpochMs = now,
+            updatedAtEpochMs = now
         )
         database.syncQueueDao().enqueue(syncItem)
         syncScheduler.request()

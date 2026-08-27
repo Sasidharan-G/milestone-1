@@ -22,15 +22,23 @@ class CostingStrategyTest {
     fun `calculates product costing based on average purchase price`() = runBlocking {
         val fakeDao = object : PurchaseDao {
             override suspend fun insertPurchase(purchase: PurchaseEntity) {}
+            override suspend fun insertPurchases(items: List<PurchaseEntity>) {}
+            override fun insertPurchasesSync(items: List<PurchaseEntity>) {}
             override suspend fun insertItems(items: List<PurchaseItemEntity>) {}
+            override fun insertItemsSync(items: List<PurchaseItemEntity>) {}
             override suspend fun insertStockMovements(movements: List<StockMovementEntity>) {}
             override suspend fun savePurchase(purchase: PurchaseEntity, items: List<PurchaseItemEntity>, movements: List<StockMovementEntity>) {}
+            override suspend fun deletePurchasesByCompany(companyId: String) {}
+            override fun deletePurchasesByCompanySync(companyId: String) {}
+            override suspend fun deletePurchaseItemsByCompany(companyId: String) {}
+            override fun deletePurchaseItemsByCompanySync(companyId: String) {}
             override fun getStockBalances(companyId: String): Flow<List<ProductStock>> = emptyFlow()
             override fun getPurchases(companyId: String): Flow<List<PurchaseEntity>> = emptyFlow()
             override fun getPurchaseItems(companyId: String, purchaseId: String): Flow<List<PurchaseItemEntity>> = emptyFlow()
             override suspend fun getAveragePurchasePrice(companyId: String, productId: String): Double? {
                 return if (productId == "p1") 150.0 else null
             }
+            override fun getPurchasesForSupplier(companyId: String, supplierId: String): Flow<List<PurchaseEntity>> = emptyFlow()
         }
         
         val mockSessionStore = mock(com.company.billing.core.auth.SessionStore::class.java)

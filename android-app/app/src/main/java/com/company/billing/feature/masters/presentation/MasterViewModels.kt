@@ -21,11 +21,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 import kotlinx.coroutines.flow.first
 import com.company.billing.core.auth.SessionStore
 import kotlinx.coroutines.flow.map
+
 
 data class LedgerEntry(
     val id: String,
@@ -104,6 +106,8 @@ class CategoryViewModel @Inject constructor(
             }
         }
     }
+
+
 }
 
 @HiltViewModel
@@ -113,7 +117,15 @@ class ProductViewModel @Inject constructor(
     private val sessionStore: SessionStore
 ) : ViewModel() {
     private val dao = database.masterDao()
+    private val reportDao = database.reportDao()
     private val searchQuery = MutableStateFlow("")
+
+    val lowStockProducts: StateFlow<List<com.company.billing.core.database.LowStockRow>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            if (companyId.isNotEmpty()) reportDao.getLowStockProducts(companyId)
+            else kotlinx.coroutines.flow.flowOf(emptyList())
+        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     val products: StateFlow<List<ProductEntity>> = kotlinx.coroutines.flow.combine(
         sessionStore.activeSession,
@@ -139,20 +151,45 @@ class ProductViewModel @Inject constructor(
         purchasePriceMinorUnits: Long,
         salePriceMinorUnits: Long,
         unitType: String,
+        barcode: String?,
+        minStockLevel: Double,
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit
     ) {
         viewModelScope.launch {
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                val finalCategoryId = if (categoryId.isNotBlank()) {
+                    categoryId
+                } else {
+                    val existing = dao.categories(session.companyId, "").first()
+                    if (existing.isNotEmpty()) {
+                        existing.first().id
+                    } else {
+                        val newCat = CategoryEntity(
+                            id = newRecordId(),
+                            companyId = session.companyId,
+                            name = "General",
+                            createdAtEpochMs = System.currentTimeMillis(),
+                            updatedAtEpochMs = System.currentTimeMillis(),
+                            syncStatus = SyncStatus.LOCAL_ONLY
+                        )
+                        dao.insertCategory(newCat)
+                        syncManager.enqueueCategory(newCat, "INSERT")
+                        newCat.id
+                    }
+                }
+
                 val product = ProductEntity(
                     id = newRecordId(),
                     companyId = session.companyId,
                     name = name,
-                    categoryId = categoryId,
+                    categoryId = finalCategoryId,
                     purchasePriceMinorUnits = purchasePriceMinorUnits,
                     salePriceMinorUnits = salePriceMinorUnits,
                     unitType = unitType,
+                    barcode = barcode,
+                    minStockLevel = minStockLevel,
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
                     syncStatus = SyncStatus.LOCAL_ONLY
@@ -173,6 +210,8 @@ class ProductViewModel @Inject constructor(
         newPurchasePriceMinorUnits: Long,
         newSalePriceMinorUnits: Long,
         newUnitType: String,
+        newBarcode: String?,
+        newMinStockLevel: Double,
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit
     ) {
@@ -184,6 +223,8 @@ class ProductViewModel @Inject constructor(
                     purchasePriceMinorUnits = newPurchasePriceMinorUnits,
                     salePriceMinorUnits = newSalePriceMinorUnits,
                     unitType = newUnitType,
+                    barcode = newBarcode,
+                    minStockLevel = newMinStockLevel,
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateProduct(updated)
@@ -229,12 +270,20 @@ class CustomerViewModel @Inject constructor(
 
     fun updateSearch(query: String) { searchQuery.value = query }
 
-    fun addCustomer(name: String, phone: String?, address: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+    fun addCustomer(
+        name: String, 
+        phone: String?, 
+        address: String?, 
+        initialDebtMinorUnits: Long = 0L,
+        onSuccess: () -> Unit, 
+        onError: (Throwable) -> Unit
+    ) {
         viewModelScope.launch {
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                val customerId = newRecordId()
                 val customer = CustomerEntity(
-                    id = newRecordId(),
+                    id = customerId,
                     companyId = session.companyId,
                     name = name,
                     phone = phone,
@@ -245,6 +294,21 @@ class CustomerViewModel @Inject constructor(
                 )
                 dao.insertCustomer(customer)
                 syncManager.enqueueCustomer(customer, "INSERT")
+
+                if (initialDebtMinorUnits > 0L) {
+                    val credit = CustomerCreditEntity(
+                        id = newRecordId(),
+                        companyId = session.companyId,
+                        customerId = customerId,
+                        amountMinorUnits = initialDebtMinorUnits,
+                        reason = "Opening Balance",
+                        dateEpochMs = System.currentTimeMillis(),
+                        syncStatus = SyncStatus.LOCAL_ONLY
+                    )
+                    dao.insertCustomerCredit(credit)
+                    syncManager.enqueueCustomerCredit(credit, "INSERT")
+                }
+
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)

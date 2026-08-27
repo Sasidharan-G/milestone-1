@@ -5,10 +5,13 @@ plugins {
     id("com.google.dagger.hilt.android")
     id("com.google.devtools.ksp")
     id("org.jetbrains.kotlin.plugin.serialization")
+    id("com.google.gms.google-services")
 }
 
 android { namespace = "com.company.billing"; compileSdk = 35
-    defaultConfig { applicationId = "com.company.billing"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner" }
+    defaultConfig { applicationId = "com.company.billing"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField("String", "SENTRY_DSN", "\"\"")
+    }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
     buildFeatures { compose = true; buildConfig = true }
     packaging {
@@ -33,6 +36,7 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
     implementation("androidx.activity:activity-compose:1.10.0")
     implementation("androidx.compose.material3:material3")
+    implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.compose.ui:ui"); implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.navigation:navigation-compose:2.8.5")
@@ -44,29 +48,32 @@ dependencies {
     implementation("androidx.work:work-runtime-ktx:2.10.0")
     implementation("androidx.datastore:datastore-preferences:1.1.2")
     implementation("com.google.android.gms:play-services-auth:21.3.0")
-    implementation("com.google.apis:google-api-services-drive:v3-rev20230822-2.0.0")
-    implementation("com.google.api-client:google-api-client-android:2.2.0") {
-        exclude(group = "org.apache.httpcomponents")
-    }
+    debugImplementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
+    implementation("io.sentry:sentry-android:7.10.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.mockito:mockito-core:5.11.0")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
     implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
 
-    // Supabase
-    implementation(platform("io.github.jan-tennert.supabase:bom:3.0.1"))
-    implementation("io.github.jan-tennert.supabase:postgrest-kt")
-    implementation("io.github.jan-tennert.supabase:auth-kt")
-    implementation("io.github.jan-tennert.supabase:storage-kt")
-    implementation("io.github.jan-tennert.supabase:compose-auth")
-    implementation("io.github.jan-tennert.supabase:compose-auth-ui")
-    implementation("androidx.credentials:credentials:1.3.0")
-    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
-    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
-    implementation("io.ktor:ktor-client-android:3.0.0")
+    // Firebase
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-storage")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
 
     // Security Dependencies
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
     implementation("com.scottyab:rootbeer-lib:0.1.2")
     implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+
+    // CameraX & Google ML Kit Barcode Scanner
+    val cameraxVersion = "1.3.4"
+    implementation("androidx.camera:camera-core:$cameraxVersion")
+    implementation("androidx.camera:camera-camera2:$cameraxVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
+    implementation("androidx.camera:camera-view:$cameraxVersion")
+    implementation("com.google.mlkit:barcode-scanning:17.3.0")
+    implementation("com.google.guava:guava:33.3.1-android")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 }

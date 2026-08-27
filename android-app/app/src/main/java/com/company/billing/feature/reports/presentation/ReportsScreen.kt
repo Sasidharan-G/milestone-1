@@ -1,7 +1,7 @@
 package com.company.billing.feature.reports.presentation
 
 import com.company.billing.core.ui.LocalLayoutMode
-
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
@@ -11,27 +11,25 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.ui.platform.LocalContext
 import com.company.billing.feature.reports.domain.ReportType
 import com.company.billing.core.common.Money
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.material.icons.automirrored.filled.List
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -47,8 +45,9 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                 context.contentResolver.openOutputStream(uri)?.use { output ->
                     output.write(documentBytes)
                 }
+                android.widget.Toast.makeText(context, "PDF Report exported successfully!", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                // Handle error
+                android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -61,8 +60,9 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                 context.contentResolver.openOutputStream(uri)?.use { output ->
                     output.write(documentBytes)
                 }
+                android.widget.Toast.makeText(context, "Excel CSV exported successfully!", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
-                // Handle error
+                android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
             }
         }
     }
@@ -73,31 +73,92 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
     val error by viewModel.error.collectAsState()
 
     var activeReportTab by remember { mutableStateOf(0) }
-    val reportTypes = ReportType.values()
+    val reportTypes = listOf(
+        ReportType.SALES,
+        ReportType.STOCK,
+        ReportType.PROFIT,
+        ReportType.PURCHASES
+    )
     val reportNames = listOf(
-        "Sales Daily", "Bills Detail", "Item-wise Sales", "Inventory Stock",
-        "Profit/Loss", "Purchases", "Customer Spending", "Supplier Summary", "Expenses"
+        "📊 Sales & Bills", 
+        "📦 Stock Value", 
+        "💰 Profit & Loss", 
+        "🚚 Purchases"
     )
 
     var showDatePicker by remember { mutableStateOf(false) }
     val dateRangeState = rememberDateRangePickerState()
+    var isGridView by remember { mutableStateOf(false) }
+    var deletingBillNum by remember { mutableStateOf<String?>(null) }
+
+    if (deletingBillNum != null) {
+        val bNum = deletingBillNum!!
+        AlertDialog(
+            onDismissRequest = { deletingBillNum = null },
+            title = { Text("Delete Bill #$bNum", fontWeight = FontWeight.Bold) },
+            text = { Text("Are you sure you want to delete this bill? All sold items will be automatically returned back into inventory stock.") },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        val target = deletingBillNum!!
+                        deletingBillNum = null
+                        viewModel.deleteSale(target, target, onSuccess = {
+                            android.widget.Toast.makeText(context, "Bill #$target deleted & stock restored!", android.widget.Toast.LENGTH_SHORT).show()
+                        }, onError = {
+                            android.widget.Toast.makeText(context, "Failed to delete: ${it.message}", android.widget.Toast.LENGTH_SHORT).show()
+                        })
+                    }
+                ) {
+                    Text("Delete & Restore Stock")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { deletingBillNum = null }) { Text("Cancel") }
+            }
+        )
+    }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Reports Dashboard", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                title = { Text("Business Reports", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
+                actions = {
+                    IconButton(onClick = { isGridView = !isGridView }) {
+                        Icon(
+                            imageVector = if (isGridView) Icons.AutoMirrored.Filled.List else Icons.Default.Menu,
+                            contentDescription = "Toggle View",
+                            tint = MaterialTheme.colorScheme.onPrimary
+                        )
+                    }
+                    IconButton(onClick = {
+                        try {
+                            documentBytes = viewModel.exportPdf()
+                            val filename = "${selectedType.name.lowercase()}_report.pdf"
+                            pdfLauncher.launch(filename)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "Export error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Icon(Icons.Default.Share, contentDescription = "Export PDF", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                    IconButton(onClick = {
+                        try {
+                            documentBytes = viewModel.exportExcel()
+                            val filename = "${selectedType.name.lowercase()}_report.csv"
+                            excelLauncher.launch(filename)
+                        } catch (e: Exception) {
+                            android.widget.Toast.makeText(context, "Export error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }) {
+                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Export Excel", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                }
             )
         }
     ) { paddingValues ->
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            val layoutMode = LocalLayoutMode.current
-            val isMobile = when (layoutMode) {
-                "Mobile" -> true
-                "Tablet" -> false
-                else -> maxWidth < 600.dp
-            }
-
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -107,43 +168,11 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                 val purchaseCostSum by viewModel.purchaseCostSum.collectAsState()
                 val netProfitSum by viewModel.netProfitSum.collectAsState()
 
-                // Top KPI Statistics Summary Cards
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    KpiCard(
-                        title = "Total Sales",
-                        value = if (totalSalesSum == 0L) "—" else Money(totalSalesSum).toString(),
-                        trend = if (totalSalesSum == 0L) "No sales" else "Live calculated",
-                        isPositive = totalSalesSum > 0L,
-                        showArrow = totalSalesSum > 0L,
-                        modifier = Modifier.weight(1f)
-                    )
-                    KpiCard(
-                        title = "Purchase Cost",
-                        value = if (purchaseCostSum == 0L) "—" else Money(purchaseCostSum).toString(),
-                        trend = if (purchaseCostSum == 0L) "No purchases" else "Live calculated",
-                        isPositive = purchaseCostSum > 0L,
-                        showArrow = purchaseCostSum > 0L,
-                        modifier = Modifier.weight(1f)
-                    )
-                    KpiCard(
-                        title = "Net Profit",
-                        value = if (totalSalesSum == 0L && purchaseCostSum == 0L) "—" else Money(netProfitSum).toString(),
-                        trend = if (totalSalesSum == 0L && purchaseCostSum == 0L) "No activity" else if (netProfitSum >= 0) "Profit" else "Loss",
-                        isPositive = netProfitSum >= 0,
-                        showArrow = (totalSalesSum > 0L || purchaseCostSum > 0L),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
                 ScrollableTabRow(
                     selectedTabIndex = activeReportTab,
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
-                    contentColor = MaterialTheme.colorScheme.primary
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    edgePadding = 12.dp
                 ) {
                     reportNames.forEachIndexed { index, name ->
                         Tab(
@@ -152,183 +181,391 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                 activeReportTab = index
                                 viewModel.setReportType(reportTypes[index])
                             },
-                            text = { Text(name, fontWeight = FontWeight.SemiBold, fontSize = 13.sp) }
+                            text = { Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                         )
                     }
                 }
 
-                // Filters and Exports buttons
-                if (isMobile) {
-                    Column(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
-                        ) {
-                            Button(
-                                onClick = { showDatePicker = true },
-                                shape = RoundedCornerShape(12.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
-                            ) {
-                                Icon(Icons.Default.DateRange, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text("Filter Dates")
-                            }
-                            
-                            val fromMs = viewModel.fromEpochMs.collectAsState().value
-                            val toMs = viewModel.toEpochMs.collectAsState().value
-                            val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                            if (fromMs != null && toMs != null) {
-                                Text("Range: ${fmt.format(Date(fromMs))} to ${fmt.format(Date(toMs))}", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                            } else {
-                                Text("Range: All Time", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
-                            }
-                        }
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                             OutlinedButton(
-                                 onClick = {
-                                     try {
-                                         documentBytes = viewModel.exportPdf()
-                                         val filename = "${selectedType.name.lowercase()}_report.pdf"
-                                         pdfLauncher.launch(filename)
-                                     } catch (e: Exception) {
-                                         // handle error
-                                     }
-                                 },
-                                 shape = RoundedCornerShape(12.dp),
-                                 modifier = Modifier.weight(1f)
-                             ) {
-                                 Text("Export PDF")
-                             }
-                             OutlinedButton(
-                                 onClick = {
-                                     try {
-                                         documentBytes = viewModel.exportExcel()
-                                         val filename = "${selectedType.name.lowercase()}_report.csv"
-                                         excelLauncher.launch(filename)
-                                     } catch (e: Exception) {
-                                         // handle error
-                                     }
-                                 },
-                                 shape = RoundedCornerShape(12.dp),
-                                 modifier = Modifier.weight(1f)
-                             ) {
-                                 Text("Export Excel")
-                             }
-                        }
-                    }
-                } else {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(MaterialTheme.colorScheme.surface)
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    var activePreset by remember { mutableStateOf("All Time") }
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                             Button(
-                                 onClick = { showDatePicker = true },
-                                 shape = RoundedCornerShape(12.dp),
-                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer, contentColor = MaterialTheme.colorScheme.onSecondaryContainer)
-                             ) {
-                                 Icon(Icons.Default.DateRange, contentDescription = null)
-                                 Spacer(Modifier.width(8.dp))
-                                 Text("Filter Dates")
-                             }
-                            Spacer(Modifier.width(12.dp))
-                            
-                            val fromMs = viewModel.fromEpochMs.collectAsState().value
-                            val toMs = viewModel.toEpochMs.collectAsState().value
-                            val fmt = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                            if (fromMs != null && toMs != null) {
-                                Text("Range: ${fmt.format(Date(fromMs))} to ${fmt.format(Date(toMs))}", fontSize = 14.sp, fontWeight = FontWeight.Medium)
-                            } else {
-                                Text("Range: All Time", fontSize = 14.sp, color = MaterialTheme.colorScheme.outline)
-                            }
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedButton(
-                                onClick = {
-                                    try {
-                                        documentBytes = viewModel.exportPdf()
-                                        val filename = "${selectedType.name.lowercase()}_report.pdf"
-                                        pdfLauncher.launch(filename)
-                                    } catch (e: Exception) {
-                                        // handle error
-                                    }
-                                },
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Export PDF")
-                            }
-                            OutlinedButton(
-                                onClick = {
-                                    try {
-                                        documentBytes = viewModel.exportExcel()
-                                        val filename = "${selectedType.name.lowercase()}_report.csv"
-                                        excelLauncher.launch(filename)
-                                    } catch (e: Exception) {
-                                        // handle error
-                                    }
-                                },
-                                shape = RoundedCornerShape(8.dp)
-                            ) {
-                                Text("Export Excel")
-                            }
-                        }
+                        FilterChip(
+                            selected = activePreset == "Today",
+                            onClick = {
+                                activePreset = "Today"
+                                val cal = java.util.Calendar.getInstance()
+                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                cal.set(java.util.Calendar.MINUTE, 0)
+                                cal.set(java.util.Calendar.SECOND, 0)
+                                cal.set(java.util.Calendar.MILLISECOND, 0)
+                                val start = cal.timeInMillis
+                                cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+                                cal.set(java.util.Calendar.MINUTE, 59)
+                                cal.set(java.util.Calendar.SECOND, 59)
+                                cal.set(java.util.Calendar.MILLISECOND, 999)
+                                val end = cal.timeInMillis
+                                viewModel.setDateFilter(start, end)
+                            },
+                            label = { Text("Today", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        FilterChip(
+                            selected = activePreset == "Yesterday",
+                            onClick = {
+                                activePreset = "Yesterday"
+                                val cal = java.util.Calendar.getInstance()
+                                cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                cal.set(java.util.Calendar.MINUTE, 0)
+                                cal.set(java.util.Calendar.SECOND, 0)
+                                cal.set(java.util.Calendar.MILLISECOND, 0)
+                                val start = cal.timeInMillis
+                                cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
+                                cal.set(java.util.Calendar.MINUTE, 59)
+                                cal.set(java.util.Calendar.SECOND, 59)
+                                cal.set(java.util.Calendar.MILLISECOND, 999)
+                                val end = cal.timeInMillis
+                                viewModel.setDateFilter(start, end)
+                            },
+                            label = { Text("Yesterday", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        FilterChip(
+                            selected = activePreset == "This Month",
+                            onClick = {
+                                activePreset = "This Month"
+                                val cal = java.util.Calendar.getInstance()
+                                cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
+                                cal.set(java.util.Calendar.MINUTE, 0)
+                                cal.set(java.util.Calendar.SECOND, 0)
+                                cal.set(java.util.Calendar.MILLISECOND, 0)
+                                val start = cal.timeInMillis
+                                val end = System.currentTimeMillis()
+                                viewModel.setDateFilter(start, end)
+                            },
+                            label = { Text("This Month", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        FilterChip(
+                            selected = activePreset == "All Time",
+                            onClick = {
+                                activePreset = "All Time"
+                                viewModel.setDateFilter(null, null)
+                            },
+                            label = { Text("All Time", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        FilterChip(
+                            selected = activePreset == "Custom",
+                            onClick = {
+                                activePreset = "Custom"
+                                showDatePicker = true
+                            },
+                            label = { Text("Custom Date", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp)) },
+                            shape = RoundedCornerShape(16.dp)
+                        )
                     }
-                }
 
-                // Disclaimer for Profit costing method
-                if (selectedType == ReportType.PROFIT) {
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f), RoundedCornerShape(16.dp)),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 4.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(16.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        Surface(
+                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
                         ) {
-                            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.error)
-                            Text(
-                                text = "Disclaimer: Cost calculations are tentative. Method pending client confirmation: REQUIRES_CLIENT_CONFIRMATION: PROFIT_COSTING_METHOD",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onErrorContainer
-                            )
+                            Column(modifier = Modifier.padding(6.dp)) {
+                                Text("Total Sales", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Medium)
+                                Text(if (totalSalesSum == 0L) "₹0" else Money(totalSalesSum).toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                        Surface(
+                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(6.dp)) {
+                                Text("Cost (COGS)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Medium)
+                                Text(if (purchaseCostSum == 0L) "₹0" else Money(purchaseCostSum).toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        Surface(
+                            color = if (netProfitSum >= 0) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Column(modifier = Modifier.padding(6.dp)) {
+                                Text("Net Profit", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Medium)
+                                Text(
+                                    text = if (totalSalesSum == 0L && purchaseCostSum == 0L) "₹0" else Money(netProfitSum).toString(),
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (netProfitSum >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                )
+                            }
                         }
                     }
                 }
 
                 HorizontalDivider()
 
-                // Report Content Table Grid
                 Box(
-                    modifier = Modifier.fillMaxSize().padding(16.dp)
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .weight(1f)
                 ) {
                     if (isLoading) {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                     } else if (!error.isNullOrBlank()) {
                         Text(error ?: "Error loading report", color = MaterialTheme.colorScheme.error, modifier = Modifier.align(Alignment.Center))
                     } else if (reportData == null || reportData?.rows?.isEmpty() == true) {
-                        Text("No transactions found matching criteria.", color = MaterialTheme.colorScheme.outline, modifier = Modifier.align(Alignment.Center))
+                        Column(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(48.dp))
+                            Text("No records found for this period.", color = MaterialTheme.colorScheme.outline, fontSize = 14.sp)
+                        }
                     } else {
                         val report = reportData!!
-                        Column(modifier = Modifier.fillMaxSize()) {
-                            Text(report.title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
+                        val isBillsDetail = selectedType == ReportType.SALES
 
-                            // Table header & rows horizontal scroll for responsiveness
+                        if (!isGridView) {
+                            LazyColumn(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(report.rows) { row ->
+                                    val isTotalRow = row.firstOrNull()?.startsWith("TOTAL") == true || row.firstOrNull() == "---"
+                                    
+                                    if (isTotalRow) {
+                                        if (row.firstOrNull() != "---") {
+                                            Card(
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    Column {
+                                                        Text(row.firstOrNull() ?: "TOTAL", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                        if (row.size > 2 && row[2].isNotBlank()) {
+                                                            Text(row[2], fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                                                        }
+                                                    }
+                                                    Text(
+                                                        text = row.lastOrNull() ?: "",
+                                                        fontWeight = FontWeight.ExtraBold,
+                                                        fontSize = 18.sp,
+                                                        color = MaterialTheme.colorScheme.primary
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    } else {
+                                        when (selectedType) {
+                                            ReportType.SALES -> {
+                                                val billNum = row.getOrNull(0) ?: ""
+                                                val dateTime = row.getOrNull(1) ?: ""
+                                                val customer = row.getOrNull(2) ?: "Walk-in Customer"
+                                                val amount = row.getOrNull(3) ?: "₹0"
+
+                                                Card(
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                ) {
+                                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Surface(
+                                                                color = MaterialTheme.colorScheme.primaryContainer,
+                                                                shape = RoundedCornerShape(6.dp)
+                                                            ) {
+                                                                Text("Bill #$billNum", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                            }
+                                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                Text(amount, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF2E7D32))
+                                                                IconButton(
+                                                                    onClick = { deletingBillNum = billNum },
+                                                                    modifier = Modifier.size(28.dp)
+                                                                ) {
+                                                                    Icon(Icons.Default.Delete, contentDescription = "Delete Bill", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                                                }
+                                                            }
+                                                        }
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Text("👤 $customer", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                                                            Text("🕒 $dateTime", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            ReportType.STOCK -> {
+                                                val prod = row.getOrNull(0) ?: ""
+                                                val cat = row.getOrNull(1) ?: "General"
+                                                val unit = row.getOrNull(2) ?: "PIECE"
+                                                val stock = row.getOrNull(3) ?: "0"
+                                                val cost = row.getOrNull(4) ?: "₹0"
+                                                val totalVal = row.getOrNull(5) ?: "₹0"
+                                                val isOutOfStock = stock == "0" || stock == "0.000"
+
+                                                Card(
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                ) {
+                                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(prod, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                                            Surface(
+                                                                color = if (isOutOfStock) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+                                                                shape = RoundedCornerShape(6.dp)
+                                                            ) {
+                                                                Text(
+                                                                    text = "Stock: $stock $unit",
+                                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                                    fontSize = 11.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = if (isOutOfStock) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                                                                )
+                                                            }
+                                                        }
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Text("🏷️ $cat", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                            Text("Cost Rate: $cost", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                        }
+                                                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Text("Total Stock Value:", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                                            Text(totalVal, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            ReportType.PROFIT -> {
+                                                val prod = row.getOrNull(0) ?: ""
+                                                val qty = row.getOrNull(1) ?: "0"
+                                                val rev = row.getOrNull(2) ?: "₹0"
+                                                val cost = row.getOrNull(3) ?: "₹0"
+                                                val profit = row.getOrNull(4) ?: "₹0"
+                                                val isNegative = profit.startsWith("-")
+
+                                                Card(
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                ) {
+                                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text(prod, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.weight(1f))
+                                                            Text(
+                                                                text = "Profit: $profit",
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontSize = 14.sp,
+                                                                color = if (isNegative) Color(0xFFC62828) else Color(0xFF2E7D32)
+                                                            )
+                                                        }
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Text("Qty Sold: $qty", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                            Text("Revenue: $rev | Cost: $cost", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            ReportType.PURCHASES -> {
+                                                val invId = row.getOrNull(0) ?: ""
+                                                val date = row.getOrNull(1) ?: ""
+                                                val supplier = row.getOrNull(2) ?: "General Supplier"
+                                                val mode = row.getOrNull(3) ?: "CASH"
+                                                val total = row.getOrNull(4) ?: "₹0"
+
+                                                Card(
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                ) {
+                                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Surface(
+                                                                color = MaterialTheme.colorScheme.secondaryContainer,
+                                                                shape = RoundedCornerShape(6.dp)
+                                                            ) {
+                                                                Text(invId, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                                            }
+                                                            Text(total, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.primary)
+                                                        }
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween
+                                                        ) {
+                                                            Text("🏢 $supplier", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                                            Text("Mode: $mode", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                                        }
+                                                        Text("🕒 $date", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } else {
                             val scrollState = rememberScrollState()
                             Column(modifier = Modifier.fillMaxSize().horizontalScroll(scrollState)) {
-                                // Headers
                                 Row(
                                     modifier = Modifier
                                         .background(MaterialTheme.colorScheme.primaryContainer)
@@ -338,26 +575,50 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                         Text(
                                             text = col,
                                             fontWeight = FontWeight.Bold,
-                                            modifier = Modifier.width(150.dp).padding(12.dp),
+                                            modifier = Modifier.width(130.dp).padding(10.dp),
                                             color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            fontSize = 12.sp,
                                             textAlign = TextAlign.Start
                                         )
                                     }
+                                    if (isBillsDetail) {
+                                        Text(
+                                            text = "Actions",
+                                            fontWeight = FontWeight.Bold,
+                                            modifier = Modifier.width(70.dp).padding(10.dp),
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                            fontSize = 12.sp,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
                                 }
-                                // Rows
                                 LazyColumn(modifier = Modifier.fillMaxSize()) {
                                     items(report.rows) { row ->
-                                        val isTotalRow = row.firstOrNull() == "TOTAL"
+                                        val isTotalRow = row.firstOrNull()?.startsWith("TOTAL") == true || row.firstOrNull() == "---"
                                         val rowBg = if (isTotalRow) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
                                         val fontW = if (isTotalRow) FontWeight.Bold else FontWeight.Normal
-                                        Row(modifier = Modifier.background(rowBg).border(0.5.dp, MaterialTheme.colorScheme.surfaceVariant)) {
+                                        val billNum = row.firstOrNull() ?: ""
+                                        Row(
+                                            modifier = Modifier.background(rowBg).border(0.5.dp, MaterialTheme.colorScheme.surfaceVariant),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
                                             row.forEach { cell ->
                                                 Text(
                                                     text = cell,
                                                     fontWeight = fontW,
-                                                    modifier = Modifier.width(150.dp).padding(12.dp),
+                                                    modifier = Modifier.width(130.dp).padding(10.dp),
+                                                    fontSize = 12.sp,
                                                     textAlign = TextAlign.Start
                                                 )
+                                            }
+                                            if (isBillsDetail) {
+                                                Box(modifier = Modifier.width(70.dp), contentAlignment = Alignment.Center) {
+                                                    if (!isTotalRow && billNum.isNotBlank()) {
+                                                        IconButton(onClick = { deletingBillNum = billNum }, modifier = Modifier.size(28.dp)) {
+                                                            Icon(Icons.Default.Delete, contentDescription = "Delete Bill", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                                        }
+                                                    }
+                                                }
                                             }
                                         }
                                     }
@@ -381,64 +642,6 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
             },
             dateRangePickerState = dateRangeState
         )
-    }
-}
-
-@Composable
-fun KpiCard(
-    title: String,
-    value: String,
-    trend: String,
-    isPositive: Boolean,
-    modifier: Modifier = Modifier,
-    showArrow: Boolean = true
-) {
-    Card(
-        modifier = modifier.border(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
-            shape = RoundedCornerShape(16.dp)
-        ),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Text(
-                text = title,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = value,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                if (showArrow) {
-                    Icon(
-                        imageVector = if (isPositive) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = null,
-                        modifier = Modifier.size(12.dp),
-                        tint = if (isPositive) Color(0xFF0F766E) else Color(0xFFDC2626)
-                    )
-                }
-                Text(
-                    text = trend,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = if (isPositive) Color(0xFF0F766E) else Color(0xFFDC2626)
-                )
-            }
-        }
     }
 }
 

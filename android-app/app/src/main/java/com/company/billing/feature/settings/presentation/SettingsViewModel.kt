@@ -13,6 +13,7 @@ import com.company.billing.core.printer.data.PrinterManager
 import com.company.billing.core.printer.domain.PrintDocument
 import com.company.billing.core.printer.domain.PrintLine
 import com.company.billing.core.printer.domain.PrinterResult
+import com.company.billing.core.security.BiometricAuthenticator
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -25,13 +26,7 @@ import kotlinx.coroutines.launch
 import javax.inject.Inject
 import com.company.billing.core.backup.data.BackupManager
 import com.company.billing.core.backup.domain.BackupResult
-import com.company.billing.core.backup.data.GoogleDriveBackupManager
-import com.company.billing.core.backup.data.SupabaseBackupManager
 import com.company.billing.core.sync.SyncScheduler
-import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.postgrest.postgrest
-import kotlinx.serialization.json.buildJsonObject
-import kotlinx.serialization.json.put
 
 data class BluetoothDeviceInfo(val name: String, val address: String)
 
@@ -41,14 +36,23 @@ class SettingsViewModel @Inject constructor(
     private val appPreferences: AppPreferences,
     private val printerManager: PrinterManager,
     private val backupManager: BackupManager,
-    private val googleDriveBackupManager: GoogleDriveBackupManager,
-    private val supabaseBackupManager: SupabaseBackupManager,
     private val syncScheduler: SyncScheduler,
     private val database: com.company.billing.core.database.BillingDatabase,
     private val sessionStore: com.company.billing.core.auth.SessionStore,
-    private val verifier: com.company.billing.core.auth.OfflineCredentialVerifier,
-    private val supabase: SupabaseClient
+    private val verifier: com.company.billing.core.auth.OfflineCredentialVerifier
 ) : ViewModel() {
+
+    // Biometric authentication state
+    private val _biometricAuthPending = MutableStateFlow<(() -> Unit)?>(null)
+    val biometricAuthPending: StateFlow<(() -> Unit)?> = _biometricAuthPending
+
+    fun requireBiometricAuth(onAuthenticated: () -> Unit) {
+        _biometricAuthPending.value = onAuthenticated
+    }
+
+    fun clearBiometricAuthPending() {
+        _biometricAuthPending.value = null
+    }
 
     val printerType: StateFlow<String?> = appPreferences.printerType.stateIn(
         scope = viewModelScope,
@@ -298,23 +302,11 @@ class SettingsViewModel @Inject constructor(
             _restoreStatus.value = "Restoring database backup..."
             val success = backupManager.restoreBackup(bytes)
             if (success) {
-                _restoreStatus.value = "Database restored successfully!"
+                _restoreStatus.value = "Database restored successfully! All data recovered."
                 onFinished(true)
             } else {
-                _restoreStatus.value = "Restore failed: Invalid checksum or corrupted backup file."
+                _restoreStatus.value = "Restore failed: Invalid or empty backup archive. Please select a valid backup .zip file."
                 onFinished(false)
-            }
-        }
-    }
-
-    private val _driveBackupStatus = MutableStateFlow<String?>(null)
-    val driveBackupStatus: StateFlow<String?> = _driveBackupStatus.asStateFlow()
-
-    fun linkGoogleAccount(email: String?) {
-        viewModelScope.launch {
-            appPreferences.saveGoogleAccount(email)
-            if (email != null) {
-                syncScheduler.schedulePeriodicGoogleDriveBackup()
             }
         }
     }
@@ -331,85 +323,32 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun backupToGoogleDrive() {
-        viewModelScope.launch {
-            if (!isNetworkAvailable()) {
-                _driveBackupStatus.value = "Backup failed: No internet connection. Please verify your network."
-                return@launch
-            }
-            _driveBackupStatus.value = "Uploading backup to Google Drive..."
-            val success = googleDriveBackupManager.uploadBackupToDrive()
-            if (success) {
-                _driveBackupStatus.value = "Backup uploaded to Google Drive successfully!"
-            } else {
-                _driveBackupStatus.value = "Google Drive backup failed. Ensure you are signed in."
+    private val _supabaseBackupStatus = MutableStateFlow<String?>(null)
+    val supabaseBackupStatus: StateFlow<String?> = _supabaseBackupStatus.asStateFlow()
+
+    private val _supabaseBackupsList = MutableStateFlow<List<Any>>(emptyList())
+    val supabaseBackupsList: StateFlow<List<Any>> = _supabaseBackupsList.asStateFlow()
+
+    fun backupToSupabase() {
+        requireBiometricAuth {
+            viewModelScope.launch {
+                _supabaseBackupStatus.value = "Firebase Backup is not implemented yet."
             }
         }
     }
 
-    private val _supabaseBackupStatus = MutableStateFlow<String?>(null)
-    val supabaseBackupStatus: StateFlow<String?> = _supabaseBackupStatus.asStateFlow()
-
-    private val _supabaseBackupsList = MutableStateFlow<List<io.github.jan.supabase.storage.FileObject>>(emptyList())
-    val supabaseBackupsList: StateFlow<List<io.github.jan.supabase.storage.FileObject>> = _supabaseBackupsList.asStateFlow()
-
-    fun backupToSupabase() {
-        viewModelScope.launch {
-            if (!isNetworkAvailable()) {
-                _supabaseBackupStatus.value = "Backup failed: No internet connection."
-                return@launch
-            }
-            _supabaseBackupStatus.value = "Uploading backup to Supabase..."
-            val success = supabaseBackupManager.uploadBackupToSupabase()
-            if (success) {
-                _supabaseBackupStatus.value = "Backup uploaded to Supabase successfully!"
-                fetchSupabaseBackups()
-            } else {
-                _supabaseBackupStatus.value = "Supabase backup failed. Ensure you are online and logged in."
+    fun restoreFromSupabase(fileName: String, onFinished: (Boolean) -> Unit) {
+        requireBiometricAuth {
+            viewModelScope.launch {
+                _supabaseBackupStatus.value = "Firebase Restore is not implemented yet."
+                onFinished(false)
             }
         }
     }
 
     fun fetchSupabaseBackups() {
         viewModelScope.launch {
-            if (!isNetworkAvailable()) {
-                _supabaseBackupStatus.value = "Fetch failed: No internet connection."
-                return@launch
-            }
-            _supabaseBackupStatus.value = "Fetching backups from Supabase..."
-            val files = supabaseBackupManager.listBackupsFromSupabase()
-            _supabaseBackupsList.value = files.sortedByDescending { it.name }
-            if (files.isEmpty()) {
-                _supabaseBackupStatus.value = "No backups found in Supabase Storage."
-            } else {
-                _supabaseBackupStatus.value = "Loaded ${files.size} backups."
-            }
-        }
-    }
-
-    fun restoreFromSupabase(fileName: String, onFinished: (Boolean) -> Unit) {
-        viewModelScope.launch {
-            if (!isNetworkAvailable()) {
-                _supabaseBackupStatus.value = "Restore failed: No internet connection."
-                onFinished(false)
-                return@launch
-            }
-            _supabaseBackupStatus.value = "Downloading database from Supabase..."
-            val bytes = supabaseBackupManager.downloadBackupFromSupabase(fileName)
-            if (bytes == null) {
-                _supabaseBackupStatus.value = "Download failed from Supabase."
-                onFinished(false)
-                return@launch
-            }
-            _supabaseBackupStatus.value = "Restoring database backup..."
-            val success = backupManager.restoreBackup(bytes)
-            if (success) {
-                _supabaseBackupStatus.value = "Database restored successfully from Supabase!"
-                onFinished(true)
-            } else {
-                _supabaseBackupStatus.value = "Restore failed: Invalid checksum or corrupted backup file."
-                onFinished(false)
-            }
+            _supabaseBackupStatus.value = "Firebase Backups fetch is not implemented yet."
         }
     }
 
@@ -436,20 +375,9 @@ class SettingsViewModel @Inject constructor(
                 )
                 database.userDao().insertUser(userEntity)
 
-                // Call Supabase RPC
+                // Call Firebase Cloud Function or similar logic
                 try {
-                    supabase.postgrest.rpc(
-                        function = "create_cashier_user",
-                        parameters = buildJsonObject {
-                            put("cashier_email", username)
-                            put("cashier_password", String(password))
-                            put("cashier_display_name", displayName)
-                            val permsArray = kotlinx.serialization.json.buildJsonArray {
-                                permissions.forEach { add(kotlinx.serialization.json.JsonPrimitive(it.name)) }
-                            }
-                            put("cashier_permissions", permsArray)
-                        }
-                    )
+                    // TODO: Implement Firebase user creation
                 } catch (rpcEx: Exception) {
                     rpcEx.printStackTrace()
                 }
@@ -487,53 +415,6 @@ class SettingsViewModel @Inject constructor(
             val userDao = database.userDao()
             val existing = userDao.getUserById(userId) ?: return@launch
             userDao.deleteUser(existing)
-        }
-    }
-
-    private val _driveBackupsList = MutableStateFlow<List<com.google.api.services.drive.model.File>>(emptyList())
-    val driveBackupsList: StateFlow<List<com.google.api.services.drive.model.File>> = _driveBackupsList.asStateFlow()
-
-    fun fetchDriveBackups() {
-        viewModelScope.launch {
-            if (!isNetworkAvailable()) {
-                _driveBackupStatus.value = "Fetch failed: No internet connection. Please verify your network."
-                return@launch
-            }
-            _driveBackupStatus.value = "Fetching backups from Google Drive..."
-            val files = googleDriveBackupManager.listBackupsFromDrive()
-            // Sort by createdTime descending
-            _driveBackupsList.value = files.sortedByDescending { it.createdTime?.value ?: 0L }
-            if (files.isEmpty()) {
-                _driveBackupStatus.value = "No backups found in Google Drive."
-            } else {
-                _driveBackupStatus.value = "Loaded ${files.size} backups."
-            }
-        }
-    }
-
-    fun restoreFromGoogleDrive(fileId: String, onFinished: (Boolean) -> Unit) {
-        viewModelScope.launch {
-            if (!isNetworkAvailable()) {
-                _driveBackupStatus.value = "Restore failed: No internet connection. Please verify your network."
-                onFinished(false)
-                return@launch
-            }
-            _driveBackupStatus.value = "Downloading database from Google Drive..."
-            val bytes = googleDriveBackupManager.downloadBackupFromDrive(fileId)
-            if (bytes == null) {
-                _driveBackupStatus.value = "Download failed from Google Drive."
-                onFinished(false)
-                return@launch
-            }
-            _driveBackupStatus.value = "Restoring database backup..."
-            val success = backupManager.restoreBackup(bytes)
-            if (success) {
-                _driveBackupStatus.value = "Database restored successfully from Google Drive!"
-                onFinished(true)
-            } else {
-                _driveBackupStatus.value = "Restore failed: Invalid checksum or corrupted backup file."
-                onFinished(false)
-            }
         }
     }
 

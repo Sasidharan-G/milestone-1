@@ -7,12 +7,13 @@ import androidx.room.Query
 data class SaleAmountRow(val date: String, val totalAmount: Long)
 data class SaleBillRow(val billNumber: String, val date: String, val totalAmount: Long, val customerName: String)
 data class ItemWiseRow(val productName: String, val categoryName: String, val totalQty: Long, val totalRevenue: Long)
-data class StockReportRow(val productName: String, val categoryName: String, val currentStock: Long)
+data class StockReportRow(val productName: String, val categoryName: String, val unitType: String, val purchasePrice: Long, val salePrice: Long, val currentStock: Long)
 data class ProfitReportRawRow(val productId: String, val productName: String, val totalQty: Long, val totalRevenue: Long)
-data class PurchaseReportRow(val purchaseId: String, val date: String, val supplierName: String, val totalAmount: Long)
+data class PurchaseReportRow(val purchaseId: String, val orderNumber: String?, val invoiceNumber: String?, val date: String, val supplierName: String, val paymentMode: String, val totalAmount: Long)
 data class CustomerReportRow(val customerName: String, val totalBills: Long, val totalSpent: Long)
 data class SupplierReportRow(val supplierName: String, val totalBills: Long, val totalPurchased: Long)
 data class ExpenseReportRow(val expenseId: String, val date: String, val description: String, val amount: Long)
+data class LowStockRow(val productName: String, val categoryName: String, val currentStock: Long, val minStockLevel: Double)
 
 @Dao
 interface ReportDao {
@@ -70,15 +71,34 @@ interface ReportDao {
         SELECT 
             p.name as productName, 
             cat.name as categoryName, 
+            p.unitType as unitType,
+            p.purchasePriceMinorUnits as purchasePrice,
+            p.salePriceMinorUnits as salePrice,
             COALESCE(SUM(sm.quantityDelta), 0) as currentStock
         FROM products p
         INNER JOIN categories cat ON p.categoryId = cat.id AND cat.companyId = :companyId
         LEFT JOIN stock_movements sm ON p.id = sm.productId AND sm.companyId = :companyId
         WHERE p.companyId = :companyId
         GROUP BY p.id
-        ORDER BY currentStock ASC
+        ORDER BY p.name ASC
     """)
     suspend fun getStockReport(companyId: String): List<StockReportRow>
+
+    @Query("""
+        SELECT 
+            p.name as productName, 
+            cat.name as categoryName, 
+            COALESCE(SUM(sm.quantityDelta), 0) as currentStock,
+            p.minStockLevel
+        FROM products p
+        INNER JOIN categories cat ON p.categoryId = cat.id AND cat.companyId = :companyId
+        LEFT JOIN stock_movements sm ON p.id = sm.productId AND sm.companyId = :companyId
+        WHERE p.companyId = :companyId
+        GROUP BY p.id
+        HAVING currentStock < p.minStockLevel
+        ORDER BY currentStock ASC
+    """)
+    fun getLowStockProducts(companyId: String): kotlinx.coroutines.flow.Flow<List<LowStockRow>>
 
     @Query("""
         SELECT 
@@ -99,8 +119,11 @@ interface ReportDao {
     @Query("""
         SELECT 
             p.id as purchaseId, 
+            p.orderNumber as orderNumber,
+            p.invoiceNumber as invoiceNumber,
             strftime('%Y-%m-%d %H:%M:%S', datetime(p.createdAtEpochMs / 1000, 'unixepoch', 'localtime')) as date, 
             s.name as supplierName, 
+            p.paymentMode as paymentMode,
             p.totalMinorUnits as totalAmount
         FROM purchases p
         INNER JOIN suppliers s ON p.supplierId = s.id AND s.companyId = :companyId

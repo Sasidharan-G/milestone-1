@@ -12,6 +12,7 @@ import com.company.billing.core.common.Money
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
+import android.graphics.BitmapFactory
 import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -131,7 +132,8 @@ class ShareManager(private val context: Context) {
         shopAddress: String,
         shopPhone: String,
         shopEmail: String,
-        cashierName: String
+        cashierName: String,
+        shopLogoPath: String = ""
     ): ByteArray {
         val pdfDocument = PdfDocument()
         val pageInfo = PdfDocument.PageInfo.Builder(595, 842, 1).create() // A4
@@ -142,12 +144,31 @@ class ShareManager(private val context: Context) {
         
         // 1. Draw header (Shop Details)
         paint.color = Color.BLACK
+        
+        var y = 60f
+        
+        if (shopLogoPath.isNotBlank()) {
+            try {
+                val logoFile = File(shopLogoPath)
+                if (logoFile.exists()) {
+                    val bitmap = BitmapFactory.decodeFile(logoFile.absolutePath)
+                    if (bitmap != null) {
+                        val maxDim = 80f
+                        val scale = Math.min(maxDim / bitmap.width, maxDim / bitmap.height)
+                        val dstWidth = bitmap.width * scale
+                        val dstHeight = bitmap.height * scale
+                        val destRect = android.graphics.RectF(40f, 40f, 40f + dstWidth, 40f + dstHeight)
+                        canvas.drawBitmap(bitmap, null, destRect, paint)
+                    }
+                }
+            } catch (ignored: Exception) {}
+        }
+        
         paint.textAlign = Paint.Align.CENTER
         
         // Shop Name
         paint.textSize = 20f
         paint.isFakeBoldText = true
-        var y = 60f
         canvas.drawText(shopName.ifBlank { "Client Billing System" }, 297.5f, y, paint)
         
         // Address & Phone
@@ -175,6 +196,9 @@ class ShareManager(private val context: Context) {
             ).joinToString("  |  ")
             canvas.drawText(details, 297.5f, y, paint)
         }
+        
+        // Make sure we have space under the logo if shop details were very short
+        y = Math.max(y, 120f)
         
         // Divider
         y += 18f
@@ -339,7 +363,11 @@ class ShareManager(private val context: Context) {
         paint.textAlign = Paint.Align.CENTER
         paint.isFakeBoldText = true
         paint.textSize = 12f
-        canvas.drawText("Thank You for Shopping! Visit Again", 297.5f, y, paint)
+        canvas.drawText("Thank You for Shopping! \uD83D\uDE0A", 297.5f, y, paint)
+        y += 18f
+        paint.textSize = 10f
+        paint.isFakeBoldText = false
+        canvas.drawText("Please Visit Again \uD83D\uDECD️", 297.5f, y, paint)
         
         pdfDocument.finishPage(page)
         

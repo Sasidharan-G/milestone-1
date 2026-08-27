@@ -5,6 +5,7 @@ import android.view.WindowManager
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
 import androidx.compose.runtime.*
+import com.company.billing.core.preferences.AppPreferences
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.background
@@ -14,19 +15,17 @@ import com.company.billing.core.ui.BillingApp
 import com.company.billing.core.security.SecurityShield
 import com.company.billing.core.security.BiometricAuthenticator
 import dagger.hilt.android.AndroidEntryPoint
-import io.github.jan.supabase.SupabaseClient
-import io.github.jan.supabase.auth.handleDeeplinks
 import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
-    @Inject lateinit var supabaseClient: SupabaseClient
+    @Inject lateinit var appPreferences: AppPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
-            supabaseClient.handleDeeplinks(intent)
+            // Note: Supabase composeAuth is removed. Firebase Google SignIn to be implemented later.
         } catch (e: Exception) {
             e.printStackTrace()
         }

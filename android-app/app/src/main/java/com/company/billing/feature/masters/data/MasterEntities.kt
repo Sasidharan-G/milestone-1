@@ -6,7 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.company.billing.core.sync.SyncStatus
 
-@Entity(tableName = "categories", indices = [Index(value = ["companyId", "name"], unique = true)])
+@Entity(tableName = "categories", indices = [Index(value = ["companyId", "name"], unique = true), Index(value = ["companyId", "syncStatus"])])
 data class CategoryEntity(
     @PrimaryKey val id: String,
     val companyId: String,
@@ -19,7 +19,7 @@ data class CategoryEntity(
 @Entity(
     tableName = "products",
     foreignKeys = [ForeignKey(entity = CategoryEntity::class, parentColumns = ["id"], childColumns = ["categoryId"], onDelete = ForeignKey.RESTRICT)],
-    indices = [Index("categoryId"), Index(value = ["companyId", "name"], unique = true)]
+    indices = [Index("categoryId"), Index(value = ["companyId", "name"], unique = true), Index(value = ["companyId", "syncStatus"])]
 )
 data class ProductEntity(
     @PrimaryKey val id: String,
@@ -29,12 +29,14 @@ data class ProductEntity(
     val purchasePriceMinorUnits: Long = 0L,
     val salePriceMinorUnits: Long = 0L,
     val unitType: String = "PIECE",
+    val barcode: String? = null,
+    val minStockLevel: Double = 0.0,
     val createdAtEpochMs: Long,
     val updatedAtEpochMs: Long,
     val syncStatus: SyncStatus
 )
 
-@Entity(tableName = "customers", indices = [Index(value = ["companyId", "name"]), Index(value = ["companyId"])])
+@Entity(tableName = "customers", indices = [Index(value = ["companyId", "name"]), Index(value = ["companyId"]), Index(value = ["companyId", "syncStatus"])])
 data class CustomerEntity(
     @PrimaryKey val id: String,
     val companyId: String,
@@ -47,7 +49,7 @@ data class CustomerEntity(
     val syncStatus: SyncStatus
 )
 
-@Entity(tableName = "suppliers", indices = [Index(value = ["companyId", "name"]), Index(value = ["companyId"])])
+@Entity(tableName = "suppliers", indices = [Index(value = ["companyId", "name"]), Index(value = ["companyId"]), Index(value = ["companyId", "syncStatus"])])
 data class SupplierEntity(
     @PrimaryKey val id: String,
     val companyId: String,

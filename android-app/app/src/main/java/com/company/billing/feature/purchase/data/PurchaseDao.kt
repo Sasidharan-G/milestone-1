@@ -11,14 +11,30 @@ import kotlinx.coroutines.flow.Flow
 @Dao
 interface PurchaseDao {
     @Insert suspend fun insertPurchase(purchase: PurchaseEntity)
+    @Insert suspend fun insertPurchases(items: List<PurchaseEntity>)
+    @Insert fun insertPurchasesSync(items: List<PurchaseEntity>)
+    @Query("DELETE FROM purchases WHERE companyId = :companyId") suspend fun deletePurchasesByCompany(companyId: String)
+    @Query("DELETE FROM purchases WHERE companyId = :companyId") fun deletePurchasesByCompanySync(companyId: String)
     @Insert suspend fun insertItems(items: List<PurchaseItemEntity>)
+    @Insert fun insertItemsSync(items: List<PurchaseItemEntity>)
     @Insert suspend fun insertStockMovements(movements: List<StockMovementEntity>)
+    @Insert suspend fun insertSupplierCredit(credit: com.company.billing.feature.masters.data.SupplierCreditEntity)
     
-    @Transaction suspend fun savePurchase(purchase: PurchaseEntity, items: List<PurchaseItemEntity>, movements: List<StockMovementEntity>) { 
+    @Transaction suspend fun savePurchase(
+        purchase: PurchaseEntity, 
+        items: List<PurchaseItemEntity>, 
+        movements: List<StockMovementEntity>,
+        supplierCredit: com.company.billing.feature.masters.data.SupplierCreditEntity? = null
+    ) { 
         insertPurchase(purchase)
         insertItems(items)
         insertStockMovements(movements) 
+        if (supplierCredit != null) {
+            insertSupplierCredit(supplierCredit)
+        }
     }
+    @Query("DELETE FROM purchase_items WHERE companyId = :companyId") suspend fun deletePurchaseItemsByCompany(companyId: String)
+    @Query("DELETE FROM purchase_items WHERE companyId = :companyId") fun deletePurchaseItemsByCompanySync(companyId: String)
 
     @Query("""
         SELECT 
@@ -46,5 +62,8 @@ interface PurchaseDao {
 
     @Query("SELECT * FROM purchases WHERE companyId = :companyId AND supplierId = :supplierId ORDER BY createdAtEpochMs DESC")
     fun getPurchasesForSupplier(companyId: String, supplierId: String): Flow<List<PurchaseEntity>>
+
+    @Query("SELECT orderNumber FROM purchases WHERE companyId = :companyId")
+    suspend fun getAllOrderNumbers(companyId: String): List<String?>
 }
 
