@@ -28,8 +28,12 @@ import java.util.Date
 import java.util.Locale
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.BorderStroke
 import com.company.billing.feature.purchase.domain.PurchaseLine
 import com.company.billing.feature.purchase.data.PurchaseEntity
+import com.company.billing.feature.purchase.data.PurchaseItemEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -687,7 +691,33 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
         }
 
         var deletingPurchase by remember { mutableStateOf<PurchaseEntity?>(null) }
+        var viewingPurchase by remember { mutableStateOf<PurchaseEntity?>(null) }
         var activeMobileTab by remember { mutableStateOf(0) }
+
+        if (viewingPurchase != null) {
+            val p = viewingPurchase!!
+            PurchaseDetailsDialog(
+                purchase = p,
+                suppliers = suppliers,
+                products = products,
+                viewModel = viewModel,
+                onEdit = {
+                    val targetP = viewingPurchase!!
+                    viewingPurchase = null
+                    viewModel.loadPurchaseForEditing(targetP) { invNum ->
+                        supplierInvoiceNumber = invNum ?: ""
+                        activeMobileTab = 0
+                        message = "Purchase loaded into draft for editing"
+                    }
+                },
+                onDelete = {
+                    val targetP = viewingPurchase!!
+                    viewingPurchase = null
+                    deletingPurchase = targetP
+                },
+                onDismiss = { viewingPurchase = null }
+            )
+        }
 
         if (deletingPurchase != null) {
             val p = deletingPurchase!!
@@ -729,6 +759,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .clickable { viewingPurchase = purchase }
                                 .border(
                                     width = 1.dp,
                                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
@@ -841,3 +872,144 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
         }
     }
 }
+
+@Composable
+fun PurchaseDetailsDialog(
+    purchase: PurchaseEntity,
+    suppliers: List<com.company.billing.feature.masters.data.SupplierEntity>,
+    products: List<com.company.billing.feature.masters.data.ProductEntity>,
+    viewModel: PurchaseViewModel,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    val items by viewModel.getPurchaseItemsFlow(purchase.id).collectAsState(initial = emptyList<PurchaseItemEntity>())
+    val supplier = suppliers.find { it.id == purchase.supplierId }
+    val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(purchase.createdAtEpochMs))
+    val orderTitle = when {
+        !purchase.invoiceNumber.isNullOrBlank() -> "Invoice #${purchase.invoiceNumber}"
+        !purchase.orderNumber.isNullOrBlank() -> "Order #${purchase.orderNumber}"
+        else -> "Purchase #${purchase.id.take(6)}"
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text(orderTitle, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Text("Supplier: ${supplier?.name ?: "Unknown Supplier"}", fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Info Summary Card
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Date & Time:", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                            Text(dateStr, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                        }
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("Payment Mode:", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                            Text(purchase.paymentMode, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                        if (!supplier?.phone.isNullOrBlank()) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Supplier Phone:", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                Text(supplier!!.phone!!, fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+
+                Text("Purchased Items (${items.size})", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+
+                if (items.isEmpty()) {
+                    Text("Loading items...", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                } else {
+                    items.forEach { item ->
+                        val prodName = products.find { it.id == item.productId }?.name ?: "Product #${item.productId.take(4)}"
+                        val lineTotal = item.quantity * item.unitValueMinorUnits
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(10.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(prodName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                    Text("Qty: ${item.quantity}  ×  ${Money(item.unitValueMinorUnits)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                                Text(Money(lineTotal).toString(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+
+                // Total Summary
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(14.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("Grand Total", fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(Money(purchase.totalMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = {
+                        onDismiss()
+                        onDelete()
+                    },
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Delete")
+                }
+
+                Button(
+                    onClick = {
+                        onDismiss()
+                        onEdit()
+                    },
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Edit Inward")
+                }
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+

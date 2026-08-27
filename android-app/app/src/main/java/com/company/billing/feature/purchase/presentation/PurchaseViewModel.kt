@@ -12,10 +12,12 @@ import com.company.billing.feature.masters.data.SupplierEntity
 import com.company.billing.feature.masters.data.ProductEntity
 import com.company.billing.feature.masters.data.CategoryEntity
 import com.company.billing.feature.purchase.data.PurchaseEntity
+import com.company.billing.feature.purchase.data.PurchaseItemEntity
 import com.company.billing.feature.stock.domain.ProductStock
 import com.company.billing.core.preferences.AppPreferences
 import com.google.ai.client.generativeai.GenerativeModel
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -229,6 +231,14 @@ class PurchaseViewModel @Inject constructor(
                 }
                 onLoaded(purchase.invoiceNumber)
             }
+        }
+    }
+
+    fun getPurchaseItemsFlow(purchaseId: String): Flow<List<PurchaseItemEntity>> {
+        return sessionStore.activeSession.flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            if (companyId.isNotEmpty()) purchaseRepository.getPurchaseItems(companyId, purchaseId)
+            else kotlinx.coroutines.flow.flowOf(emptyList())
         }
     }
 
