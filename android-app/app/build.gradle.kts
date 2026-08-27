@@ -91,4 +91,7 @@ dependencies {
     androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.room:room-testing:2.6.1")
+    implementation("com.razorpay:checkout:1.6.40")
+    implementation("io.coil-kt:coil-compose:2.6.0")
+    implementation("io.coil-kt:coil-svg:2.6.0")
 }

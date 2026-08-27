@@ -54,6 +54,8 @@ import com.company.billing.feature.purchase.presentation.PurchaseScreen
 import com.company.billing.feature.purchase.presentation.PurchaseViewModel
 import com.company.billing.feature.reports.presentation.ReportsScreen
 import com.company.billing.feature.reports.presentation.ReportsViewModel
+import com.company.billing.feature.subscription.PaywallScreen
+import com.company.billing.feature.subscription.PaymentScreen
 import com.company.billing.core.ui.theme.BillingTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
@@ -141,11 +143,20 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                     var shiftCashInput by remember { mutableStateOf("") }
                     var shiftMessage by remember { mutableStateOf("") }
 
+                    val billCount by vm.billCount.collectAsState()
+                    val isSubscribed by vm.isSubscribed.collectAsState()
+
                     HomeScreen(
                         session = session,
                         shopName = shopName,
                         shopLogoPath = shopLogoPath,
-                        onNavigateTo = { route -> navController.navigate(route.path) },
+                        onNavigateTo = { route -> 
+                            if (billCount >= 10 && ! isSubscribed) {
+                                navController.navigate(AppRoute.Subscription.path)
+                            } else {
+                                navController.navigate(route.path)
+                            }
+                        },
                         onLogout = {
                             vm.logout()
                             navController.navigate(AppRoute.Login.path) {

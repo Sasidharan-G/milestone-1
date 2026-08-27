@@ -48,6 +48,9 @@ import kotlinx.coroutines.flow.Flow
     @Query("SELECT billNumber FROM sales WHERE companyId = :companyId")
     suspend fun getAllBillNumbers(companyId: String): List<String>
 
+    @Query("SELECT COUNT(*) FROM sales WHERE companyId = :companyId")
+    fun getSaleCount(companyId: String): Flow<Int>
+
     @Query("SELECT SUM(paidCashMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs > :sinceEpochMs")
     suspend fun getCashSalesSumSince(companyId: String, sinceEpochMs: Long): Long?
 

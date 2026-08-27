@@ -14,11 +14,20 @@ import androidx.compose.ui.graphics.Color
 import com.company.billing.core.ui.BillingApp
 import com.company.billing.core.security.SecurityShield
 import com.company.billing.core.security.BiometricAuthenticator
+import com.company.billing.core.ui.components.CustomToastOverlay
+import com.company.billing.core.ui.components.ToastManager
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.unit.dp
+import com.razorpay.PaymentResultWithDataListener
+import com.razorpay.PaymentData
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 @AndroidEntryPoint
-class MainActivity : FragmentActivity() {
+class MainActivity : FragmentActivity(), PaymentResultWithDataListener {
 
     @Inject lateinit var appPreferences: AppPreferences
 
@@ -38,7 +47,10 @@ class MainActivity : FragmentActivity() {
         val isRecoveryFlow = intent?.dataString?.contains("type=recovery") == true
 
         setContent {
-            BillingApp(isRecoveryFlow = isRecoveryFlow)
+            Box(modifier = Modifier.fillMaxSize()) {
+                BillingApp(isRecoveryFlow = isRecoveryFlow)
+                CustomToastOverlay(modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 32.dp))
+            }
         }
     }
 
@@ -77,5 +89,13 @@ class MainActivity : FragmentActivity() {
                 finishAffinity()
             }
             .show()
+    }
+
+    override fun onPaymentSuccess(razorpayPaymentID: String?, paymentData: PaymentData?) {
+        ToastManager.showSuccess("Payment Successful! ID: $razorpayPaymentID")
+    }
+
+    override fun onPaymentError(code: Int, response: String?, paymentData: PaymentData?) {
+        ToastManager.showError("Payment Failed: $response")
     }
 }
