@@ -292,7 +292,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
-                                Text("Sales", fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                                Text("Sales", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = Money(totalSalesSum).toString(),
@@ -308,7 +308,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
-                                Text("COGS", fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                                Text("COGS", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = Money(purchaseCostSum).toString(),
@@ -324,7 +324,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
-                                Text("Expenses", fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                                Text("Expenses", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = Money(expensesSum).toString(),
@@ -340,7 +340,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             modifier = Modifier.weight(1f)
                         ) {
                             Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
-                                Text("Net Profit", fontSize = 10.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                                Text("Net Profit", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = Money(netProfitSum).toString(),
