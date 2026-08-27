@@ -80,4 +80,10 @@ import kotlinx.coroutines.flow.Flow
   
     @Update suspend fun updateExpense(item: ExpenseEntity)
     @Delete suspend fun deleteExpense(item: ExpenseEntity)
+
+    @Query("DELETE FROM customer_credits WHERE companyId = :companyId AND id = :id")
+    suspend fun deleteCustomerCreditById(companyId: String, id: String)
+
+    @Query("DELETE FROM supplier_credits WHERE companyId = :companyId AND id = :id")
+    suspend fun deleteSupplierCreditById(companyId: String, id: String)
 }

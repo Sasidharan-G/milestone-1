@@ -236,6 +236,47 @@ class ProductViewModel @Inject constructor(
         }
     }
 
+    val stockBalances: StateFlow<Map<String, Long>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            if (companyId.isNotEmpty()) database.purchaseDao().getStockBalances(companyId)
+            else kotlinx.coroutines.flow.flowOf(emptyList())
+        }.map { list -> list.associate { it.productId to it.currentStock } }
+        .stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
+
+    fun adjustStock(
+        product: ProductEntity,
+        newQuantity: Long,
+        reason: String,
+        onSuccess: () -> Unit,
+        onError: (Throwable) -> Unit
+    ) {
+        viewModelScope.launch {
+            try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                val current = stockBalances.value[product.id] ?: 0L
+                val delta = newQuantity - current
+                if (delta == 0L) {
+                    onSuccess()
+                    return@launch
+                }
+                val movement = com.company.billing.feature.billing.data.StockMovementEntity(
+                    id = newRecordId(),
+                    companyId = session.companyId,
+                    productId = product.id,
+                    quantityDelta = delta,
+                    type = "ADJUSTMENT",
+                    referenceId = reason.ifBlank { "Direct Stock Adjustment" },
+                    createdAtEpochMs = System.currentTimeMillis()
+                )
+                database.purchaseDao().insertStockMovements(listOf(movement))
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
     fun deleteProduct(product: ProductEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
@@ -425,6 +466,18 @@ class CustomerViewModel @Inject constructor(
             }
         }
     }
+
+    fun deleteCustomerCredit(creditId: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                dao.deleteCustomerCreditById(session.companyId, creditId)
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
 }
 
 @HiltViewModel
@@ -524,6 +577,18 @@ class SupplierViewModel @Inject constructor(
         }
     }
 
+    fun deleteSupplierCredit(creditId: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                dao.deleteSupplierCreditById(session.companyId, creditId)
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
     fun getSupplierCredits(supplierId: String): Flow<List<SupplierCreditEntity>> = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
@@ -552,7 +617,12 @@ class SupplierViewModel @Inject constructor(
     ) { purchases, credits ->
         val entries = mutableListOf<LedgerEntry>()
         purchases.forEach { purchase ->
-            entries.add(LedgerEntry(purchase.id, purchase.createdAtEpochMs, "Purchase", purchase.totalMinorUnits, 0L, 0L))
+            val orderTitle = when {
+                !purchase.invoiceNumber.isNullOrBlank() -> "Purchase #${purchase.invoiceNumber}"
+                !purchase.orderNumber.isNullOrBlank() -> "Order #${purchase.orderNumber}"
+                else -> "Purchase #${purchase.id.take(4)}"
+            }
+            entries.add(LedgerEntry(purchase.id, purchase.createdAtEpochMs, orderTitle, purchase.totalMinorUnits, 0L, 0L))
         }
         credits.forEach { credit ->
             entries.add(LedgerEntry(credit.id, credit.dateEpochMs, credit.terms, 0L, credit.amountMinorUnits, 0L))

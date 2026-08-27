@@ -193,6 +193,45 @@ class PurchaseViewModel @Inject constructor(
         }
     }
 
+    fun deletePurchase(
+        purchase: PurchaseEntity,
+        onSuccess: () -> Unit,
+        onError: (Throwable) -> Unit
+    ) {
+        viewModelScope.launch {
+            val orderOrInv = purchase.invoiceNumber ?: purchase.orderNumber ?: purchase.id
+            when (val result = purchaseRepository.deletePurchase(purchase.id, orderOrInv)) {
+                is AppResult.Success -> onSuccess()
+                is AppResult.Failure -> onError(Exception(result.error.userMessage))
+            }
+        }
+    }
+
+    fun loadPurchaseForEditing(
+        purchase: PurchaseEntity,
+        onLoaded: (String?) -> Unit
+    ) {
+        viewModelScope.launch {
+            val items = purchaseRepository.getPurchaseItemsList(purchase.id)
+            if (items.isNotEmpty()) {
+                val orderOrInv = purchase.invoiceNumber ?: purchase.orderNumber ?: purchase.id
+                // Delete old purchase cascade so re-saving won't duplicate stock/credit
+                purchaseRepository.deletePurchase(purchase.id, orderOrInv)
+
+                _selectedSupplierId.value = purchase.supplierId
+                _lines.value = items.map {
+                    PurchaseLine(
+                        productId = it.productId,
+                        quantity = it.quantity,
+                        unitValue = Money(it.unitValueMinorUnits),
+                        supplierId = purchase.supplierId
+                    )
+                }
+                onLoaded(purchase.invoiceNumber)
+            }
+        }
+    }
+
     fun parseInvoiceImage(
         context: android.content.Context,
         imageUri: android.net.Uri,

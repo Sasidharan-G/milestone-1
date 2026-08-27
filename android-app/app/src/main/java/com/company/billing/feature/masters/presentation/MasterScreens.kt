@@ -450,6 +450,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     val products by viewModel.products.collectAsState()
     val lowStockProducts by viewModel.lowStockProducts.collectAsState()
     val categories by viewModel.categories.collectAsState()
+    val stockBalances by viewModel.stockBalances.collectAsState()
     var name by remember { mutableStateOf("") }
     var selectedCategoryId by remember { mutableStateOf("") }
     var purchasePrice by remember { mutableStateOf("") }
@@ -477,6 +478,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
     var editingProduct by remember { mutableStateOf<ProductEntity?>(null) }
     var deletingProduct by remember { mutableStateOf<ProductEntity?>(null) }
+    var adjustingStockProduct by remember { mutableStateOf<ProductEntity?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     LaunchedEffect(categories) {
@@ -491,6 +493,15 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
             categories = categories,
             viewModel = viewModel,
             onDismiss = { editingProduct = null }
+        )
+    }
+
+    if (adjustingStockProduct != null) {
+        StockAdjustmentDialog(
+            product = adjustingStockProduct!!,
+            currentStock = stockBalances[adjustingStockProduct!!.id] ?: 0L,
+            viewModel = viewModel,
+            onDismiss = { adjustingStockProduct = null }
         )
     }
 
@@ -723,6 +734,10 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                 } else {
                     items(products) { product ->
                         val catName = categories.find { it.id == product.categoryId }?.name ?: "Unknown Category"
+                        val curStock = stockBalances[product.id] ?: 0L
+                        val purText = Money(product.purchasePriceMinorUnits).toString()
+                        val saleText = Money(product.salePriceMinorUnits).toString()
+                        val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Piece"
                         Card(
                             modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                             shape = RoundedCornerShape(12.dp),
@@ -732,12 +747,12 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                     Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                    val purText = Money(product.purchasePriceMinorUnits).toString()
-                                    val saleText = Money(product.salePriceMinorUnits).toString()
-                                    val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Piece"
-                                    Text("$unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Stock: $curStock $unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
+                                    IconButton(onClick = { adjustingStockProduct = product }) {
+                                        Icon(Icons.Default.Tune, contentDescription = "Adjust Stock", tint = MaterialTheme.colorScheme.secondary)
+                                    }
                                     IconButton(onClick = { editingProduct = product }) {
                                         Icon(Icons.Default.Edit, contentDescription = "Edit Product", tint = MaterialTheme.colorScheme.primary)
                                     }
@@ -789,11 +804,11 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 expanded = expanded,
                                 onDismissRequest = { expanded = false }
                             ) {
-                                categories.forEach { category ->
+                                categories.forEach { cat ->
                                     DropdownMenuItem(
-                                        text = { Text(category.name) },
+                                        text = { Text(cat.name) },
                                         onClick = {
-                                            selectedCategoryId = category.id
+                                            selectedCategoryId = cat.id
                                             expanded = false
                                         }
                                     )
@@ -886,7 +901,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         Button(
                             onClick = {
                                 if (name.isBlank()) {
-                                    android.widget.Toast.makeText(context, "Please enter Product Name", android.widget.Toast.LENGTH_SHORT).show()
+                                    message = "Product name cannot be empty"
                                 } else {
                                     val purVal = ((purchasePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                     val saleVal = ((salePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
@@ -951,6 +966,10 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         } else {
                             items(products) { product ->
                                 val catName = categories.find { it.id == product.categoryId }?.name ?: "Unknown Category"
+                                val curStock = stockBalances[product.id] ?: 0L
+                                val purText = Money(product.purchasePriceMinorUnits).toString()
+                                val saleText = Money(product.salePriceMinorUnits).toString()
+                                val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Piece"
                                 Card(
                                     modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                                     shape = RoundedCornerShape(12.dp),
@@ -960,12 +979,12 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                             Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                            val purText = Money(product.purchasePriceMinorUnits).toString()
-                                            val saleText = Money(product.salePriceMinorUnits).toString()
-                                            val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Piece"
-                                            Text("$unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Text("Stock: $curStock $unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
+                                            IconButton(onClick = { adjustingStockProduct = product }) {
+                                                Icon(Icons.Default.Tune, contentDescription = "Adjust Stock", tint = MaterialTheme.colorScheme.secondary)
+                                            }
                                             IconButton(onClick = { editingProduct = product }) {
                                                 Icon(Icons.Default.Edit, contentDescription = "Edit Product", tint = MaterialTheme.colorScheme.primary)
                                             }
@@ -2320,14 +2339,26 @@ fun CustomerCreditDetailDialog(
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(entry.description, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                    Text(
-                                        text = if (isDebit) "+${Money(amt)}" else "-${Money(amt)}",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = if (isDebit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                    )
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text(entry.description, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(
+                                            text = if (isDebit) "+${Money(amt)}" else "-${Money(amt)}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = if (isDebit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        )
+                                        if (!entry.description.startsWith("Bill #")) {
+                                            IconButton(
+                                                onClick = {
+                                                    viewModel.deleteCustomerCredit(entry.id, onSuccess = {}, onError = { errorMessage = it.message ?: "Failed to delete" })
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Reverse Entry", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp))
+                                            }
+                                        }
+                                    }
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -2573,14 +2604,26 @@ fun SupplierCreditDetailDialog(
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text(entry.description, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                                    Text(
-                                        text = if (isCredit) "+${Money(amt)}" else "-${Money(amt)}",
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = if (isCredit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                    )
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Text(entry.description, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        Text(
+                                            text = if (isCredit) "+${Money(amt)}" else "-${Money(amt)}",
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = if (isCredit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                        )
+                                        if (!entry.description.startsWith("Purchase") && !entry.description.startsWith("Order #")) {
+                                            IconButton(
+                                                onClick = {
+                                                    viewModel.deleteSupplierCredit(entry.id, onSuccess = {}, onError = { errorMessage = it.message ?: "Failed to delete" })
+                                                },
+                                                modifier = Modifier.size(24.dp)
+                                            ) {
+                                                Icon(Icons.Default.Delete, contentDescription = "Reverse Entry", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp))
+                                            }
+                                        }
+                                    }
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -3361,3 +3404,99 @@ fun LowStockAlertsBanner(lowStockProducts: List<com.company.billing.core.databas
         }
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun StockAdjustmentDialog(
+    product: ProductEntity,
+    currentStock: Long,
+    viewModel: ProductViewModel,
+    onDismiss: () -> Unit
+) {
+    var newStockText by remember { mutableStateOf(currentStock.toString()) }
+    var selectedReason by remember { mutableStateOf("Damaged / Expired") }
+    var customReason by remember { mutableStateOf("") }
+    var error by remember { mutableStateOf("") }
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    val reasons = listOf("Damaged / Expired", "Count Correction", "Lost / Missing", "Found Extra", "Opening Balance Fix")
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Column {
+                Text("Adjust Stock - ${product.name}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Current Inventory: $currentStock ${product.unitType}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+            }
+        },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
+                OutlinedTextField(
+                    value = newStockText,
+                    onValueChange = { newStockText = it },
+                    label = { Text("New Physical Stock Count") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                Text("Adjustment Reason:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                
+                Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    reasons.forEach { r ->
+                        FilterChip(
+                            selected = selectedReason == r,
+                            onClick = { selectedReason = r },
+                            label = { Text(r, fontSize = 11.sp) }
+                        )
+                    }
+                }
+
+                OutlinedTextField(
+                    value = customReason,
+                    onValueChange = { customReason = it },
+                    label = { Text("Note / Comment (Optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp)
+                )
+
+                if (error.isNotBlank()) {
+                    Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val newCount = newStockText.toLongOrNull()
+                    if (newCount == null || newCount < 0) {
+                        error = "Please enter a valid non-negative count"
+                    } else {
+                        val finalReason = if (customReason.isNotBlank()) "$selectedReason - $customReason" else selectedReason
+                        viewModel.adjustStock(
+                            product = product,
+                            newQuantity = newCount,
+                            reason = finalReason,
+                            onSuccess = {
+                                android.widget.Toast.makeText(context, "Stock adjusted to $newCount successfully", android.widget.Toast.LENGTH_SHORT).show()
+                                onDismiss()
+                            },
+                            onError = {
+                                error = "Error: ${it.message}"
+                            }
+                        )
+                    }
+                },
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Text("Save Adjustment")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Cancel")
+            }
+        }
+    )
+}
+

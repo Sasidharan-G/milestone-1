@@ -65,5 +65,30 @@ interface PurchaseDao {
 
     @Query("SELECT orderNumber FROM purchases WHERE companyId = :companyId")
     suspend fun getAllOrderNumbers(companyId: String): List<String?>
+
+    @Query("SELECT * FROM purchase_items WHERE companyId = :companyId AND purchaseId = :purchaseId")
+    suspend fun getPurchaseItemsList(companyId: String, purchaseId: String): List<PurchaseItemEntity>
+
+    @Query("DELETE FROM purchases WHERE companyId = :companyId AND id = :purchaseId")
+    suspend fun deletePurchase(companyId: String, purchaseId: String)
+
+    @Query("DELETE FROM purchase_items WHERE companyId = :companyId AND purchaseId = :purchaseId")
+    suspend fun deletePurchaseItems(companyId: String, purchaseId: String)
+
+    @Query("DELETE FROM stock_movements WHERE companyId = :companyId AND referenceId = :purchaseId")
+    suspend fun deletePurchaseStockMovements(companyId: String, purchaseId: String)
+
+    @Query("DELETE FROM supplier_credits WHERE companyId = :companyId AND terms LIKE :termsPattern")
+    suspend fun deleteSupplierCreditsByTerms(companyId: String, termsPattern: String)
+
+    @Transaction
+    suspend fun deletePurchaseCascade(companyId: String, purchaseId: String, orderOrInvoice: String) {
+        deletePurchaseItems(companyId, purchaseId)
+        deletePurchaseStockMovements(companyId, purchaseId)
+        if (orderOrInvoice.isNotBlank()) {
+            deleteSupplierCreditsByTerms(companyId, "%$orderOrInvoice%")
+        }
+        deletePurchase(companyId, purchaseId)
+    }
 }
 

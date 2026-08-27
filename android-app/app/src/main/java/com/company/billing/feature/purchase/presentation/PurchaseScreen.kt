@@ -10,6 +10,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -28,6 +29,7 @@ import java.util.Locale
 
 import androidx.compose.foundation.clickable
 import com.company.billing.feature.purchase.domain.PurchaseLine
+import com.company.billing.feature.purchase.data.PurchaseEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -684,6 +686,38 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
             }
         }
 
+        var deletingPurchase by remember { mutableStateOf<PurchaseEntity?>(null) }
+        var activeMobileTab by remember { mutableStateOf(0) }
+
+        if (deletingPurchase != null) {
+            val p = deletingPurchase!!
+            val orderTitle = p.invoiceNumber ?: p.orderNumber ?: p.id.take(6)
+            AlertDialog(
+                onDismissRequest = { deletingPurchase = null },
+                title = { Text("Delete Purchase Order", fontWeight = FontWeight.Bold) },
+                text = { Text("Are you sure you want to delete Purchase Order '$orderTitle'? This will automatically deduct inward items from stock inventory and reverse any supplier credit ledger.") },
+                confirmButton = {
+                    Button(
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        onClick = {
+                            val targetPurchase = deletingPurchase!!
+                            deletingPurchase = null
+                            viewModel.deletePurchase(targetPurchase, onSuccess = {
+                                message = "Purchase order deleted and stock deducted"
+                            }, onError = {
+                                message = "Failed to delete: ${it.message}"
+                            })
+                        }
+                    ) {
+                        Text("Delete & Deduct Stock")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { deletingPurchase = null }) { Text("Cancel") }
+                }
+            )
+        }
+
         val purchaseHistoryColumn: @Composable (Modifier) -> Unit = { modifier ->
             Column(modifier = modifier) {
                 Text("Purchase History", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
@@ -714,7 +748,41 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                                         Text(orderTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                         Text("Mode: ${purchase.paymentMode}", fontSize = 11.sp, color = MaterialTheme.colorScheme.primary)
                                     }
-                                    Text(Money(purchase.totalMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text(Money(purchase.totalMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                                        
+                                        // Edit Purchase Button
+                                        IconButton(
+                                            onClick = {
+                                                viewModel.loadPurchaseForEditing(purchase) { invNum ->
+                                                    supplierInvoiceNumber = invNum ?: ""
+                                                    activeMobileTab = 0
+                                                    message = "Purchase loaded into draft for editing"
+                                                }
+                                            },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Edit,
+                                                contentDescription = "Edit Purchase",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.primary
+                                            )
+                                        }
+
+                                        // Delete Purchase Button
+                                        IconButton(
+                                            onClick = { deletingPurchase = purchase },
+                                            modifier = Modifier.size(28.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete Purchase",
+                                                modifier = Modifier.size(16.dp),
+                                                tint = MaterialTheme.colorScheme.error
+                                            )
+                                        }
+                                    }
                                 }
                                 Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                                     Text("Supplier: $supplierName", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
@@ -736,7 +804,6 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
             }
             
             if (isMobile) {
-                var activeMobileTab by remember { mutableStateOf(0) }
                 Column(modifier = Modifier.fillMaxSize()) {
                     TabRow(
                         selectedTabIndex = activeMobileTab,

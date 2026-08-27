@@ -16,4 +16,8 @@ interface PurchaseRepository {
     fun getPurchaseItems(companyId: String, purchaseId: String): Flow<List<PurchaseItemEntity>>
     
     fun getPurchasesForSupplier(companyId: String, supplierId: String): Flow<List<PurchaseEntity>>
+
+    suspend fun deletePurchase(purchaseId: String, orderOrInvoice: String): AppResult<Unit>
+
+    suspend fun getPurchaseItemsList(purchaseId: String): List<PurchaseItemEntity>
 }

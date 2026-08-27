@@ -117,4 +117,19 @@ class PurchaseRepositoryImpl(
     override fun getPurchasesForSupplier(companyId: String, supplierId: String): Flow<List<PurchaseEntity>> {
         return purchaseDao.getPurchasesForSupplier(companyId, supplierId)
     }
+
+    override suspend fun deletePurchase(purchaseId: String, orderOrInvoice: String): AppResult<Unit> {
+        return try {
+            val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+            purchaseDao.deletePurchaseCascade(session.companyId, purchaseId, orderOrInvoice)
+            AppResult.Success(Unit)
+        } catch (e: Exception) {
+            AppResult.Failure(AppError.Unexpected(e.message ?: "Failed to delete purchase"))
+        }
+    }
+
+    override suspend fun getPurchaseItemsList(purchaseId: String): List<PurchaseItemEntity> {
+        val session = sessionStore.activeSession.first() ?: return emptyList()
+        return purchaseDao.getPurchaseItemsList(session.companyId, purchaseId)
+    }
 }
