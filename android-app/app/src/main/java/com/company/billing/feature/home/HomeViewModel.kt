@@ -5,22 +5,26 @@ import androidx.lifecycle.viewModelScope
 import com.company.billing.core.auth.Session
 import com.company.billing.core.auth.SessionStore
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 import com.company.billing.core.database.BillingDatabase
 import com.company.billing.feature.billing.data.ShiftEntity
-import kotlinx.coroutines.flow.first
 
 @HiltViewModel
 class HomeViewModel @Inject constructor(
     private val sessionStore: SessionStore,
     private val database: BillingDatabase
 ) : ViewModel() {
-    val activeSession: StateFlow<Session?> = kotlinx.coroutines.flow.MutableStateFlow(
+    val activeSession: StateFlow<Session?> = MutableStateFlow(
         Session(
             userId = "dummy_user",
             displayName = "Admin (Dev Mode)",
@@ -29,6 +33,15 @@ class HomeViewModel @Inject constructor(
             role = "ADMIN"
         )
     )
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val shiftHistory: StateFlow<List<ShiftEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            if (companyId.isNotEmpty()) database.shiftDao().getAllShifts(companyId)
+            else flowOf(emptyList())
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     fun logout() {
         viewModelScope.launch {

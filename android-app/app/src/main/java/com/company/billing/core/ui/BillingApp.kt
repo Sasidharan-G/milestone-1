@@ -21,7 +21,11 @@ import java.io.File
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.BorderStroke
+import com.company.billing.core.common.Money
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import com.company.billing.core.security.Permission
 import com.company.billing.core.auth.Session
 import androidx.compose.ui.Alignment
@@ -137,45 +141,120 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                         onCloseShiftClick = { showCloseShiftDialog = true }
                     )
 
+                    val shiftHistory by vm.shiftHistory.collectAsState()
+                    var shiftDialogTab by remember { mutableStateOf(0) }
+
                     if (showCloseShiftDialog) {
                         AlertDialog(
                             onDismissRequest = { showCloseShiftDialog = false; shiftMessage = "" },
-                            title = { Text("Close Register (Shift)", fontWeight = FontWeight.Bold) },
+                            title = {
+                                Column {
+                                    Text("Cash Register & Shifts", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    TabRow(
+                                        selectedTabIndex = shiftDialogTab,
+                                        containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                                        contentColor = MaterialTheme.colorScheme.primary
+                                    ) {
+                                        Tab(
+                                            selected = shiftDialogTab == 0,
+                                            onClick = { shiftDialogTab = 0 },
+                                            text = { Text("Close Register", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                                        )
+                                        Tab(
+                                            selected = shiftDialogTab == 1,
+                                            onClick = { shiftDialogTab = 1 },
+                                            text = { Text("Shift History (${shiftHistory.size})", fontSize = 13.sp, fontWeight = FontWeight.SemiBold) }
+                                        )
+                                    }
+                                }
+                            },
                             text = {
-                                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    Text("Please count and enter the physical cash currently in the drawer.")
-                                    OutlinedTextField(
-                                        value = shiftCashInput,
-                                        onValueChange = { shiftCashInput = it },
-                                        label = { Text("Physical Cash Amount") },
-                                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
-                                        modifier = Modifier.fillMaxWidth()
-                                    )
-                                    if (shiftMessage.isNotEmpty()) {
-                                        Text(shiftMessage, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                if (shiftDialogTab == 0) {
+                                    Column(verticalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                        Text("Please count and enter the physical cash currently in the drawer to close register and tally daily cash.", fontSize = 13.sp)
+                                        OutlinedTextField(
+                                            value = shiftCashInput,
+                                            onValueChange = { shiftCashInput = it },
+                                            label = { Text("Physical Cash Amount (₹)") },
+                                            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
+                                            modifier = Modifier.fillMaxWidth(),
+                                            shape = RoundedCornerShape(10.dp)
+                                        )
+                                        if (shiftMessage.isNotEmpty()) {
+                                            Text(shiftMessage, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                        }
+                                    }
+                                } else {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .heightIn(max = 350.dp)
+                                            .verticalScroll(rememberScrollState()),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        if (shiftHistory.isEmpty()) {
+                                            Text("No past register closures logged yet.", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                                        } else {
+                                            val df = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                                            shiftHistory.forEach { shift ->
+                                                val isMatch = shift.discrepancyMinorUnits == 0L
+                                                val isShortage = shift.discrepancyMinorUnits < 0L
+                                                Card(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    shape = RoundedCornerShape(10.dp),
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+                                                ) {
+                                                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                            Text(df.format(Date(shift.closedAtEpochMs)), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                            val statusText = when {
+                                                                isMatch -> "✅ Tally Matched"
+                                                                isShortage -> "⚠️ Shortage: -${Money(kotlin.math.abs(shift.discrepancyMinorUnits))}"
+                                                                else -> "ℹ️ Extra: +${Money(shift.discrepancyMinorUnits)}"
+                                                            }
+                                                            val statusColor = when {
+                                                                isMatch -> Color(0xFF2E7D32)
+                                                                isShortage -> MaterialTheme.colorScheme.error
+                                                                else -> MaterialTheme.colorScheme.primary
+                                                            }
+                                                            Text(statusText, fontWeight = FontWeight.Bold, fontSize = 11.sp, color = statusColor)
+                                                        }
+                                                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                                            Text("Expected: ${Money(shift.expectedCashMinorUnits)}", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                            Text("Counted: ${Money(shift.declaredCashMinorUnits)}", fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             },
                             confirmButton = {
-                                Button(
-                                    enabled = shiftCashInput.isNotBlank(),
-                                    onClick = {
-                                        val declared = shiftCashInput.toDoubleOrNull() ?: 0.0
-                                        val minorUnits = (declared * 100).toLong()
-                                        vm.closeShift(minorUnits, onSuccess = {
-                                            shiftMessage = "Shift closed successfully."
-                                            shiftCashInput = ""
-                                            showCloseShiftDialog = false
-                                        }, onError = { err ->
-                                            shiftMessage = "Error: $err"
-                                        })
+                                if (shiftDialogTab == 0) {
+                                    Button(
+                                        enabled = shiftCashInput.isNotBlank(),
+                                        onClick = {
+                                            val declared = shiftCashInput.toDoubleOrNull() ?: 0.0
+                                            val minorUnits = (declared * 100).toLong()
+                                            vm.closeShift(minorUnits, onSuccess = {
+                                                shiftMessage = "Shift closed and tallied successfully!"
+                                                shiftCashInput = ""
+                                                shiftDialogTab = 1
+                                            }, onError = { err ->
+                                                shiftMessage = "Error: $err"
+                                            })
+                                        },
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Text("Submit & Tally")
                                     }
-                                ) {
-                                    Text("Submit")
                                 }
                             },
                             dismissButton = {
-                                TextButton(onClick = { showCloseShiftDialog = false; shiftMessage = "" }) { Text("Cancel") }
+                                TextButton(onClick = { showCloseShiftDialog = false; shiftMessage = "" }) { Text("Close") }
                             }
                         )
                     }

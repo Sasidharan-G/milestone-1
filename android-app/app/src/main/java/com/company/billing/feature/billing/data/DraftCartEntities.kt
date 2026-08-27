@@ -48,6 +48,9 @@ interface ShiftDao {
     @Query("SELECT * FROM shifts WHERE companyId = :companyId ORDER BY closedAtEpochMs DESC LIMIT 1")
     fun getLastShift(companyId: String): Flow<ShiftEntity?>
 
+    @Query("SELECT * FROM shifts WHERE companyId = :companyId ORDER BY closedAtEpochMs DESC")
+    fun getAllShifts(companyId: String): Flow<List<ShiftEntity>>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertShift(shift: ShiftEntity)
 }
