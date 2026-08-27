@@ -286,37 +286,50 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Surface(
-                            color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(6.dp)) {
-                                Text("Total Sales", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Medium)
-                                Text(if (totalSalesSum == 0L) "₹0" else Money(totalSalesSum).toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("Total Sales", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (totalSalesSum == 0L) "₹0" else Money(totalSalesSum).toString(),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color.White
+                                )
                             }
                         }
                         Surface(
-                            color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
-                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(6.dp)) {
-                                Text("Cost (COGS)", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Medium)
-                                Text(if (purchaseCostSum == 0L) "₹0" else Money(purchaseCostSum).toString(), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("Cost (COGS)", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = if (purchaseCostSum == 0L) "₹0" else Money(purchaseCostSum).toString(),
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = Color(0xFFFFD54F)
+                                )
                             }
                         }
                         Surface(
-                            color = if (netProfitSum >= 0) Color(0xFFE8F5E9) else Color(0xFFFFEBEE),
-                            shape = RoundedCornerShape(8.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f)
                         ) {
-                            Column(modifier = Modifier.padding(6.dp)) {
-                                Text("Net Profit", fontSize = 10.sp, color = MaterialTheme.colorScheme.outline, fontWeight = FontWeight.Medium)
+                            Column(modifier = Modifier.padding(8.dp)) {
+                                Text("Net Profit", fontSize = 11.sp, color = Color.White.copy(alpha = 0.85f), fontWeight = FontWeight.SemiBold)
+                                Spacer(modifier = Modifier.height(2.dp))
                                 Text(
                                     text = if (totalSalesSum == 0L && purchaseCostSum == 0L) "₹0" else Money(netProfitSum).toString(),
-                                    fontSize = 13.sp,
+                                    fontSize = 14.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (netProfitSum >= 0) Color(0xFF2E7D32) else Color(0xFFC62828)
+                                    color = if (netProfitSum >= 0) Color(0xFF69F0AE) else Color(0xFFFF8A80)
                                 )
                             }
                         }
@@ -355,12 +368,15 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 items(report.rows) { row ->
-                                    val isTotalRow = row.firstOrNull()?.startsWith("TOTAL") == true || row.firstOrNull() == "---"
+                                    val isTotalRow = row.any { it.startsWith("TOTAL") } || row.any { it == "---" }
                                     
                                     if (isTotalRow) {
-                                        if (row.firstOrNull() != "---") {
+                                        if (row.any { it.startsWith("TOTAL") }) {
+                                            val totalTitle = row.find { it.startsWith("TOTAL") } ?: "TOTAL"
+                                            val totalDesc = row.find { it.endsWith("Bills") || it.endsWith("Orders") } ?: ""
+                                            val totalAmount = row.lastOrNull() ?: ""
                                             Card(
-                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
                                                 shape = RoundedCornerShape(12.dp),
                                                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp)
                                             ) {
@@ -370,16 +386,16 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                                     verticalAlignment = Alignment.CenterVertically
                                                 ) {
                                                     Column {
-                                                        Text(row.firstOrNull() ?: "TOTAL", fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
-                                                        if (row.size > 2 && row[2].isNotBlank()) {
-                                                            Text(row[2], fontSize = 12.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                                                        Text(totalTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                                                        if (totalDesc.isNotBlank()) {
+                                                            Text(totalDesc, fontSize = 12.sp, color = Color.White.copy(alpha = 0.8f))
                                                         }
                                                     }
                                                     Text(
-                                                        text = row.lastOrNull() ?: "",
+                                                        text = totalAmount,
                                                         fontWeight = FontWeight.ExtraBold,
                                                         fontSize = 18.sp,
-                                                        color = MaterialTheme.colorScheme.primary
+                                                        color = Color.White
                                                     )
                                                 }
                                             }
