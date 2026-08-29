@@ -18,6 +18,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import com.kadaikutty.pos.core.backup.data.BackupManager
 import com.kadaikutty.pos.core.backup.domain.BackupResult
@@ -32,11 +33,75 @@ class SettingsViewModel @Inject constructor(
     private val printerManager: PrinterManager,
     private val backupManager: BackupManager,
     private val syncScheduler: SyncScheduler,
+    private val syncManager: com.kadaikutty.pos.core.sync.SyncManager,
     private val database: com.kadaikutty.pos.core.database.BillingDatabase,
     private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
     private val verifier: com.kadaikutty.pos.core.auth.OfflineCredentialVerifier,
-    private val firestore: com.google.firebase.firestore.FirebaseFirestore
+    private val firestore: com.google.firebase.firestore.FirebaseFirestore,
+    private val subscriptionRepository: com.kadaikutty.pos.feature.subscription.SubscriptionRepository,
+    private val sampleDataGenerator: com.kadaikutty.pos.core.sample.SampleDataGenerator
 ) : ViewModel() {
+
+    fun loadDemoSampleData(onResult: (String) -> Unit) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isBackupRunning.value = true
+            _backupStatus.value = "Generating 100 demo retail records..."
+            try {
+                val session = sessionStore.activeSession.first()
+                if (session != null) {
+                    val count = sampleDataGenerator.insert100DemoRecords(session.companyId)
+                    _backupStatus.value = "Successfully initialized $count demo items (Products, Sales, Customers, Stock)!"
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult("Loaded $count demo records successfully!") }
+                } else {
+                    _backupStatus.value = "Failed: No active merchant session."
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult("Error: Please log in first.") }
+                }
+            } catch (e: Exception) {
+                _backupStatus.value = "Demo population failed: ${e.message}"
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onResult("Failed: ${e.message}") }
+            } finally {
+                _isBackupRunning.value = false
+            }
+        }
+    }
+
+    fun clearAllDatabase(clearCloudToo: Boolean, onResult: (Boolean) -> Unit) {
+        requireBiometricAuth {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                _isRestoreRunning.value = true
+                _restoreStatus.value = "Safely clearing database records..."
+                try {
+                    val session = sessionStore.activeSession.first()
+                    val companyId = session?.companyId ?: ""
+                    val success = sampleDataGenerator.clearAllData(companyId, clearCloudToo)
+                    if (success) {
+                        _restoreStatus.value = "All database records safely cleared."
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(true) }
+                    } else {
+                        _restoreStatus.value = "Failed to clear database."
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false) }
+                    }
+                } catch (e: Exception) {
+                    _restoreStatus.value = "Clear error: ${e.message}"
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false) }
+                } finally {
+                    _isRestoreRunning.value = false
+                }
+            }
+        }
+    }
+
+    val subscriptionStatus = subscriptionRepository.getSubscriptionStatus().stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    fun simulatePayment(planId: String) {
+        viewModelScope.launch {
+            subscriptionRepository.simulatePayment(planId)
+        }
+    }
 
     // Biometric authentication state
     private val _biometricAuthPending = MutableStateFlow<(() -> Unit)?>(null)
@@ -241,7 +306,7 @@ class SettingsViewModel @Inject constructor(
             viewModelScope.launch {
                 val session = sessionStore.activeSession.first()
                 if (session != null) {
-                    syncScheduler.request()
+                    syncManager.enqueueAllDataForSync()
                 }
             }
         }
@@ -304,31 +369,66 @@ class SettingsViewModel @Inject constructor(
     private val _restoreStatus = MutableStateFlow<String?>(null)
     val restoreStatus: StateFlow<String?> = _restoreStatus.asStateFlow()
 
-    fun runBackup(onBytesReady: (ByteArray) -> Unit) {
-        viewModelScope.launch {
+    private val _isBackupRunning = MutableStateFlow(false)
+    val isBackupRunning: StateFlow<Boolean> = _isBackupRunning.asStateFlow()
+
+    private val _isRestoreRunning = MutableStateFlow(false)
+    val isRestoreRunning: StateFlow<Boolean> = _isRestoreRunning.asStateFlow()
+
+    fun runBackup(uri: android.net.Uri) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isBackupRunning.value = true
             _backupStatus.value = "Creating backup package..."
             when (val result = backupManager.createBackup()) {
                 is BackupResult.Success -> {
-                    onBytesReady(result.zipBytes)
-                    _backupStatus.value = "Backup created successfully!"
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use { os ->
+                            os.write(result.zipBytes)
+                        }
+                        _backupStatus.value = "Backup created successfully!"
+                    } catch (e: Exception) {
+                        _backupStatus.value = "Backup failed to write: ${e.message}"
+                    }
                 }
                 is BackupResult.Failure -> {
                     _backupStatus.value = "Backup failed: ${result.exception.message}"
                 }
             }
+            _isBackupRunning.value = false
         }
     }
 
-    fun runRestore(bytes: ByteArray, onFinished: (Boolean) -> Unit) {
-        viewModelScope.launch {
+    private val _requireRestart = MutableStateFlow(false)
+    val requireRestart: StateFlow<Boolean> = _requireRestart.asStateFlow()
+
+    fun runRestore(uri: android.net.Uri, onFinished: (Boolean) -> Unit) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isRestoreRunning.value = true
             _restoreStatus.value = "Restoring database backup..."
-            val success = backupManager.restoreBackup(bytes)
-            if (success) {
-                _restoreStatus.value = "Database restored successfully! All data recovered."
-                onFinished(true)
-            } else {
-                _restoreStatus.value = "Restore failed: Invalid or empty backup archive. Please select a valid backup .zip file."
-                onFinished(false)
+            try {
+                var bytes: ByteArray? = null
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    bytes = inputStream.readBytes()
+                }
+                if (bytes != null) {
+                    val success = backupManager.restoreBackup(bytes!!)
+                    if (success) {
+                        _restoreStatus.value = "Database restored successfully! App will restart."
+                        _requireRestart.value = true
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
+                    } else {
+                        _restoreStatus.value = "Restore failed: Invalid or empty backup archive. Please select a valid backup .zip file."
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                    }
+                } else {
+                    _restoreStatus.value = "Restore failed: Could not read file."
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                }
+            } catch (e: Exception) {
+                _restoreStatus.value = "Restore failed: ${e.message}"
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+            } finally {
+                _isRestoreRunning.value = false
             }
         }
     }
@@ -336,6 +436,7 @@ class SettingsViewModel @Inject constructor(
     fun runRestoreFromCloud(onFinished: (Boolean) -> Unit) {
         requireBiometricAuth {
             viewModelScope.launch {
+                _isRestoreRunning.value = true
                 _restoreStatus.value = "Fetching data from cloud..."
                 val session = sessionStore.activeSession.first()
                 if (session == null) {
@@ -345,7 +446,8 @@ class SettingsViewModel @Inject constructor(
                 }
                 when (val result = backupManager.restoreFromCloud(session.companyId, firestore)) {
                     is BackupResult.Success -> {
-                        _restoreStatus.value = "Cloud restore completed successfully! All data recovered."
+                        _restoreStatus.value = "Cloud restore completed successfully! App will restart."
+                        _requireRestart.value = true
                         onFinished(true)
                     }
                     is BackupResult.Failure -> {
@@ -353,6 +455,7 @@ class SettingsViewModel @Inject constructor(
                         onFinished(false)
                     }
                 }
+                _isRestoreRunning.value = false
             }
         }
     }
@@ -369,50 +472,23 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    private val _supabaseBackupStatus = MutableStateFlow<String?>(null)
-    val supabaseBackupStatus: StateFlow<String?> = _supabaseBackupStatus.asStateFlow()
+    private val _cloudSyncStatus = MutableStateFlow<String?>(null)
+    val cloudSyncStatus: StateFlow<String?> = _cloudSyncStatus.asStateFlow()
 
-    private val _supabaseBackupsList = MutableStateFlow<List<Any>>(emptyList())
-    val supabaseBackupsList: StateFlow<List<Any>> = _supabaseBackupsList.asStateFlow()
-
-    fun backupToSupabase() {
-        requireBiometricAuth {
-            viewModelScope.launch {
-                _supabaseBackupStatus.value = "Cloud syncing happens automatically in the background when connected."
-            }
-        }
-    }
-
-    fun restoreFromSupabase(fileName: String, onFinished: (Boolean) -> Unit) {
-        requireBiometricAuth {
-            viewModelScope.launch {
-                _supabaseBackupStatus.value = "Firebase Restore is not implemented yet."
-                onFinished(false)
-            }
-        }
-    }
-
-    fun fetchSupabaseBackups() {
-        viewModelScope.launch {
-            _supabaseBackupStatus.value = "Firebase Backups fetch is not implemented yet."
-        }
-    }
 
     fun createUser(username: String, displayName: String, password: CharArray, permissions: Set<com.kadaikutty.pos.core.security.Permission>) {
         viewModelScope.launch {
             try {
                 val session = sessionStore.activeSession.first() ?: return@launch
                 val companyId = session.companyId
-                val cred = verifier.create(username, password, java.util.UUID.randomUUID().toString(), displayName)
-                val saltStr = java.util.Base64.getEncoder().encodeToString(cred.salt)
-                val verifierStr = java.util.Base64.getEncoder().encodeToString(cred.verifier)
-
+                val credResult = createCredentials(username, password, java.util.UUID.randomUUID().toString(), displayName)
+                
                 val userEntity = com.kadaikutty.pos.core.auth.UserEntity(
-                    id = cred.userId,
+                    id = credResult.userId,
                     username = username,
                     displayName = displayName,
-                    salt = saltStr,
-                    verifier = verifierStr,
+                    salt = credResult.saltStr,
+                    verifier = credResult.verifierStr,
                     permissions = permissions.joinToString(",") { it.name },
                     companyId = companyId,
                     role = "CASHIER",
@@ -423,7 +499,19 @@ class SettingsViewModel @Inject constructor(
 
                 // Call Firebase Cloud Function or similar logic
                 try {
-                    // TODO: Implement Firebase user creation
+                    val map = hashMapOf(
+                        "id" to userEntity.id,
+                        "username" to userEntity.username,
+                        "displayName" to userEntity.displayName,
+                        "salt" to userEntity.salt,
+                        "verifier" to userEntity.verifier,
+                        "permissions" to userEntity.permissions,
+                        "companyId" to userEntity.companyId,
+                        "role" to userEntity.role,
+                        "lastOnlineVerifiedAt" to userEntity.lastOnlineVerifiedAt,
+                        "offlineValidUntil" to userEntity.offlineValidUntil
+                    )
+                    firestore.collection("users").document(companyId).collection("staff").document(userEntity.id).set(map)
                 } catch (rpcEx: Exception) {
                     rpcEx.printStackTrace()
                 }
@@ -439,12 +527,10 @@ class SettingsViewModel @Inject constructor(
             val existing = userDao.getUserById(userId) ?: return@launch
 
             val updatedUser = if (newPassword != null && newPassword.isNotEmpty()) {
-                val cred = verifier.create(existing.username, newPassword, existing.id, existing.displayName)
-                val saltStr = java.util.Base64.getEncoder().encodeToString(cred.salt)
-                val verifierStr = java.util.Base64.getEncoder().encodeToString(cred.verifier)
+                val credResult = createCredentials(existing.username, newPassword, existing.id, existing.displayName)
                 existing.copy(
-                    salt = saltStr,
-                    verifier = verifierStr,
+                    salt = credResult.saltStr,
+                    verifier = credResult.verifierStr,
                     permissions = permissions.joinToString(",") { it.name }
                 )
             } else {
@@ -481,5 +567,14 @@ class SettingsViewModel @Inject constructor(
         val activeNetwork = connectivityManager?.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+    }
+
+    private data class CredentialResult(val userId: String, val saltStr: String, val verifierStr: String)
+
+    private fun createCredentials(username: String, password: CharArray, id: String, displayName: String): CredentialResult {
+        val cred = verifier.create(username, password, id, displayName)
+        val saltStr = java.util.Base64.getEncoder().encodeToString(cred.salt)
+        val verifierStr = java.util.Base64.getEncoder().encodeToString(cred.verifier)
+        return CredentialResult(cred.userId, saltStr, verifierStr)
     }
 }

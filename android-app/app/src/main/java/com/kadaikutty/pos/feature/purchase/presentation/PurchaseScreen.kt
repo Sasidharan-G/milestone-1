@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import com.kadaikutty.pos.core.common.Money
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -38,11 +39,13 @@ import com.kadaikutty.pos.feature.purchase.data.PurchaseItemEntity
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PurchaseScreen(viewModel: PurchaseViewModel) {
-    val products by viewModel.products.collectAsState()
-    val suppliers by viewModel.suppliers.collectAsState()
-    val purchases by viewModel.purchases.collectAsState()
-    val lines by viewModel.lines.collectAsState()
-    val selectedSupplierId by viewModel.selectedSupplierId.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    
+    val products = uiState.products
+    val suppliers = uiState.suppliers
+    val purchases = uiState.purchases
+    val lines = uiState.lines
+    val selectedSupplierId = uiState.selectedSupplierId
 
     var selectedProductId by remember { mutableStateOf("") }
     var quantityText by remember { mutableStateOf("1") }
@@ -158,7 +161,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Purchases & Stock Inward", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                title = { Text(stringResource(com.kadaikutty.pos.R.string.purchase), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
             )
         }
@@ -828,13 +831,13 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             val layoutMode = LocalLayoutMode.current
-            val isMobile = when (layoutMode) {
+            val isPortraitMobile = when (layoutMode) {
                 "Mobile" -> true
                 "Tablet" -> false
-                else -> maxWidth < 600.dp
+                else -> maxWidth < 700.dp && maxHeight > maxWidth
             }
             
-            if (isMobile) {
+            if (isPortraitMobile) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     TabRow(
                         selectedTabIndex = activeMobileTab,
@@ -981,7 +984,6 @@ fun PurchaseDetailsDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(
                     onClick = {
-                        onDismiss()
                         onDelete()
                     },
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error),
@@ -994,7 +996,6 @@ fun PurchaseDetailsDialog(
 
                 Button(
                     onClick = {
-                        onDismiss()
                         onEdit()
                     },
                     shape = RoundedCornerShape(8.dp)

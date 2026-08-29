@@ -40,21 +40,26 @@ class BillingViewModel @Inject constructor(
     private val shareManager: ShareManager,
     private val appPreferences: AppPreferences,
     private val sessionStore: SessionStore,
-    private val syncManager: SyncManager
+    private val syncManager: SyncManager,
+    private val syncScheduler: com.kadaikutty.pos.core.sync.SyncScheduler
 ) : ViewModel() {
+
+    fun forceSync() {
+        syncScheduler.request()
+    }
 
     private val masterDao = database.masterDao()
     private val saleDao = database.saleDao()
     private val purchaseDao = database.purchaseDao()
     private val draftCartDao = database.draftCartDao()
 
-    val stockBalances: StateFlow<Map<String, Long>> = sessionStore.activeSession
+    private val stockBalances = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             purchaseDao.getStockBalances(companyId).map { list ->
                 list.associate { it.productId to it.currentStock }
             }
-        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyMap())
+        }
 
     init {
         viewModelScope.launch {
@@ -92,28 +97,27 @@ class BillingViewModel @Inject constructor(
         }
     }
 
-    val products: StateFlow<List<ProductEntity>> = sessionStore.activeSession
+    private val products = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             masterDao.products(companyId, "")
-        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        }
 
-    val customers: StateFlow<List<CustomerEntity>> = sessionStore.activeSession
+    private val customers = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             masterDao.customers(companyId, "")
-        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        }
 
-    val sales: StateFlow<List<SaleEntity>> = sessionStore.activeSession
+    private val sales = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             saleDao.getSales(companyId)
-        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        }
 
     private val _selectedCustomerId = MutableStateFlow<String?>(null)
-    val selectedCustomerId: StateFlow<String?> = _selectedCustomerId.asStateFlow()
 
-    val selectedCustomerCreditBalance: StateFlow<Long> = combine(sessionStore.activeSession, _selectedCustomerId) { session, customerId ->
+    private val selectedCustomerCreditBalance = combine(sessionStore.activeSession, _selectedCustomerId) { session, customerId ->
         session to customerId
     }.flatMapLatest { (session, customerId) ->
         if (session == null || customerId.isNullOrBlank() || customerId == "online") {
@@ -121,10 +125,25 @@ class BillingViewModel @Inject constructor(
         } else {
             masterDao.getCustomerCreditBalance(session.companyId, customerId).map { it ?: 0L }
         }
-    }.stateIn(viewModelScope, SharingStarted.Lazily, 0L)
+    }
 
     private val _lines = MutableStateFlow<List<SaleLine>>(emptyList())
-    val lines: StateFlow<List<SaleLine>> = _lines.asStateFlow()
+    
+    val uiState: StateFlow<BillingUiState> = combine(
+        combine(products, customers, sales, stockBalances) { p, c, s, st -> 
+            BillingUiState(products = p, customers = c, sales = s, stockBalances = st) 
+        },
+        combine(_lines, _selectedCustomerId, selectedCustomerCreditBalance) { l, cid, credit -> 
+            Triple(l, cid, credit) 
+        }
+    ) { state1, state2 ->
+        state1.copy(
+            lines = state2.first,
+            selectedCustomerId = state2.second,
+            selectedCustomerCreditBalance = state2.third,
+            isLoading = false
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BillingUiState(isLoading = true))
 
     fun setCustomer(customerId: String?) {
         _selectedCustomerId.value = customerId
@@ -214,7 +233,7 @@ class BillingViewModel @Inject constructor(
     }
 
     fun onBarcodeScanned(barcode: String, onProductFound: ((ProductEntity) -> Unit)? = null, onProductNotFound: () -> Unit) {
-        val product = products.value.find { it.barcode == barcode }
+        val product = uiState.value.products.find { it.barcode == barcode }
         if (product != null) {
             val quantity = if (product.unitType == "KG" || product.unitType == "LITER") 1000L else 1L
             addLine(product.id, product.name, quantity, Money(product.salePriceMinorUnits), product.unitType)
@@ -224,6 +243,19 @@ class BillingViewModel @Inject constructor(
         }
     }
 
+    fun getInsufficientStockItems(selectedLines: List<SaleLine>? = null): List<String> {
+        val currentBalances = uiState.value.stockBalances
+        val linesToCheck = selectedLines ?: _lines.value
+        val outOfStockNames = mutableListOf<String>()
+        for (line in linesToCheck) {
+            val available = currentBalances[line.productId] ?: 0L
+            if (line.quantity > available) {
+                outOfStockNames.add("${line.productName} (Available: $available, Cart: ${line.quantity})")
+            }
+        }
+        return outOfStockNames
+    }
+
     fun save(
         paymentMode: String, 
         paidCash: Money = Money.Zero, 
@@ -231,6 +263,7 @@ class BillingViewModel @Inject constructor(
         creditApplied: Money = Money.Zero, 
         globalDiscount: Money = Money.Zero,
         settlePreviousCreditMinorUnits: Long = 0L,
+        context: android.content.Context? = null,
         onSuccess: (String) -> Unit, 
         onError: (Throwable) -> Unit
     ) {
@@ -251,21 +284,13 @@ class BillingViewModel @Inject constructor(
             when (val result = saleRepository.save(draft)) {
                 is AppResult.Success -> {
                     val billNum = result.value
-                    val session = sessionStore.activeSession.first()
-                    val custId = _selectedCustomerId.value
-                    if (settlePreviousCreditMinorUnits > 0L && session != null && !custId.isNullOrBlank() && custId != "online") {
-                        val creditSettlement = CustomerCreditEntity(
-                            id = newRecordId(),
-                            companyId = session.companyId,
-                            customerId = custId,
-                            amountMinorUnits = -settlePreviousCreditMinorUnits,
-                            reason = "Previous due settled in Bill $billNum",
-                            dateEpochMs = System.currentTimeMillis(),
-                            syncStatus = SyncStatus.LOCAL_ONLY
-                        )
-                        masterDao.insertCustomerCredit(creditSettlement)
-                        syncManager.enqueueCustomerCredit(creditSettlement, "INSERT")
+                    settlePreviousCredit(sessionStore.activeSession.first(), _selectedCustomerId.value, settlePreviousCreditMinorUnits, billNum)
+                    
+                    // Auto-print check
+                    if (context != null && appPreferences.autoPrintReceipt.first()) {
+                        printBill(context, billNum)
                     }
+
                     clearDraft()
                     onSuccess(billNum)
                 }
@@ -273,6 +298,22 @@ class BillingViewModel @Inject constructor(
                     onError(Exception(result.error.userMessage))
                 }
             }
+        }
+    }
+
+    private suspend fun settlePreviousCredit(session: com.kadaikutty.pos.core.auth.Session?, custId: String?, amount: Long, billNum: String) {
+        if (amount > 0L && session != null && !custId.isNullOrBlank() && custId != "online") {
+            val creditSettlement = CustomerCreditEntity(
+                id = newRecordId(),
+                companyId = session.companyId,
+                customerId = custId,
+                amountMinorUnits = -amount,
+                reason = "Previous due settled in Bill $billNum",
+                dateEpochMs = System.currentTimeMillis(),
+                syncStatus = SyncStatus.LOCAL_ONLY
+            )
+            masterDao.insertCustomerCredit(creditSettlement)
+            syncManager.enqueueCustomerCredit(creditSettlement, "INSERT")
         }
     }
 
@@ -305,21 +346,7 @@ class BillingViewModel @Inject constructor(
             when (val result = saleRepository.save(draft)) {
                 is AppResult.Success -> {
                     val billNum = result.value
-                    val session = sessionStore.activeSession.first()
-                    val custId = _selectedCustomerId.value
-                    if (settlePreviousCreditMinorUnits > 0L && session != null && !custId.isNullOrBlank() && custId != "online") {
-                        val creditSettlement = CustomerCreditEntity(
-                            id = newRecordId(),
-                            companyId = session.companyId,
-                            customerId = custId,
-                            amountMinorUnits = -settlePreviousCreditMinorUnits,
-                            reason = "Previous due settled in Bill $billNum",
-                            dateEpochMs = System.currentTimeMillis(),
-                            syncStatus = SyncStatus.LOCAL_ONLY
-                        )
-                        masterDao.insertCustomerCredit(creditSettlement)
-                        syncManager.enqueueCustomerCredit(creditSettlement, "INSERT")
-                    }
+                    settlePreviousCredit(sessionStore.activeSession.first(), _selectedCustomerId.value, settlePreviousCreditMinorUnits, billNum)
                     _lines.value = _lines.value.filterNot { it.productId in selectedProductIds }
                     saveDraftToDb()
                     onSuccess(billNum)

@@ -150,7 +150,8 @@ class DefaultAuthRepository(
     }
 
     override suspend fun logout() {
-        firebaseAuth.signOut()
+        // We do NOT sign out of Firebase Auth here because this device acts as a POS terminal
+        // and needs to continue background sync for secondary local users (Cashiers).
         sessions.clear()
     }
 

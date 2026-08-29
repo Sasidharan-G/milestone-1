@@ -125,5 +125,5 @@ object CoreModule {
     @Provides @Singleton fun printerManager(btDriver: BluetoothPrinterDriver, usbDriver: UsbPrinterDriver): PrinterManager = PrinterManager(btDriver, usbDriver)
     @Provides @Singleton fun shareManager(@ApplicationContext context: Context) = ShareManager(context)
     @Provides @Singleton fun backupManager(@ApplicationContext context: Context, database: BillingDatabase) = BackupManager(context, database)
-    // @Provides @Singleton fun firebaseBackupManager(@ApplicationContext context: Context, storage: FirebaseStorage, backupManager: BackupManager) = FirebaseBackupManager(context, storage, backupManager)
+    @Provides @Singleton fun sampleDataGenerator(database: BillingDatabase, firestore: FirebaseFirestore) = com.kadaikutty.pos.core.sample.SampleDataGenerator(database, firestore)
 }

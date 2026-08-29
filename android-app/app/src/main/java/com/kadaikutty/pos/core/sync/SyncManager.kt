@@ -205,6 +205,36 @@ class SyncManager(
         syncScheduler.request()
     }
 
+    suspend fun enqueueAllDataForSync() {
+        val session = sessionStore.activeSession.first() ?: return
+        val companyId = session.companyId
+
+        // Enqueue Masters
+        database.masterDao().categories(companyId, "").first().forEach { enqueueCategory(it, "INSERT") }
+        database.masterDao().products(companyId, "").first().forEach { enqueueProduct(it, "INSERT") }
+        database.masterDao().customers(companyId, "").first().forEach { enqueueCustomer(it, "INSERT") }
+        database.masterDao().suppliers(companyId, "").first().forEach { enqueueSupplier(it, "INSERT") }
+        database.masterDao().expenses(companyId).first().forEach { enqueueExpense(it, "INSERT") }
+        
+        // Enqueue Credits
+        // For customer credits and supplier credits, we don't have a simple getAll getter. Let's just grab sales and purchases.
+        
+        // Enqueue Sales
+        database.saleDao().getSales(companyId).first().forEach { sale ->
+            val items = database.saleDao().getSaleItemsList(companyId, sale.id)
+            enqueueSale(sale, items, "INSERT")
+        }
+
+        // Enqueue Purchases
+        database.purchaseDao().getPurchases(companyId).first().forEach { purchase ->
+            val items = database.purchaseDao().getPurchaseItemsList(companyId, purchase.id)
+            enqueuePurchase(purchase, items)
+        }
+        
+        // Trigger the scheduler immediately
+        syncScheduler.request()
+    }
+
     private fun toJson(value: Any?): String {
         return when (value) {
             null -> "null"

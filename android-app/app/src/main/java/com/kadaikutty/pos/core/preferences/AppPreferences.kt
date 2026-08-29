@@ -23,6 +23,20 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     private val printerPaperWidthKey = intPreferencesKey("printer_paper_width")
     val printerPaperWidth: Flow<Int> = dataStore.data.map { it[printerPaperWidthKey] ?: 32 }
 
+    private val autoPrintReceiptKey = booleanPreferencesKey("auto_print_receipt")
+    val autoPrintReceipt: Flow<Boolean> = dataStore.data.map { it[autoPrintReceiptKey] ?: false }
+
+    private val allowNegativeStockKey = booleanPreferencesKey("allow_negative_stock")
+    val allowNegativeStock: Flow<Boolean> = dataStore.data.map { it[allowNegativeStockKey] ?: true }
+
+    suspend fun saveAutoPrintReceipt(enabled: Boolean) {
+        dataStore.edit { it[autoPrintReceiptKey] = enabled }
+    }
+
+    suspend fun saveAllowNegativeStock(enabled: Boolean) {
+        dataStore.edit { it[allowNegativeStockKey] = enabled }
+    }
+
     suspend fun savePrinterSettings(type: String, deviceId: String, paperWidth: Int) {
         dataStore.edit {
             it[printerTypeKey] = type

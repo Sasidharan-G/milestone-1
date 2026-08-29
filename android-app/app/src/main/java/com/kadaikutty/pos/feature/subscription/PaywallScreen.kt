@@ -42,7 +42,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun PaywallScreen(onNavigateToPayment: (Int) -> Unit) {
+fun PaywallScreen(onSimulatePayment: (String) -> Unit) {
     val context = LocalContext.current
     val imageLoader = remember<ImageLoader>(context) {
         ImageLoader.Builder(context)
@@ -225,7 +225,7 @@ fun PaywallScreen(onNavigateToPayment: (Int) -> Unit) {
                     }
 
                     Button(
-                        onClick = { onNavigateToPayment(targetPrice) },
+                        onClick = { onSimulatePayment(if (isYearly) "yearly" else "monthly") },
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(56.dp)
@@ -236,7 +236,7 @@ fun PaywallScreen(onNavigateToPayment: (Int) -> Unit) {
                         shape = RoundedCornerShape(28.dp)
                     ) {
                         Text(
-                            text = "Go to Payment",
+                            text = "Simulate Payment",
                             fontSize = 18.sp,
                             fontWeight = FontWeight.SemiBold,
                             color = Color(0xFF2563EB)

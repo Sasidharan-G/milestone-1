@@ -95,5 +95,7 @@ fun SetNewPasswordScreen(
                 }
             }
         }
+        
+        com.kadaikutty.pos.core.ui.LoadingOverlay(isLoading = state.loading)
     }
 }

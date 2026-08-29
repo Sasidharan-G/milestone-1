@@ -126,6 +126,34 @@ class ReportsViewModel @Inject constructor(
         return excelExporter.export(data)
     }
 
+    suspend fun getBillDetails(billNumber: String): BillDetailData? {
+        val session = sessionStore.activeSession.first() ?: return null
+        val companyId = session.companyId
+        val sale = database.saleDao().getSaleByBillNumber(companyId, billNumber) ?: return null
+        val rawItems = database.saleDao().getSaleItemsList(companyId, sale.id)
+        val customer = if (!sale.customerId.isNullOrBlank()) {
+            database.masterDao().getCustomerById(companyId, sale.customerId)
+        } else null
+
+        val items = rawItems.map { item ->
+            val product = database.masterDao().getProductById(companyId, item.productId)
+            BillDetailItem(
+                productName = product?.name ?: "Item #${item.productId.take(6)}",
+                unitType = product?.unitType ?: "PIECE",
+                quantity = item.quantity,
+                unitPriceMinorUnits = item.unitPriceMinorUnits,
+                lineTotalMinorUnits = item.lineTotalMinorUnits
+            )
+        }
+
+        return BillDetailData(
+            sale = sale,
+            customerName = customer?.name ?: "Walk-in Customer",
+            customerPhone = customer?.phone ?: "",
+            items = items
+        )
+    }
+
     fun deleteSale(saleId: String, billNumber: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             when (val result = saleRepository.deleteSale(saleId, billNumber)) {
@@ -140,3 +168,18 @@ class ReportsViewModel @Inject constructor(
         }
     }
 }
+
+data class BillDetailItem(
+    val productName: String,
+    val unitType: String,
+    val quantity: Long,
+    val unitPriceMinorUnits: Long,
+    val lineTotalMinorUnits: Long
+)
+
+data class BillDetailData(
+    val sale: com.kadaikutty.pos.feature.billing.data.SaleEntity,
+    val customerName: String,
+    val customerPhone: String,
+    val items: List<BillDetailItem>
+)

@@ -39,6 +39,9 @@ import kotlinx.coroutines.flow.Flow
     @Query("SELECT * FROM sales WHERE companyId = :companyId AND customerId = :customerId ORDER BY createdAtEpochMs DESC")
     fun getSalesForCustomer(companyId: String, customerId: String): Flow<List<SaleEntity>>
 
+    @Query("SELECT * FROM sales WHERE companyId = :companyId AND (billNumber = :billNumber OR id = :billNumber) LIMIT 1")
+    suspend fun getSaleByBillNumber(companyId: String, billNumber: String): SaleEntity?
+
     @Query("SELECT * FROM sales WHERE companyId = :companyId AND id = :saleId LIMIT 1")
     suspend fun getSaleById(companyId: String, saleId: String): SaleEntity?
 

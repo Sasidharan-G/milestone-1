@@ -9,12 +9,19 @@ import androidx.work.WorkManager
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.ExistingPeriodicWorkPolicy
 import java.util.concurrent.TimeUnit
+import androidx.work.BackoffPolicy
 
 class SyncScheduler(private val context: Context) {
     fun request() = WorkManager.getInstance(context).enqueueUniqueWork(
         "billing-sync",
-        ExistingWorkPolicy.KEEP,
-        OneTimeWorkRequestBuilder<SyncWorker>().setConstraints(Constraints(requiredNetworkType = NetworkType.CONNECTED)).build(),
+        ExistingWorkPolicy.REPLACE,
+        OneTimeWorkRequestBuilder<SyncWorker>()
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                2, TimeUnit.MINUTES
+            )
+            .setConstraints(Constraints(requiredNetworkType = NetworkType.CONNECTED))
+            .build(),
     )
 
     fun schedulePeriodicSync() {

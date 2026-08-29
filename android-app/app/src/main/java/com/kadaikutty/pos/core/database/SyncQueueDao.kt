@@ -35,6 +35,9 @@ interface SyncQueueDao {
 
     @Query("SELECT COUNT(*) FROM sync_queue WHERE companyId = :companyId AND status != 'SYNCED'")
     fun pendingCount(companyId: String): Flow<Int>
+
+    @Query("DELETE FROM sync_queue WHERE companyId = :companyId")
+    suspend fun clearByCompany(companyId: String)
 }
 
 @Dao

@@ -13,6 +13,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.BorderStroke
@@ -30,20 +32,29 @@ import com.kadaikutty.pos.feature.billing.data.SaleEntity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-
 import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Search
 import com.kadaikutty.pos.core.ui.CameraBarcodeScannerDialog
 import androidx.compose.ui.platform.LocalContext
+import com.kadaikutty.pos.feature.billing.presentation.components.AddCustomerDialog
+import com.kadaikutty.pos.feature.billing.presentation.components.EditQuantityDialog
+import com.kadaikutty.pos.feature.billing.presentation.components.PaymentCheckoutDialog
+import com.kadaikutty.pos.feature.billing.presentation.components.SplitCartDialog
+import com.kadaikutty.pos.feature.billing.presentation.components.SearchableProductSelectorDialog
+import com.kadaikutty.pos.feature.billing.presentation.components.SearchableCustomerSelectorDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BillingScreen(viewModel: BillingViewModel) {
     val context = LocalContext.current
-    val products by viewModel.products.collectAsState()
-    val customers by viewModel.customers.collectAsState()
-    val sales by viewModel.sales.collectAsState()
-    val lines by viewModel.lines.collectAsState()
-    val selectedCustomerId by viewModel.selectedCustomerId.collectAsState()
+    val uiState by viewModel.uiState.collectAsState()
+    
+    val products = uiState.products
+    val customers = uiState.customers
+    val sales = uiState.sales
+    val lines = uiState.lines
+    val selectedCustomerId = uiState.selectedCustomerId
+    val stockMap = uiState.stockBalances
 
     var selectedProductId by remember { mutableStateOf("") }
     var quantityText by remember { mutableStateOf("1") }
@@ -55,165 +66,73 @@ fun BillingScreen(viewModel: BillingViewModel) {
     var showCameraScanner by remember { mutableStateOf(false) }
     
     var showPaymentDialog by remember { mutableStateOf(false) }
-    var isSplitMode by remember { mutableStateOf(false) }
-    var cashInput by remember { mutableStateOf("") }
-    var upiInput by remember { mutableStateOf("") }
     var discountInput by remember { mutableStateOf("") }
+    var includePreviousDueInCheckout by remember { mutableStateOf(false) }
     
     var showSplitCartDialog by remember { mutableStateOf(false) }
     var splitCartSelectedItems by remember { mutableStateOf(setOf<String>()) }
     var checkoutMode by remember { mutableStateOf("ALL") } // "ALL" or "SPLIT_CART"
     var editingLineQuantity by remember { mutableStateOf<SaleLine?>(null) }
     
-    val customerCreditDue by viewModel.selectedCustomerCreditBalance.collectAsState()
+    val customerCreditDue = uiState.selectedCustomerCreditBalance
     var showAddCustomerDialog by remember { mutableStateOf(false) }
-    var newCustName by remember { mutableStateOf("") }
-    var newCustPhone by remember { mutableStateOf("") }
-    var newCustAddress by remember { mutableStateOf("") }
-    var newCustOpeningDue by remember { mutableStateOf("") }
-    var includePreviousDueInCheckout by remember { mutableStateOf(false) }
+    var showProductSearchDialog by remember { mutableStateOf(false) }
+    var showCustomerSearchDialog by remember { mutableStateOf(false) }
 
-    if (showAddCustomerDialog) {
-        AlertDialog(
-            onDismissRequest = { showAddCustomerDialog = false },
-            title = { Text("Add New Customer", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedTextField(
-                        value = newCustName,
-                        onValueChange = { newCustName = it },
-                        label = { Text("Customer Name *") },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newCustPhone,
-                        onValueChange = { newCustPhone = it },
-                        label = { Text("Phone Number") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newCustAddress,
-                        onValueChange = { newCustAddress = it },
-                        label = { Text("Address (Optional)") },
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    OutlinedTextField(
-                        value = newCustOpeningDue,
-                        onValueChange = { newCustOpeningDue = it },
-                        label = { Text("Previous / Opening Due (₹)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        shape = RoundedCornerShape(10.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    )
+    SearchableCustomerSelectorDialog(
+        showDialog = showCustomerSearchDialog,
+        customers = customers,
+        onCustomerSelected = { customer ->
+            viewModel.setCustomer(customer?.id)
+        },
+        onAddNewCustomer = {
+            showAddCustomerDialog = true
+        },
+        onDismiss = { showCustomerSearchDialog = false }
+    )
+
+    SearchableProductSelectorDialog(
+        showDialog = showProductSearchDialog,
+        products = products,
+        stockMap = stockMap,
+        onProductSelected = { prod ->
+            selectedProductId = prod.id
+        },
+        onDismiss = { showProductSearchDialog = false }
+    )
+
+    AddCustomerDialog(
+        showDialog = showAddCustomerDialog,
+        onDismiss = { showAddCustomerDialog = false },
+        onSaveCustomer = { name, phone, address, openingDue ->
+            viewModel.addQuickCustomer(
+                name = name,
+                phone = phone,
+                address = address,
+                openingDueMinorUnits = openingDue,
+                onSuccess = {
+                    showAddCustomerDialog = false
+                    android.widget.Toast.makeText(context, "Customer added & selected!", android.widget.Toast.LENGTH_SHORT).show()
+                },
+                onError = {
+                    android.widget.Toast.makeText(context, "Error: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
                 }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        if (newCustName.isBlank()) {
-                            android.widget.Toast.makeText(context, "Please enter customer name", android.widget.Toast.LENGTH_SHORT).show()
-                        } else {
-                            val openingDueVal = ((newCustOpeningDue.toDoubleOrNull() ?: 0.0) * 100).toLong()
-                            viewModel.addQuickCustomer(
-                                name = newCustName,
-                                phone = newCustPhone,
-                                address = newCustAddress,
-                                openingDueMinorUnits = openingDueVal,
-                                onSuccess = {
-                                    newCustName = ""
-                                    newCustPhone = ""
-                                    newCustAddress = ""
-                                    newCustOpeningDue = ""
-                                    showAddCustomerDialog = false
-                                    android.widget.Toast.makeText(context, "Customer added & selected!", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                                onError = {
-                                    android.widget.Toast.makeText(context, "Error: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
-                                }
-                            )
-                        }
-                    }
-                ) {
-                    Text("Save & Select")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showAddCustomerDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
+            )
+        }
+    )
 
     if (editingLineQuantity != null) {
         val line = editingLineQuantity!!
-        var inputQty by remember(line) {
-            val isDec = line.unitType == "KG" || line.unitType == "LITER"
-            mutableStateOf(if (isDec) String.format(Locale.US, "%.3f", line.quantity / 1000.0) else line.quantity.toString())
-        }
-
-        AlertDialog(
-            onDismissRequest = { editingLineQuantity = null },
-            title = { Text("Edit Quantity - ${line.productName}", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Unit Price: ₹${line.unitPrice}", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
-                    OutlinedTextField(
-                        value = inputQty,
-                        onValueChange = { inputQty = it },
-                        label = { Text(if (line.unitType == "KG" || line.unitType == "LITER") "Quantity (Kg/L)" else "Quantity (Pieces)") },
-                        keyboardOptions = KeyboardOptions(keyboardType = if (line.unitType == "KG" || line.unitType == "LITER") KeyboardType.Decimal else KeyboardType.Number),
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    // Quick Increment Buttons
-                    if (line.unitType == "PIECE") {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            listOf(1, 2, 5, 10).forEach { addVal ->
-                                FilterChip(
-                                    selected = false,
-                                    onClick = {
-                                        val cur = inputQty.toLongOrNull() ?: 0L
-                                        inputQty = (cur + addVal).toString()
-                                    },
-                                    label = { Text("+$addVal") }
-                                )
-                            }
-                        }
-                    }
-                }
+        EditQuantityDialog(
+            line = line,
+            onDismiss = { editingLineQuantity = null },
+            onUpdateQuantity = { productId, newQty ->
+                viewModel.updateQuantity(productId, newQty)
+                editingLineQuantity = null
             },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val isDec = line.unitType == "KG" || line.unitType == "LITER"
-                        val parsed = if (isDec) {
-                            val d = inputQty.toDoubleOrNull()
-                            if (d != null && d > 0) (d * 1000).toLong() else null
-                        } else inputQty.toLongOrNull()
-
-                        if (parsed != null && parsed > 0) {
-                            viewModel.updateQuantity(line.productId, parsed)
-                            editingLineQuantity = null
-                        } else if (parsed == 0L) {
-                            viewModel.removeLine(line.productId)
-                            editingLineQuantity = null
-                        }
-                    }
-                ) {
-                    Text("Update Quantity")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { editingLineQuantity = null }) {
-                    Text("Cancel")
-                }
+            onRemoveLine = { productId ->
+                viewModel.removeLine(productId)
+                editingLineQuantity = null
             }
         )
     }
@@ -251,15 +170,13 @@ fun BillingScreen(viewModel: BillingViewModel) {
     val activeBillSubtotal = activeLines.fold(Money.Zero) { sum, line -> sum + line.lineTotal }
     val globalDiscountMinorUnits = (discountInput.toDoubleOrNull() ?: 0.0).let { (it * 100).toLong() }
     val activeBillTotal = Money(maxOf(0L, activeBillSubtotal.minorUnits - globalDiscountMinorUnits))
-
-    val stockMap by viewModel.stockBalances.collectAsState()
     val selectedProduct = products.find { it.id == selectedProductId }
     val currentStockUnits = if (selectedProduct != null) stockMap[selectedProduct.id] ?: 0L else 0L
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Billing / Sales", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                title = { Text(stringResource(com.kadaikutty.pos.R.string.billing), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 actions = {
                     IconButton(onClick = { showCameraScanner = true }) {
@@ -274,14 +191,14 @@ fun BillingScreen(viewModel: BillingViewModel) {
                 modifier = modifier.border(
                     width = 1.dp,
                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
-                    shape = RoundedCornerShape(20.dp)
+                    shape = MaterialTheme.shapes.extraLarge
                 ),
-                shape = RoundedCornerShape(20.dp),
+                shape = MaterialTheme.shapes.extraLarge,
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // 1. Select Customer
+                    // 1. Select Customer (Opens Fast Searchable Selector Dialog)
                     val selectedCustomerName = when (selectedCustomerId) {
                         null -> "Walk-in Customer"
                         "online" -> "Online Customer"
@@ -292,91 +209,104 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        ExposedDropdownMenuBox(
-                            expanded = expandedCustomer,
-                            onExpandedChange = { expandedCustomer = !expandedCustomer },
-                            modifier = Modifier.weight(1f)
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                                .clickable { showCustomerSearchDialog = true },
+                            shape = MaterialTheme.shapes.medium,
+                            border = BorderStroke(1.dp, if (selectedCustomerId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surface
                         ) {
-                            OutlinedTextField(
-                                readOnly = true,
-                                value = selectedCustomerName,
-                                onValueChange = {},
-                                label = { 
-                                    Text(if (customerCreditDue > 0L) "Customer (Due: ₹${Money(customerCreditDue)})" else "Customer")
-                                },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedCustomer) },
-                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expandedCustomer,
-                                onDismissRequest = { expandedCustomer = false }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                DropdownMenuItem(text = { Text("Walk-in Customer") }, onClick = { viewModel.setCustomer(null); expandedCustomer = false })
-                                customers.forEach { customer ->
-                                    DropdownMenuItem(text = { Text(customer.name) }, onClick = { viewModel.setCustomer(customer.id); expandedCustomer = false })
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = if (customerCreditDue > 0L) "Customer (Due: ₹${Money(customerCreditDue)})" else "Customer",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (customerCreditDue > 0L) MaterialTheme.colorScheme.error else if (selectedCustomerId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = selectedCustomerName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (selectedCustomerId != null) FontWeight.Bold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        color = if (selectedCustomerId != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                                    )
                                 }
+                                Icon(
+                                    Icons.Default.Search,
+                                    contentDescription = "Search Customer",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
 
                         FilledTonalIconButton(
                             onClick = { showAddCustomerDialog = true },
-                            modifier = Modifier.size(54.dp).padding(top = 6.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.size(56.dp),
+                            shape = MaterialTheme.shapes.medium
                         ) {
                             Icon(Icons.Default.Add, contentDescription = "Add Customer")
                         }
                     }
 
-                    // 2. Select Product
-                    val selectedProductName = selectedProduct?.name ?: "Select Product"
+                    // 2. Select Product (Opens Fast Searchable Selector Dialog)
+                    val selectedProductName = selectedProduct?.name ?: "Search & Select Product..."
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        ExposedDropdownMenuBox(
-                            expanded = expandedProduct,
-                            onExpandedChange = { expandedProduct = !expandedProduct },
-                            modifier = Modifier.weight(1f)
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                                .clickable { showProductSearchDialog = true },
+                            shape = MaterialTheme.shapes.medium,
+                            border = BorderStroke(1.dp, if (selectedProduct != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surface
                         ) {
-                            OutlinedTextField(
-                                readOnly = true,
-                                value = selectedProductName,
-                                onValueChange = {},
-                                label = { Text("Product") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProduct) },
-                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expandedProduct,
-                                onDismissRequest = { expandedProduct = false }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                products.forEach { product ->
-                                    val pStock = stockMap[product.id] ?: 0L
-                                    val pStockStr = if (product.unitType == "KG" || product.unitType == "LITER") {
-                                        String.format(Locale.US, "%.3f", pStock / 1000.0)
-                                    } else "$pStock"
-                                    DropdownMenuItem(
-                                        text = { 
-                                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                                Text(product.name)
-                                                Text(if (pStock <= 0) "Out of stock" else "Stock: $pStockStr", fontSize = 11.sp, color = if (pStock <= 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline)
-                                            }
-                                        }, 
-                                        onClick = { selectedProductId = product.id; expandedProduct = false }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Product",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (selectedProduct != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = selectedProductName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (selectedProduct != null) FontWeight.Bold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        color = if (selectedProduct != null) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                     )
                                 }
+                                Icon(
+                                    Icons.Default.Search,
+                                    contentDescription = "Search Product",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
 
                         FilledTonalIconButton(
                             onClick = { showCameraScanner = true },
-                            modifier = Modifier.size(54.dp).padding(top = 6.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.size(56.dp),
+                            shape = MaterialTheme.shapes.medium
                         ) {
                             Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = MaterialTheme.colorScheme.primary)
                         }
@@ -392,15 +322,15 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             if (currentStockUnits <= 0) {
-                                Text("⚠️ Out of Stock (0 available)", color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("⚠️ Out of Stock (0 available)", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                             } else {
-                                Text("Available in Stock: $formattedStock", color = MaterialTheme.colorScheme.primary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text("Available in Stock: $formattedStock", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
 
                     if (products.isEmpty()) {
-                        Text("No products found! Please create a product first.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        Text("No products found! Please create a product first.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
                     }
 
                     // Stepper Quantity, Price and Add Button in a single row
@@ -420,24 +350,23 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                 }
                             },
                             modifier = Modifier.size(44.dp).padding(top = 6.dp),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = MaterialTheme.shapes.small
                         ) {
-                            Text("-", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                            Text("-", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
                         }
 
                         // Quantity Input Box
                         OutlinedTextField(
                             value = quantityText,
                             onValueChange = { quantityText = it },
-                            label = { Text("Qty", fontSize = 11.sp) },
+                            label = { Text("Qty", style = MaterialTheme.typography.labelSmall) },
                             keyboardOptions = KeyboardOptions(keyboardType = if (selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER") KeyboardType.Decimal else KeyboardType.Number),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = MaterialTheme.shapes.small,
                             modifier = Modifier.weight(1f),
                             singleLine = true,
-                            textStyle = androidx.compose.ui.text.TextStyle(
+                            textStyle = MaterialTheme.typography.bodyMedium.copy(
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center, 
-                                fontWeight = FontWeight.Bold, 
-                                fontSize = 14.sp
+                                fontWeight = FontWeight.Bold
                             )
                         )
 
@@ -456,18 +385,18 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                 }
                             },
                             modifier = Modifier.size(44.dp).padding(top = 6.dp),
-                            shape = RoundedCornerShape(10.dp)
+                            shape = MaterialTheme.shapes.small
                         ) {
-                            Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("+", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         }
 
                         // Price Input Box
                         OutlinedTextField(
                             value = priceText,
                             onValueChange = { priceText = it },
-                            label = { Text("Price", fontSize = 11.sp) },
+                            label = { Text("Price", style = MaterialTheme.typography.labelSmall) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            shape = RoundedCornerShape(10.dp),
+                            shape = MaterialTheme.shapes.small,
                             modifier = Modifier.weight(1.1f),
                             singleLine = true
                         )
@@ -504,11 +433,11 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                     message = "Added to invoice"
                                 }
                             },
-                            shape = RoundedCornerShape(10.dp),
+                            shape = MaterialTheme.shapes.small,
                             contentPadding = PaddingValues(0.dp),
                             modifier = Modifier.weight(0.9f).height(54.dp).padding(top = 6.dp)
                         ) {
-                            Text("ADD", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("ADD", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
                         }
                     }
 
@@ -523,9 +452,9 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                     .border(
                                         width = 1.dp,
                                         color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = MaterialTheme.shapes.medium
                                     ),
-                                shape = RoundedCornerShape(12.dp),
+                                shape = MaterialTheme.shapes.medium,
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                             ) {
                                 Row(
@@ -537,8 +466,18 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                 ) {
                                     // Product Name & Price
                                     Column(modifier = Modifier.weight(2.2f)) {
-                                        Text(line.productName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text("₹${line.unitPrice} each", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                        Text(
+                                            text = line.productName,
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            maxLines = 1,
+                                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                                        )
+                                        Text(
+                                            text = "₹${line.unitPrice} each",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
+                                        )
                                     }
 
                                     // Quantity Stepper: [-] [ Qty ] [+]
@@ -562,14 +501,14 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                             modifier = Modifier.size(32.dp),
                                             shape = androidx.compose.foundation.shape.CircleShape
                                         ) {
-                                            Text("-", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                            Text("-", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                         }
 
                                         Surface(
                                             modifier = Modifier
                                                 .padding(horizontal = 6.dp)
                                                 .clickable { editingLineQuantity = line },
-                                            shape = RoundedCornerShape(6.dp),
+                                            shape = MaterialTheme.shapes.extraSmall,
                                             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
                                             border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                                         ) {
@@ -581,7 +520,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
 
                                             Text(
                                                 text = qtyLabel,
-                                                fontSize = 12.sp,
+                                                style = MaterialTheme.typography.bodySmall,
                                                 fontWeight = FontWeight.Bold,
                                                 color = MaterialTheme.colorScheme.primary,
                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 4.dp)
@@ -595,7 +534,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                             modifier = Modifier.size(32.dp),
                                             shape = androidx.compose.foundation.shape.CircleShape
                                         ) {
-                                            Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                                            Text("+", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                         }
                                     }
 
@@ -608,7 +547,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                         Text(
                                             line.lineTotal.toString(),
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 13.sp,
+                                            style = MaterialTheme.typography.labelLarge,
                                             color = MaterialTheme.colorScheme.primary
                                         )
                                         IconButton(
@@ -635,15 +574,15 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         OutlinedTextField(
                             value = discountInput,
                             onValueChange = { discountInput = it },
-                            label = { Text("Discount(₹)", fontSize = 12.sp) },
+                            label = { Text("Discount(₹)", style = MaterialTheme.typography.bodySmall) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f).padding(end = 12.dp),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.medium,
                             singleLine = true
                         )
                         Column(modifier = Modifier.weight(1.2f), horizontalAlignment = Alignment.End) {
-                            Text("Sub: $activeBillSubtotal", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                            Text("Total: $activeBillTotal", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
+                            Text("Sub: $activeBillSubtotal", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                            Text("Total: $activeBillTotal", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                         }
                     }
 
@@ -654,7 +593,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                 if (lines.isEmpty()) message = "Cannot split empty bill" else showSplitCartDialog = true
                             },
                             modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.medium,
                             contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
                             Text("Split", fontWeight = FontWeight.Bold)
@@ -669,63 +608,49 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             },
                             modifier = Modifier.weight(1.5f),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.medium,
                             contentPadding = PaddingValues(vertical = 12.dp)
                         ) {
                             Text("Checkout All", fontWeight = FontWeight.Bold)
                         }
                     }
 
-                    if (showSplitCartDialog) {
-                        AlertDialog(
-                            onDismissRequest = { showSplitCartDialog = false },
-                            title = { Text("Select Items for Split Bill", fontWeight = FontWeight.Bold) },
-                            text = {
-                                LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    items(lines) { line ->
-                                        val isChecked = splitCartSelectedItems.contains(line.productId)
-                                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                            Checkbox(
-                                                checked = isChecked, 
-                                                onCheckedChange = { 
-                                                    if (it) {
-                                                        splitCartSelectedItems = splitCartSelectedItems + line.productId
-                                                    } else {
-                                                        splitCartSelectedItems = splitCartSelectedItems - line.productId
-                                                    }
-                                                }
-                                            )
-                                            Text(line.productName, modifier = Modifier.weight(1f), fontSize = 14.sp)
-                                            Text(line.lineTotal.toString(), fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            },
-                            confirmButton = {
-                                Button(
-                                    enabled = splitCartSelectedItems.isNotEmpty(),
-                                    onClick = {
-                                        showSplitCartDialog = false
-                                        checkoutMode = "SPLIT_CART"
-                                        showPaymentDialog = true
-                                    }
-                                ) { Text("Proceed to Pay") }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { showSplitCartDialog = false }) { Text("Cancel") }
+                    SplitCartDialog(
+                        showDialog = showSplitCartDialog,
+                        lines = lines,
+                        selectedItems = splitCartSelectedItems,
+                        onDismiss = { showSplitCartDialog = false },
+                        onSelectionChange = { productId, isChecked ->
+                            if (isChecked) {
+                                splitCartSelectedItems = splitCartSelectedItems + productId
+                            } else {
+                                splitCartSelectedItems = splitCartSelectedItems - productId
                             }
-                        )
-                    }
-
-                    if (showPaymentDialog) {
-                        val finalPayableTotal = if (includePreviousDueInCheckout && customerCreditDue > 0L) {
-                            Money(activeBillTotal.minorUnits + customerCreditDue)
-                        } else {
-                            activeBillTotal
+                        },
+                        onProceedToPay = {
+                            showSplitCartDialog = false
+                            checkoutMode = "SPLIT_CART"
+                            showPaymentDialog = true
                         }
-                        val settleDueAmount = if (includePreviousDueInCheckout && customerCreditDue > 0L) customerCreditDue else 0L
+                    )
 
-                        val performSave: (String, Money, Money, Money) -> Unit = { pMode, pCash, pUpi, cApplied ->
+                    val finalPayableTotal = if (includePreviousDueInCheckout && customerCreditDue > 0L) {
+                        Money(activeBillTotal.minorUnits + customerCreditDue)
+                    } else {
+                        activeBillTotal
+                    }
+                    val settleDueAmount = if (includePreviousDueInCheckout && customerCreditDue > 0L) customerCreditDue else 0L
+
+                    PaymentCheckoutDialog(
+                        showDialog = showPaymentDialog,
+                        checkoutMode = checkoutMode,
+                        finalPayableTotal = finalPayableTotal,
+                        customerCreditDue = customerCreditDue,
+                        selectedCustomerId = selectedCustomerId,
+                        includePreviousDueInCheckout = includePreviousDueInCheckout,
+                        onIncludePreviousDueChange = { includePreviousDueInCheckout = it },
+                        onDismiss = { showPaymentDialog = false },
+                        onPerformSave = { pMode, pCash, pUpi, cApplied ->
                             val discountMoney = Money(globalDiscountMinorUnits)
                             if (checkoutMode == "SPLIT_CART") {
                                 viewModel.checkoutSelectedItems(
@@ -759,161 +684,15 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                     onError = { message = "Error: ${it.message}" }
                                 )
                             }
+                        },
+                        onError = { errorMsg ->
+                            message = errorMsg
                         }
-
-                        AlertDialog(
-                            onDismissRequest = { 
-                                showPaymentDialog = false
-                                isSplitMode = false
-                                cashInput = ""
-                                upiInput = ""
-                            },
-                            title = { Text(if (checkoutMode == "SPLIT_CART") "Payment for Split Cart" else "Payment & Checkout", fontWeight = FontWeight.Bold) },
-                            text = { 
-                                Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    if (customerCreditDue > 0L && selectedCustomerId != null && selectedCustomerId != "online") {
-                                        Card(
-                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.35f)),
-                                            shape = RoundedCornerShape(12.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(10.dp).fillMaxWidth(),
-                                                horizontalArrangement = Arrangement.SpaceBetween,
-                                                verticalAlignment = Alignment.CenterVertically
-                                            ) {
-                                                Column(modifier = Modifier.weight(1f)) {
-                                                    Text("Previous Due: ₹${Money(customerCreditDue)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
-                                                    Text(if (includePreviousDueInCheckout) "Added to Total Bill" else "Skipped (Current Bill Only)", fontSize = 11.sp)
-                                                }
-                                                Switch(
-                                                    checked = includePreviousDueInCheckout,
-                                                    onCheckedChange = { includePreviousDueInCheckout = it }
-                                                )
-                                            }
-                                        }
-                                    }
-
-                                    Text("Total Payable: $finalPayableTotal", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
-                                    
-                                    if (!isSplitMode) {
-                                        Text("Select Quick Checkout:", fontSize = 14.sp)
-                                        Button(
-                                            onClick = {
-                                                showPaymentDialog = false
-                                                performSave("CASH", finalPayableTotal, Money.Zero, Money.Zero)
-                                            },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF4CAF50))
-                                        ) { Text("Full Cash (₹$finalPayableTotal)") }
-                                        
-                                        Button(
-                                            onClick = {
-                                                showPaymentDialog = false
-                                                performSave("GPAY", Money.Zero, finalPayableTotal, Money.Zero)
-                                            },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF2196F3))
-                                        ) { Text("Full GPay / UPI (₹$finalPayableTotal)") }
-                                        
-                                        Button(
-                                            onClick = {
-                                                if (selectedCustomerId == null || selectedCustomerId == "online") {
-                                                    showPaymentDialog = false
-                                                    message = "Validation Error: Credit can only be given to a registered customer. Please select a customer."
-                                                } else {
-                                                    showPaymentDialog = false
-                                                    performSave("CREDIT", Money.Zero, Money.Zero, finalPayableTotal)
-                                                }
-                                            },
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                                        ) { Text("Full Credit (₹$finalPayableTotal)") }
-
-                                        HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
-                                        
-                                        OutlinedButton(
-                                            onClick = { isSplitMode = true },
-                                            modifier = Modifier.fillMaxWidth()
-                                        ) { Text("Split / Partial Payment") }
-                                        
-                                    } else {
-                                        val cInput = cashInput.toDoubleOrNull() ?: 0.0
-                                        val uInput = upiInput.toDoubleOrNull() ?: 0.0
-                                        val inputTotalMinor = ((cInput + uInput) * 100).toLong()
-                                        val diff = finalPayableTotal.minorUnits - inputTotalMinor
-                                        
-                                        OutlinedTextField(
-                                            value = cashInput, 
-                                            onValueChange = { cashInput = it }, 
-                                            label = { Text("Cash Amount Received") },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                        OutlinedTextField(
-                                            value = upiInput, 
-                                            onValueChange = { upiInput = it }, 
-                                            label = { Text("UPI/GPay Amount Received") },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                        
-                                        if (diff > 0) {
-                                            Text("Remaining Credit: ${Money(diff)}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
-                                            if (selectedCustomerId == null || selectedCustomerId == "online") {
-                                                Text("⚠️ Please select a customer first to assign credit.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                                            }
-                                        } else if (diff < 0) {
-                                            Text("Change to Return: ${Money(-diff)}", color = androidx.compose.ui.graphics.Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
-                                        } else {
-                                            Text("Fully Paid! \uD83C\uDF89", color = androidx.compose.ui.graphics.Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            },
-                            confirmButton = {
-                                if (isSplitMode) {
-                                    val cInput = cashInput.toDoubleOrNull() ?: 0.0
-                                    val uInput = upiInput.toDoubleOrNull() ?: 0.0
-                                    val inputTotalMinor = ((cInput + uInput) * 100).toLong()
-                                    val diff = finalPayableTotal.minorUnits - inputTotalMinor
-                                    val creditAmount = if (diff > 0) diff else 0L
-                                    
-                                    val canSubmit = creditAmount == 0L || (selectedCustomerId != null && selectedCustomerId != "online")
-                                    
-                                    Button(
-                                        enabled = canSubmit,
-                                        onClick = {
-                                            showPaymentDialog = false
-                                            isSplitMode = false
-                                            cashInput = ""
-                                            upiInput = ""
-                                            
-                                            val paymentModeStr = if (creditAmount > 0L) "PARTIAL" else "SPLIT"
-                                            performSave(paymentModeStr, Money((cInput * 100).toLong()), Money((uInput * 100).toLong()), Money(creditAmount))
-                                        }
-                                    ) {
-                                        Text("Confirm Split Payment")
-                                    }
-                                }
-                            },
-                            dismissButton = {
-                                TextButton(onClick = { 
-                                    if (isSplitMode) {
-                                        isSplitMode = false
-                                    } else {
-                                        showPaymentDialog = false 
-                                    }
-                                }) {
-                                    Text(if (isSplitMode) "Back" else "Cancel")
-                                }
-                            }
-                        )
-                    }
+                    )
 
                     if (message.isNotBlank()) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text(message, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                            Text(message, color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Medium)
                             if (message.startsWith("Bill saved successfully: ")) {
                                 val billNum = message.substringAfter("Bill saved successfully: ")
                                 Row(
@@ -924,21 +703,21 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                         onClick = { viewModel.shareBill(billNum, true) },
                                         modifier = Modifier.weight(1f),
                                         colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF25D366)),
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = MaterialTheme.shapes.medium
                                     ) {
                                         Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(6.dp))
-                                        Text("WhatsApp", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("WhatsApp", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                     }
                                     Button(
                                         onClick = { viewModel.printBill(context, billNum) },
                                         modifier = Modifier.weight(1f),
                                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                        shape = RoundedCornerShape(12.dp)
+                                        shape = MaterialTheme.shapes.medium
                                     ) {
                                         Icon(painter = androidx.compose.ui.res.painterResource(id = android.R.drawable.ic_menu_agenda), contentDescription = null, modifier = Modifier.size(16.dp))
                                         Spacer(Modifier.width(6.dp))
-                                        Text("Print Bill", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                        Text("Print Bill", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                                     }
                                 }
                             }
@@ -981,7 +760,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
 
         val salesHistoryColumn: @Composable (Modifier) -> Unit = { modifier ->
             Column(modifier = modifier) {
-                Text("Sales History", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
+                Text("Sales History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(sales) { sale ->
@@ -993,16 +772,16 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                 .border(
                                     width = 1.dp,
                                     color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = MaterialTheme.shapes.medium
                                 ),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = MaterialTheme.shapes.medium,
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
                             Column(modifier = Modifier.padding(14.dp).fillMaxWidth()) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Bill #${sale.billNumber}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                    Text("Bill #${sale.billNumber}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(Money(sale.totalMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                                        Text(Money(sale.totalMinorUnits).toString(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                                         
                                         // Edit Button
                                         IconButton(
@@ -1050,8 +829,8 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                     }
                                 }
                                 Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Customer: $customerName", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                    Text(dateStr, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text("Customer: $customerName", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                                    Text(dateStr, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
                                 }
                             }
                         }
@@ -1062,13 +841,13 @@ fun BillingScreen(viewModel: BillingViewModel) {
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             val layoutMode = LocalLayoutMode.current
-            val isMobile = when (layoutMode) {
+            val isPortraitMobile = when (layoutMode) {
                 "Mobile" -> true
                 "Tablet" -> false
-                else -> maxWidth < 600.dp
+                else -> maxWidth < 700.dp && maxHeight > maxWidth
             }
             
-            if (isMobile) {
+            if (isPortraitMobile) {
                 Column(modifier = Modifier.fillMaxSize()) {
                     TabRow(
                         selectedTabIndex = activeMobileTab,

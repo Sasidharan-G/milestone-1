@@ -41,6 +41,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.material3.*
+import androidx.compose.ui.res.stringResource
+import com.kadaikutty.pos.core.presentation.components.LoadingOverlay
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,12 +51,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsCategory(val title: String, val icon: ImageVector, val shortSummary: String) {
-    SHOP_PROFILE("Shop Profile", Icons.Default.Home, "Name, GST, Address"),
-    PRINTER("Printer & Diagn.", Icons.Default.Build, "Paper width, Bluetooth pairing"),
-    CLOUD_BACKUP("Cloud Backup", Icons.Default.Share, "Supabase backups & restores"),
-    STAFF("Staff & Users", Icons.Default.Person, "Manage logins & permissions"),
-    DISPLAY("Display & Theme", Icons.Default.Settings, "Screen modes & light/dark"),
-    MAINTENANCE("Maintenance", Icons.Default.Delete, "Imports/Exports & Database reset")
+    SHOP_PROFILE("Store Profile", Icons.Default.Home, "Business Name, Tax ID, Address"),
+    PRINTER("Hardware & Printer", Icons.Default.Build, "Thermal Receipt, Bluetooth & USB"),
+    CLOUD_BACKUP("Cloud Synchronization", Icons.Default.Share, "Online Backup & Data Recovery"),
+    STAFF("User Management", Icons.Default.Person, "Staff Logins & Role Permissions"),
+    DISPLAY("Display & Interface", Icons.Default.Settings, "Layout Preference & Theme Mode"),
+    MAINTENANCE("Database & Security", Icons.Default.Delete, "Local Archives & System Maintenance")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -74,6 +76,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 
     val backupStatus by viewModel.backupStatus.collectAsState()
     val restoreStatus by viewModel.restoreStatus.collectAsState()
+    val isBackupRunning by viewModel.isBackupRunning.collectAsState()
+    val isRestoreRunning by viewModel.isRestoreRunning.collectAsState()
+    val requireRestart by viewModel.requireRestart.collectAsState()
     val biometricAuthPending by viewModel.biometricAuthPending.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -81,6 +86,26 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
     var selectedDeviceId by remember { mutableStateOf("") }
     var selectedPaperWidth by remember { mutableStateOf(32) }
     var message by remember { mutableStateOf("") }
+
+    if (requireRestart) {
+        AlertDialog(
+            onDismissRequest = { /* Force user to click OK */ },
+            title = { Text("Restart Required") },
+            text = { Text("Restore completed successfully. The application will now restart to apply changes.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    val intent = context.packageManager.getLaunchIntentForPackage(context.packageName)
+                    intent?.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP or android.content.Intent.FLAG_ACTIVITY_NEW_TASK or android.content.Intent.FLAG_ACTIVITY_CLEAR_TASK)
+                    if (intent != null) {
+                        context.startActivity(intent)
+                    }
+                    kotlin.system.exitProcess(0)
+                }) {
+                    Text("OK, Restart")
+                }
+            }
+        )
+    }
 
     // Sync state once preferences load
     LaunchedEffect(printerType, printerDeviceId, printerPaperWidth) {
@@ -93,13 +118,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         contract = ActivityResultContracts.CreateDocument("application/zip")
     ) { uri ->
         if (uri != null) {
-            viewModel.runBackup { bytes ->
-                try {
-                    context.contentResolver.openOutputStream(uri)?.use { os ->
-                        os.write(bytes)
-                    }
-                } catch (ignored: Exception) {}
-            }
+            viewModel.runBackup(uri)
         }
     }
 
@@ -107,14 +126,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
         if (uri != null) {
-            try {
-                context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                    val bytes = inputStream.readBytes()
-                    viewModel.runRestore(bytes) {
-                        // Restored successfully
-                    }
-                }
-            } catch (ignored: Exception) {}
+            viewModel.runRestore(uri) {
+                // Restored successfully
+            }
         }
     }
 
@@ -168,7 +182,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     ) {
 
                         Text(
-                            text = brandingShopName.ifBlank { "Settings & Maintenance" },
+                            text = brandingShopName.ifBlank { stringResource(com.kadaikutty.pos.R.string.settings_title) },
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
@@ -178,6 +192,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
             )
         }
     ) { paddingValues ->
+        LoadingOverlay(isLoading = isBackupRunning || isRestoreRunning, text = stringResource(com.kadaikutty.pos.R.string.please_wait))
         BoxWithConstraints(
             modifier = Modifier
                 .fillMaxSize()
@@ -193,8 +208,8 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 else -> maxWidth < 600.dp
             }
 
-            val supabaseBackupCard: @Composable (Modifier) -> Unit = { modifier ->
-                val supabaseBackupStatus by viewModel.supabaseBackupStatus.collectAsState()
+            val firebaseCloudCard: @Composable (Modifier) -> Unit = { modifier ->
+                val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsState()
 
                 Card(
                     modifier = modifier.border(
@@ -210,9 +225,9 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("Supabase Cloud Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Cloud Backup & Sync", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text(
-                            "Automatically backup your transaction database to your secure Supabase Storage bucket.",
+                            "Securely backup and synchronize your store's transaction database to cloud storage.",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -234,52 +249,46 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
+                                var showRestoreDialog by remember { mutableStateOf(false) }
+
                                 Button(
-                                    onClick = { viewModel.backupToSupabase() },
+                                    onClick = {
+                                        viewModel.forceSyncNow()
+                                    },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
                                     Text("Backup Now", fontWeight = FontWeight.Bold)
                                 }
 
-                                var showBackupsDialog by remember { mutableStateOf(false) }
-
                                 OutlinedButton(
                                     onClick = {
-                                        viewModel.fetchSupabaseBackups()
-                                        showBackupsDialog = true
+                                        showRestoreDialog = true
                                     },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(8.dp)
                                 ) {
-                                    Text("Restore Cloud", fontWeight = FontWeight.Bold)
+                                    Text("Restore", fontWeight = FontWeight.Bold)
                                 }
 
-                                if (showBackupsDialog) {
-                                    val backupsList by viewModel.supabaseBackupsList.collectAsState()
+                                if (showRestoreDialog) {
                                     AlertDialog(
-                                        onDismissRequest = { showBackupsDialog = false },
-                                        title = { Text("Restore from Supabase Storage") },
+                                        onDismissRequest = { showRestoreDialog = false },
+                                        title = { Text("Restore from Cloud?") },
                                         text = {
-                                            Column(
-                                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                                                modifier = Modifier.fillMaxWidth().heightIn(max = 300.dp).verticalScroll(rememberScrollState())
-                                            ) {
-                                                if (backupsList.isEmpty()) {
-                                                    Text("No backup files found. Click refresh to check again.")
-                                                } else {
-                                                    Text("Firebase Backup is not implemented yet.")
-                                                }
-                                            }
+                                            Text("Are you sure you want to restore your data from cloud backup? This will replace your local database with cloud records.")
                                         },
                                         confirmButton = {
-                                            TextButton(onClick = { viewModel.fetchSupabaseBackups() }) {
-                                                Text("Refresh")
+                                            TextButton(onClick = { 
+                                                showRestoreDialog = false
+                                                viewModel.runRestoreFromCloud { } 
+                                            }) {
+                                                Text("Yes, Restore", color = MaterialTheme.colorScheme.error)
                                             }
                                         },
                                         dismissButton = {
-                                            TextButton(onClick = { showBackupsDialog = false }) {
-                                                Text("Close")
+                                            TextButton(onClick = { showRestoreDialog = false }) {
+                                                Text("Cancel")
                                             }
                                         }
                                     )
@@ -290,11 +299,11 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("Offline: Login online to enable Supabase Cloud Backups.", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                                Text("Offline: Please log in to enable Cloud Backup & Sync.", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
                             }
                         }
 
-                        if (!supabaseBackupStatus.isNullOrBlank()) {
+                        if (!cloudSyncStatus.isNullOrBlank()) {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                 modifier = Modifier
@@ -306,10 +315,10 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     )
                             ) {
                                 Text(
-                                    text = supabaseBackupStatus!!,
+                                    text = cloudSyncStatus!!,
                                     fontSize = 12.sp,
                                     modifier = Modifier.padding(12.dp),
-                                    fontWeight = FontWeight.Medium
+                                    color = MaterialTheme.colorScheme.onSurface
                                 )
                             }
                         }
@@ -731,7 +740,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                 ) {
                     Column(
-                        modifier = Modifier.padding(16.dp).fillMaxWidth(),
+                        modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text("Database Maintenance & Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -740,6 +749,14 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
+
+                        val backupStatus by viewModel.backupStatus.collectAsState()
+                        val restoreStatus by viewModel.restoreStatus.collectAsState()
+
+                        var showLocalRestoreDialog by remember { mutableStateOf(false) }
+
+                        var showClearDatabaseDialog by remember { mutableStateOf(false) }
+                        var clearCloudOption by remember { mutableStateOf(false) }
 
                         if (isMobile) {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -754,9 +771,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                 }
 
                                 Button(
-                                    onClick = {
-                                        restoreLauncher.launch("application/zip")
-                                    },
+                                    onClick = { showLocalRestoreDialog = true },
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(12.dp),
                                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
@@ -764,54 +779,150 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
                                 }
 
-                                Button(
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                                OutlinedButton(
                                     onClick = {
-                                        viewModel.runRestoreFromCloud { success -> }
+                                        viewModel.loadDemoSampleData { resultMsg ->
+                                            android.widget.Toast.makeText(context, resultMsg, android.widget.Toast.LENGTH_LONG).show()
+                                        }
                                     },
                                     modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5))
+                                    shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Text("Restore from Cloud (Firebase)", fontWeight = FontWeight.Bold)
+                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Load 100 Demo Retail Records", fontWeight = FontWeight.Bold)
+                                }
+
+                                OutlinedButton(
+                                    onClick = { showClearDatabaseDialog = true },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                ) {
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Reset / Clear Database", fontWeight = FontWeight.Bold)
                                 }
                             }
                         } else {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                Button(
-                                    onClick = {
-                                        createBackupLauncher.launch("billing_backup_${System.currentTimeMillis()}.zip")
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Text("Create Backup Archive", fontWeight = FontWeight.Bold)
+                                    Button(
+                                        onClick = {
+                                            createBackupLauncher.launch("billing_backup_${System.currentTimeMillis()}.zip")
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Text("Create Backup Archive", fontWeight = FontWeight.Bold)
+                                    }
+
+                                    Button(
+                                        onClick = { showLocalRestoreDialog = true },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                                    ) {
+                                        Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
+                                    }
                                 }
 
-                                Button(
-                                    onClick = {
-                                        restoreLauncher.launch("application/zip")
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
+                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
                                 ) {
-                                    Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
-                                }
-                                
-                                Button(
-                                    onClick = {
-                                        viewModel.runRestoreFromCloud { success -> }
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5))
-                                ) {
-                                    Text("Restore from Cloud", fontWeight = FontWeight.Bold)
+                                    OutlinedButton(
+                                        onClick = {
+                                            viewModel.loadDemoSampleData { resultMsg ->
+                                                android.widget.Toast.makeText(context, resultMsg, android.widget.Toast.LENGTH_LONG).show()
+                                            }
+                                        },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ) {
+                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Load 100 Demo Records", fontWeight = FontWeight.Bold)
+                                    }
+
+                                    OutlinedButton(
+                                        onClick = { showClearDatabaseDialog = true },
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                    ) {
+                                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                                        Spacer(Modifier.width(8.dp))
+                                        Text("Reset Database", fontWeight = FontWeight.Bold)
+                                    }
                                 }
                             }
+                        }
+
+                        if (showClearDatabaseDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showClearDatabaseDialog = false },
+                                title = { Text("Reset Database Records?") },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("This will safely delete all local Products, Customers, Sales, and Inward Stock records so you can start fresh.")
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.fillMaxWidth().clickable { clearCloudOption = !clearCloudOption }
+                                        ) {
+                                            Checkbox(
+                                                checked = clearCloudOption,
+                                                onCheckedChange = { clearCloudOption = it }
+                                            )
+                                            Text("Also clear Cloud Sync data on Firestore", fontSize = 13.sp)
+                                        }
+                                    }
+                                },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showClearDatabaseDialog = false
+                                        viewModel.clearAllDatabase(clearCloudOption) { success ->
+                                            val msg = if (success) "Database cleared successfully!" else "Failed to clear database."
+                                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                        }
+                                    }) {
+                                        Text("Yes, Clear Data", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showClearDatabaseDialog = false }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            )
+                        }
+
+                        if (showLocalRestoreDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showLocalRestoreDialog = false },
+                                title = { Text("Restore Local Backup?") },
+                                text = { Text("Are you sure you want to restore from a local backup file? This will completely overwrite your current database.") },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showLocalRestoreDialog = false
+                                        restoreLauncher.launch("application/zip")
+                                    }) {
+                                        Text("Yes, Restore", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showLocalRestoreDialog = false }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            )
                         }
 
                         if (!backupStatus.isNullOrBlank() || !restoreStatus.isNullOrBlank()) {
@@ -1233,7 +1344,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                             printerDiagnosticsCard(Modifier.fillMaxWidth())
                         }
                         SettingsCategory.CLOUD_BACKUP -> {
-                            supabaseBackupCard(Modifier.fillMaxWidth())
+                            firebaseCloudCard(Modifier.fillMaxWidth())
                         }
                         SettingsCategory.STAFF -> {
                             userManagementCard(Modifier.fillMaxWidth())

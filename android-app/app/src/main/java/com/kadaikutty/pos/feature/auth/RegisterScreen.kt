@@ -24,6 +24,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import com.kadaikutty.pos.core.presentation.components.LoadingOverlay
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kadaikutty.pos.core.auth.AuthRepository
@@ -213,13 +215,13 @@ fun RegisterScreen(
                 Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
-                    text = "Create Business Account",
+                    text = stringResource(com.kadaikutty.pos.R.string.register_title),
                     fontSize = 22.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
                 Text(
-                    text = "Register with Mobile Number & Live SMS OTP",
+                    text = stringResource(com.kadaikutty.pos.R.string.register_subtitle),
                     fontSize = 13.sp,
                     color = Color(0xFF94A3B8)
                 )
@@ -229,8 +231,8 @@ fun RegisterScreen(
                 OutlinedTextField(
                     value = state.mobileNumber,
                     onValueChange = { viewModel.updateMobileNumber(it) },
-                    label = { Text("Mobile Number", color = Color(0xFF94A3B8)) },
-                    placeholder = { Text("10-digit mobile number", color = Color(0xFF64748B)) },
+                    label = { Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), color = Color(0xFF94A3B8)) },
+                    placeholder = { Text(stringResource(com.kadaikutty.pos.R.string.enter_10_digit_mobile), color = Color(0xFF64748B)) },
                     leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF94A3B8)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     shape = RoundedCornerShape(12.dp),
@@ -378,53 +380,33 @@ fun RegisterScreen(
         }
         
         if (state.showOtpDialog) {
-            AlertDialog(
-                onDismissRequest = { viewModel.dismissOtpDialog() },
-                containerColor = Color(0xFF111C2E),
-                titleContentColor = Color.White,
-                textContentColor = Color(0xFFCBD5E1),
-                shape = RoundedCornerShape(20.dp),
-                title = { Text("Verify Phone Number", fontWeight = FontWeight.Bold) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Please enter the 6-digit OTP sent to ${state.mobileNumber} via SMS.", fontSize = 13.sp)
-                        OutlinedTextField(
-                            value = state.otp,
-                            onValueChange = { viewModel.updateOtp(it) },
-                            label = { Text("6-Digit OTP", color = Color(0xFF94A3B8)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color(0xFF162238),
-                                unfocusedContainerColor = Color(0xFF162238),
-                                focusedBorderColor = Color(0xFF1E88E5),
-                                unfocusedBorderColor = Color(0xFF334155)
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (state.loading) {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFF1E88E5))
-                        }
-                    }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { viewModel.verifyOtpAndCompleteRegistration { onRegisterSuccess() } },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
-                        enabled = !state.loading
-                    ) {
-                        Text("Verify & Create", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { viewModel.dismissOtpDialog() }, enabled = !state.loading) {
-                        Text("Cancel", color = Color(0xFF94A3B8))
-                    }
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { viewModel.dismissOtpDialog() }
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color(0xFF0B0F17),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
+                        otpLength = 6,
+                        otpValue = state.otp,
+                        phoneNumber = state.mobileNumber,
+                        onOtpChange = { viewModel.updateOtp(it) },
+                        onVerifyTriggered = {
+                            viewModel.verifyOtpAndCompleteRegistration { onRegisterSuccess() }
+                        },
+                        onResendClick = {
+                            if (activity != null) {
+                                viewModel.register(activity)
+                            }
+                        },
+                        isLoading = state.loading,
+                        errorMessage = state.error
+                    )
                 }
-            )
+            }
         }
     }
 }

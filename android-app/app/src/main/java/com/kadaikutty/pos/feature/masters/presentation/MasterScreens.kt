@@ -46,54 +46,53 @@ fun MasterGridCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     isSelected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-    isActiveColor: Boolean = false
+    modifier: Modifier = Modifier
 ) {
     val containerColor = if (isSelected) {
-        if (isActiveColor) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary
+        MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.surface
+        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
     }
     val contentColor = if (isSelected) {
         MaterialTheme.colorScheme.onPrimary
     } else {
         MaterialTheme.colorScheme.onSurfaceVariant
     }
-    val borderModifier = if (isSelected) {
-        Modifier
-    } else {
-        Modifier.border(
-            width = 1.dp,
-            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
-            shape = RoundedCornerShape(12.dp)
-        )
-    }
 
     Card(
         modifier = modifier
             .clip(RoundedCornerShape(12.dp))
             .clickable(onClick = onClick)
-            .then(borderModifier),
+            .border(
+                width = 1.dp,
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                shape = RoundedCornerShape(12.dp)
+            ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 4.dp else 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 0.dp)
     ) {
         Row(
-            modifier = Modifier.padding(12.dp).fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Icon(
                 imageVector = icon,
                 contentDescription = title,
                 tint = contentColor,
-                modifier = Modifier.size(20.dp)
+                modifier = Modifier.size(18.dp)
             )
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = title,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = contentColor
+                fontSize = 11.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                color = contentColor,
+                maxLines = 1,
+                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
             )
         }
     }
@@ -124,78 +123,55 @@ fun MasterScreens(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
-            // 2-column Interactive Grid Card Selector
+            // 📊 2x3 Matrix Grid Header for the 6 Master Data Attributes
+            val masterTabs = listOf(
+                Triple(0, "Categories", Icons.Default.List),
+                Triple(1, "Products", Icons.Default.ShoppingCart),
+                Triple(2, "Customers", Icons.Default.Person),
+                Triple(3, "Suppliers", Icons.Default.Home),
+                Triple(4, "Expenses", Icons.Default.Info),
+                Triple(5, "Ledger", Icons.Default.Star)
+            )
+
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Row 1: Categories & Products
+                // Row 1: Categories, Products, Customers
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    MasterGridCard(
-                        title = "Categories",
-                        icon = Icons.Default.List,
-                        isSelected = activeTab == 0,
-                        onClick = { activeTab = 0 },
-                        modifier = Modifier.weight(1f)
-                    )
-                    MasterGridCard(
-                        title = "Products",
-                        icon = Icons.Default.ShoppingCart,
-                        isSelected = activeTab == 1,
-                        onClick = { activeTab = 1 },
-                        modifier = Modifier.weight(1f),
-                        isActiveColor = true
-                    )
+                    masterTabs.take(3).forEach { (index, title, icon) ->
+                        MasterGridCard(
+                            title = title,
+                            icon = icon,
+                            isSelected = activeTab == index,
+                            onClick = { activeTab = index },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
-                // Row 2: Customers & Suppliers
+                // Row 2: Suppliers, Expenses, Credits & Ledger
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    MasterGridCard(
-                        title = "Customers",
-                        icon = Icons.Default.Person,
-                        isSelected = activeTab == 2,
-                        onClick = { activeTab = 2 },
-                        modifier = Modifier.weight(1f)
-                    )
-                    MasterGridCard(
-                        title = "Suppliers",
-                        icon = Icons.Default.Home,
-                        isSelected = activeTab == 3,
-                        onClick = { activeTab = 3 },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                // Row 3: Expenses & Credits
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    MasterGridCard(
-                        title = "Expenses",
-                        icon = Icons.Default.Info,
-                        isSelected = activeTab == 4,
-                        onClick = { activeTab = 4 },
-                        modifier = Modifier.weight(1f)
-                    )
-                    MasterGridCard(
-                        title = "Credits & Ledger",
-                        icon = Icons.Default.Star,
-                        isSelected = activeTab == 5,
-                        onClick = { activeTab = 5 },
-                        modifier = Modifier.weight(1f),
-                        isActiveColor = true
-                    )
+                    masterTabs.drop(3).forEach { (index, title, icon) ->
+                        MasterGridCard(
+                            title = title,
+                            icon = icon,
+                            isSelected = activeTab == index,
+                            onClick = { activeTab = index },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
                 }
             }
 
-            Box(modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 4.dp)) {
+            Box(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
                 when (activeTab) {
                     0 -> CategoryTabScreen(categoryVm)
                     1 -> ProductTabScreen(productVm)
@@ -256,6 +232,7 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
         if (isMobile) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
@@ -401,7 +378,10 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                     )
 
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
                         if (categories.isEmpty()) {
                             item {
                                 Box(
@@ -533,6 +513,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
         if (isMobile) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item { LowStockAlertsBanner(lowStockProducts) }
@@ -572,11 +553,11 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     expanded = expanded,
                                     onDismissRequest = { expanded = false }
                                 ) {
-                                    categories.forEach { category ->
+                                    categories.forEach { cat ->
                                         DropdownMenuItem(
-                                            text = { Text(category.name) },
+                                            text = { Text(cat.name) },
                                             onClick = {
-                                                selectedCategoryId = category.id
+                                                selectedCategoryId = cat.id
                                                 expanded = false
                                             }
                                         )
@@ -584,36 +565,52 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 }
                             }
 
-                            OutlinedTextField(
-                                value = purchasePrice,
-                                onValueChange = { purchasePrice = it },
-                                label = { Text("Purchase Price (₹)") },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                            )
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedTextField(
+                                    value = purchasePrice,
+                                    onValueChange = { purchasePrice = it },
+                                    label = { Text("Pur. Price (₹)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+                                OutlinedTextField(
+                                    value = salePrice,
+                                    onValueChange = { salePrice = it },
+                                    label = { Text("Sale Price (₹)") },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
 
-                            OutlinedTextField(
-                                value = salePrice,
-                                onValueChange = { salePrice = it },
-                                label = { Text("Sale Price (₹)") },
-                                shape = RoundedCornerShape(12.dp),
+                            Row(
                                 modifier = Modifier.fillMaxWidth(),
-                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
-                            )
-
-                            OutlinedTextField(
-                                value = barcode,
-                                onValueChange = { barcode = it },
-                                label = { Text("Barcode / EAN (Optional)") },
-                                trailingIcon = {
-                                    IconButton(onClick = { showBarcodeScanner = true }) {
-                                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = MaterialTheme.colorScheme.primary)
-                                    }
-                                },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
-                            )
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                OutlinedTextField(
+                                    value = barcode,
+                                    onValueChange = { barcode = it },
+                                    label = { Text("Barcode / SKU (Optional)") },
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                                IconButton(
+                                    onClick = { showBarcodeScanner = true },
+                                    modifier = Modifier
+                                        .padding(top = 8.dp)
+                                        .size(48.dp)
+                                        .background(MaterialTheme.colorScheme.primaryContainer, RoundedCornerShape(12.dp))
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.QrCodeScanner,
+                                        contentDescription = "Scan Barcode",
+                                        tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                            }
 
                             OutlinedTextField(
                                 value = minStockLevel,
@@ -678,9 +675,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                             name = ""
                                             purchasePrice = ""
                                             salePrice = ""
-                                            unitType = "PIECE"
                                             barcode = ""
-                                            minStockLevel = ""
+                                            minStockLevel = "5.0"
                                             message = "Product added successfully"
                                             android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                         }, onError = {
@@ -746,7 +742,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                    Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
                                     Text("Stock: $curStock $unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -948,7 +944,10 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                     )
 
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
                         if (products.isEmpty()) {
                             item {
                                 Box(
@@ -978,7 +977,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                            Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                            Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
                                             Text("Stock: $curStock $unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1062,6 +1061,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
         if (isMobile) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
@@ -1181,12 +1181,12 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
-                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f).clickable { selectedCustomerForCredit = customer }) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                         if (isOverLimit) {
-                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
                                             Icon(
                                                 imageVector = Icons.Default.Warning,
                                                 contentDescription = "Credit Limit Exceeded",
@@ -1200,26 +1200,18 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                             text = "Outstanding Balance: ${Money(bal)}",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                            color = if (isOverLimit) MaterialTheme.colorScheme.error else Color(0xFFFF9800)
                                         )
                                     }
                                     if (!customer.phone.isNullOrBlank() || !customer.address.isNullOrBlank()) {
                                         Text(
                                             text = listOfNotNull(customer.phone, customer.address).joinToString(" | "),
                                             fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.outline
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                                         )
                                     }
                                 }
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                    FilledTonalButton(
-                                        onClick = { selectedCustomerForCredit = customer },
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                        shape = RoundedCornerShape(8.dp),
-                                        modifier = Modifier.height(32.dp)
-                                    ) {
-                                        Text("Ledger", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                    }
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                     IconButton(onClick = { editingCustomer = customer }) {
                                         Icon(Icons.Default.Edit, contentDescription = "Edit Customer", tint = MaterialTheme.colorScheme.primary)
                                     }
@@ -1320,7 +1312,10 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                     )
 
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
                         if (customers.isEmpty()) {
                             item {
                                 Box(
@@ -1349,12 +1344,12 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
-                                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f).clickable { selectedCustomerForCredit = customer }) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(customer.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                                 if (isOverLimit) {
-                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
                                                     Icon(
                                                         imageVector = Icons.Default.Warning,
                                                         contentDescription = "Credit Limit Exceeded",
@@ -1368,26 +1363,18 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                                     text = "Outstanding Balance: ${Money(bal)}",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                                    color = if (isOverLimit) MaterialTheme.colorScheme.error else Color(0xFFFF9800)
                                                 )
                                             }
                                             if (!customer.phone.isNullOrBlank() || !customer.address.isNullOrBlank()) {
                                                 Text(
                                                     text = listOfNotNull(customer.phone, customer.address).joinToString(" | "),
                                                     fontSize = 12.sp,
-                                                    color = MaterialTheme.colorScheme.outline
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                                                 )
                                             }
                                         }
-                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                                            FilledTonalButton(
-                                                onClick = { selectedCustomerForCredit = customer },
-                                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
-                                                shape = RoundedCornerShape(8.dp),
-                                                modifier = Modifier.height(32.dp)
-                                            ) {
-                                                Text("Ledger", fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                                            }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
                                             IconButton(onClick = { editingCustomer = customer }) {
                                                 Icon(Icons.Default.Edit, contentDescription = "Edit Customer", tint = MaterialTheme.colorScheme.primary)
                                             }
@@ -1464,6 +1451,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
         if (isMobile) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
@@ -1576,12 +1564,12 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
-                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f).clickable { selectedSupplierForCredit = supplier }) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
                                         Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                         if (isOverdue) {
-                                            Spacer(modifier = Modifier.width(4.dp))
+                                            Spacer(modifier = Modifier.width(6.dp))
                                             Icon(
                                                 imageVector = Icons.Default.Warning,
                                                 contentDescription = "Repayment Overdue",
@@ -1595,14 +1583,14 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                             text = "Outstanding Balance: ${Money(bal)}",
                                             fontSize = 12.sp,
                                             fontWeight = FontWeight.Bold,
-                                            color = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                            color = if (isOverdue) MaterialTheme.colorScheme.error else Color(0xFFFF9800)
                                         )
                                     }
                                     if (!supplier.phone.isNullOrBlank() || !supplier.address.isNullOrBlank()) {
                                         Text(
                                             text = listOfNotNull(supplier.phone, supplier.address).joinToString(" | "),
                                             fontSize = 12.sp,
-                                            color = MaterialTheme.colorScheme.outline
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                                         )
                                     }
                                 }
@@ -1696,7 +1684,10 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                         modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
                     )
 
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
                         if (suppliers.isEmpty()) {
                             item {
                                 Box(
@@ -1729,12 +1720,12 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                     shape = RoundedCornerShape(12.dp),
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
-                                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                    Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f).clickable { selectedSupplierForCredit = supplier }) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
                                                 Text(supplier.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                                 if (isOverdue) {
-                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
                                                     Icon(
                                                         imageVector = Icons.Default.Warning,
                                                         contentDescription = "Repayment Overdue",
@@ -1748,14 +1739,14 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                                     text = "Outstanding Balance: ${Money(bal)}",
                                                     fontSize = 12.sp,
                                                     fontWeight = FontWeight.Bold,
-                                                    color = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                                    color = if (isOverdue) MaterialTheme.colorScheme.error else Color(0xFFFF9800)
                                                 )
                                             }
                                             if (!supplier.phone.isNullOrBlank() || !supplier.address.isNullOrBlank()) {
                                                 Text(
                                                     text = listOfNotNull(supplier.phone, supplier.address).joinToString(" | "),
                                                     fontSize = 12.sp,
-                                                    color = MaterialTheme.colorScheme.outline
+                                                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                                                 )
                                             }
                                         }
@@ -1825,6 +1816,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
         if (isMobile) {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item {
@@ -1911,7 +1903,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                             Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(expense.description, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                    Text(dateStr, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text(dateStr, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
                                 }
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(Money(expense.amountMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
@@ -1985,7 +1977,10 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                 Column(modifier = Modifier.weight(1.8f).fillMaxHeight()) {
                     Text("Recorded Expenses", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
 
-                    LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    LazyColumn(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        contentPadding = PaddingValues(bottom = 24.dp)
+                    ) {
                         if (expenses.isEmpty()) {
                             item {
                                 Box(
@@ -2012,7 +2007,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                                     Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(expense.description, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                            Text(dateStr, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                            Text(dateStr, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             Text(Money(expense.amountMinorUnits).toString(), fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.error)
@@ -2679,6 +2674,7 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
         // 1. Content Above Search Bar (normal scrollable item)
@@ -2718,7 +2714,7 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
                 modifier = Modifier
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
-                    .padding(vertical = 4.dp),
+                    .padding(top = 4.dp, bottom = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 TabRow(selectedTabIndex = viewMode, modifier = Modifier.fillMaxWidth()) {
@@ -2769,7 +2765,7 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
             }
             
             items(filteredCustomers) { customer ->
-                val balanceFlow = remember(customer.id) { customerVm.getCustomerCreditBalance(customer.id) }
+                val balanceFlow = remember(customer.id) { customerVm.getCustomerBalance(customer.id) }
                 val balance by balanceFlow.collectAsState(initial = 0L)
                 val bal = balance ?: 0L
                 val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
@@ -2792,14 +2788,18 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
                         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(customer.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                Text("Credit Limit: ${Money(customer.creditLimitMinorUnits)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                Text("Credit Limit: ${Money(customer.creditLimitMinorUnits)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = Money(bal).toString(),
+                                    text = if (bal > 0L) "Due: ${Money(bal)}" else Money(bal).toString(),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
-                                    color = if (isOverLimit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    color = when {
+                                        isOverLimit -> MaterialTheme.colorScheme.error
+                                        bal > 0L -> Color(0xFFFF9800)
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    }
                                 )
                                 if (isOverLimit) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2807,6 +2807,8 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text("Over Limit", fontSize = 10.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
                                     }
+                                } else if (bal == 0L) {
+                                    Text("Settled", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                                 }
                             }
                         }
@@ -2819,7 +2821,7 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
             }
             
             items(filteredSuppliers) { supplier ->
-                val balanceFlow = remember(supplier.id) { supplierVm.getSupplierCreditBalance(supplier.id) }
+                val balanceFlow = remember(supplier.id) { supplierVm.getSupplierBalance(supplier.id) }
                 val balance by balanceFlow.collectAsState(initial = 0L)
                 val bal = balance ?: 0L
                 
@@ -2848,15 +2850,19 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
                                 val nextDue = credits.filter { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L }.minByOrNull { it.dueDateEpochMs }
                                 if (nextDue != null && bal > 0L) {
                                     val df = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
-                                    Text("Next Repayment Due: ${df.format(Date(nextDue.dueDateEpochMs))}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                    Text("Next Repayment Due: ${df.format(Date(nextDue.dueDateEpochMs))}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
                                 }
                             }
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = Money(bal).toString(),
+                                    text = if (bal > 0L) "Payable: ${Money(bal)}" else Money(bal).toString(),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
-                                    color = if (isOverdue) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                    color = when {
+                                        isOverdue -> MaterialTheme.colorScheme.error
+                                        bal > 0L -> Color(0xFFFF9800)
+                                        else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f)
+                                    }
                                 )
                                 if (isOverdue) {
                                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -2864,6 +2870,8 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
                                         Spacer(modifier = Modifier.width(4.dp))
                                         Text("Repayment Overdue", fontSize = 10.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.SemiBold)
                                     }
+                                } else if (bal == 0L) {
+                                    Text("Settled", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
                                 }
                             }
                         }

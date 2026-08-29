@@ -9,6 +9,25 @@
       "client_info": {
         "mobilesdk_app_id": "1:817979322520:android:4c276ee39936de361ee0ed",
         "android_client_info": {
+          "package_name": "com.company.billing"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC3sbaqOlaAt2Y8_pv8COjIFqSqFEcWqoc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:817979322520:android:c4b5168697e28aad1ee0ed",
+        "android_client_info": {
           "package_name": "com.kadaikutty.pos"
         }
       },

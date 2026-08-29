@@ -2,14 +2,17 @@ package com.kadaikutty.pos.feature.subscription
 
 data class SubscriptionStatus(
     val companyId: String,
-    val planName: String,
-    val status: String, // "trialing", "active", "past_due", "expired"
-    val daysLeft: Int
-)
+    val planId: String, // e.g. "free_trial", "monthly", "yearly"
+    val status: String, // "active", "expired"
+    val expiresAt: Long // Epoch milliseconds
+) {
+    val isExpired: Boolean
+        get() = System.currentTimeMillis() > expiresAt
+}
 
 val mockSubscriptionStatus = SubscriptionStatus(
-    companyId = "company-123",
-    planName = "free_trial",
-    status = "expired", // Set to expired to show the Paywall for testing
-    daysLeft = 0
+    companyId = "mock-company",
+    planId = "free_trial",
+    status = "active",
+    expiresAt = System.currentTimeMillis() + (30L * 24 * 60 * 60 * 1000) // 30 days from now
 )

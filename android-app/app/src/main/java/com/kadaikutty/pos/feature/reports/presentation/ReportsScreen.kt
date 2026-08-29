@@ -30,6 +30,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.material.icons.automirrored.filled.List
+import com.kadaikutty.pos.feature.reports.presentation.components.BillDetailsDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -90,6 +91,30 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
     val dateRangeState = rememberDateRangePickerState()
     var isGridView by remember { mutableStateOf(false) }
     var deletingBillNum by remember { mutableStateOf<String?>(null) }
+
+    var selectedBillNumForDetail by remember { mutableStateOf<String?>(null) }
+    var billDetailData by remember { mutableStateOf<BillDetailData?>(null) }
+    var isBillDetailLoading by remember { mutableStateOf(false) }
+    var salesSearchQuery by remember { mutableStateOf("") }
+
+    LaunchedEffect(selectedBillNumForDetail) {
+        val target = selectedBillNumForDetail
+        if (target != null) {
+            isBillDetailLoading = true
+            billDetailData = viewModel.getBillDetails(target)
+            isBillDetailLoading = false
+        } else {
+            billDetailData = null
+        }
+    }
+
+    if (selectedBillNumForDetail != null) {
+        BillDetailsDialog(
+            billDetail = billDetailData,
+            isLoading = isBillDetailLoading,
+            onDismiss = { selectedBillNumForDetail = null }
+        )
+    }
 
     if (deletingBillNum != null) {
         val bNum = deletingBillNum!!
@@ -373,123 +398,168 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(48.dp))
                             Text("No records found for this period.", color = MaterialTheme.colorScheme.outline, fontSize = 14.sp)
                         }
-                    } else {
-                        val report = reportData!!
+                                          val report = reportData!!
                         val isBillsDetail = selectedType == ReportType.SALES
 
+                        val filteredRows = if (selectedType == ReportType.SALES && salesSearchQuery.isNotBlank()) {
+                            val q = salesSearchQuery.trim().lowercase()
+                            report.rows.filter { row ->
+                                val isTotalRow = row.any { it.startsWith("TOTAL") } || row.any { it == "---" }
+                                if (isTotalRow) true
+                                else {
+                                    val billNum = row.getOrNull(1)?.lowercase() ?: ""
+                                    val customer = row.getOrNull(3)?.lowercase() ?: ""
+                                    val amount = row.getOrNull(4)?.lowercase() ?: ""
+                                    billNum.contains(q) || customer.contains(q) || amount.contains(q)
+                                }
+                            }
+                        } else {
+                            report.rows
+                        }
+
                         if (!isGridView) {
-                            LazyColumn(
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                items(report.rows) { row ->
-                                    val isTotalRow = row.any { it.startsWith("TOTAL") } || row.any { it == "---" }
-                                    
-                                    if (isTotalRow) {
-                                        if (row.any { it.startsWith("TOTAL") }) {
-                                            val totalTitle = row.find { it.startsWith("TOTAL") } ?: "TOTAL"
-                                            val totalDesc = row.find { it.endsWith("Bills") || it.endsWith("Orders") } ?: ""
-                                            val totalAmount = row.lastOrNull() ?: ""
-                                            Card(
-                                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
-                                                shape = RoundedCornerShape(12.dp),
-                                                modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp)
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    Column {
-                                                        Text(totalTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
-                                                        if (totalDesc.isNotBlank()) {
-                                                            Text(totalDesc, fontSize = 12.sp, color = Color.White.copy(alpha = 0.8f))
-                                                        }
-                                                    }
-                                                    Text(
-                                                        text = totalAmount,
-                                                        fontWeight = FontWeight.ExtraBold,
-                                                        fontSize = 18.sp,
-                                                        color = Color.White
-                                                    )
+                            Column(modifier = Modifier.fillMaxSize()) {
+                                if (selectedType == ReportType.SALES) {
+                                    OutlinedTextField(
+                                        value = salesSearchQuery,
+                                        onValueChange = { salesSearchQuery = it },
+                                        placeholder = { Text("Search by Bill #, Customer name, Amount...", fontSize = 13.sp) },
+                                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                        trailingIcon = {
+                                            if (salesSearchQuery.isNotBlank()) {
+                                                IconButton(onClick = { salesSearchQuery = "" }) {
+                                                    Icon(Icons.Default.Close, contentDescription = "Clear")
                                                 }
                                             }
-                                        }
-                                    } else {
-                                        when (selectedType) {
-                                            ReportType.SALES -> {
-                                                val sNo = row.getOrNull(0) ?: ""
-                                                val billNum = row.getOrNull(1) ?: ""
-                                                val dateTime = row.getOrNull(2) ?: ""
-                                                val customer = row.getOrNull(3) ?: "Walk-in Customer"
-                                                val amount = row.getOrNull(4) ?: "₹0"
+                                        },
+                                        shape = RoundedCornerShape(12.dp),
+                                        singleLine = true,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(horizontal = 12.dp, vertical = 6.dp)
+                                    )
+                                }
 
+                                LazyColumn(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .padding(horizontal = 12.dp, vertical = 4.dp),
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    items(filteredRows) { row ->
+                                        val isTotalRow = row.any { it.startsWith("TOTAL") } || row.any { it == "---" }
+                                        
+                                        if (isTotalRow) {
+                                            if (row.any { it.startsWith("TOTAL") }) {
+                                                val totalTitle = row.find { it.startsWith("TOTAL") } ?: "TOTAL"
+                                                val totalDesc = row.find { it.endsWith("Bills") || it.endsWith("Orders") } ?: ""
+                                                val totalAmount = row.lastOrNull() ?: ""
                                                 Card(
-                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
                                                     shape = RoundedCornerShape(12.dp),
-                                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 16.dp)
                                                 ) {
-                                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                                if (sNo.isNotBlank()) {
+                                                    Row(
+                                                        modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                                        verticalAlignment = Alignment.CenterVertically
+                                                    ) {
+                                                        Column {
+                                                            Text(totalTitle, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = Color.White)
+                                                            if (totalDesc.isNotBlank()) {
+                                                                Text(totalDesc, fontSize = 12.sp, color = Color.White.copy(alpha = 0.8f))
+                                                            }
+                                                        }
+                                                        Text(
+                                                            text = totalAmount,
+                                                            fontWeight = FontWeight.ExtraBold,
+                                                            fontSize = 18.sp,
+                                                            color = Color.White
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            when (selectedType) {
+                                                ReportType.SALES -> {
+                                                    val sNo = row.getOrNull(0) ?: ""
+                                                    val billNum = row.getOrNull(1) ?: ""
+                                                    val dateTime = row.getOrNull(2) ?: ""
+                                                    val customer = row.getOrNull(3) ?: "Walk-in Customer"
+                                                    val amount = row.getOrNull(4) ?: "₹0"
+
+                                                    Card(
+                                                        onClick = { selectedBillNumForDetail = billNum },
+                                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                    ) {
+                                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                    if (sNo.isNotBlank()) {
+                                                                        Surface(
+                                                                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                                                            shape = RoundedCornerShape(4.dp)
+                                                                        ) {
+                                                                            Text("#$sNo", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                                        }
+                                                                    }
                                                                     Surface(
-                                                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
-                                                                        shape = RoundedCornerShape(4.dp)
+                                                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                                                        shape = RoundedCornerShape(6.dp)
                                                                     ) {
-                                                                        Text("#$sNo", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                                        Text("Bill #$billNum", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
                                                                     }
                                                                 }
-                                                                Surface(
-                                                                    color = MaterialTheme.colorScheme.primaryContainer,
-                                                                    shape = RoundedCornerShape(6.dp)
-                                                                ) {
-                                                                    Text("Bill #$billNum", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                                    Text(amount, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF2E7D32))
+                                                                    IconButton(
+                                                                        onClick = { deletingBillNum = billNum },
+                                                                        modifier = Modifier.size(28.dp)
+                                                                    ) {
+                                                                        Icon(Icons.Default.Delete, contentDescription = "Delete Bill", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                                                    }
                                                                 }
                                                             }
-                                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                                Text(amount, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF2E7D32))
-                                                                IconButton(
-                                                                    onClick = { deletingBillNum = billNum },
-                                                                    modifier = Modifier.size(28.dp)
-                                                                ) {
-                                                                    Icon(Icons.Default.Delete, contentDescription = "Delete Bill", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
-                                                                }
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text("👤 $customer", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                                                                Text("🕒 $dateTime", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
                                                             }
-                                                        }
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.SpaceBetween
-                                                        ) {
-                                                            Text("👤 $customer", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
-                                                            Text("🕒 $dateTime", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
+                                                                horizontalArrangement = Arrangement.End
+                                                            ) {
+                                                                Text("Tap to view items 📋", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), fontWeight = FontWeight.Medium)
+                                                            }
                                                         }
                                                     }
                                                 }
-                                            }
-                                            ReportType.STOCK -> {
-                                                val sNo = row.getOrNull(0) ?: ""
-                                                val prod = row.getOrNull(1) ?: ""
-                                                val cat = row.getOrNull(2) ?: "General"
-                                                val unit = row.getOrNull(3) ?: "PIECE"
-                                                val stock = row.getOrNull(4) ?: "0"
-                                                val cost = row.getOrNull(5) ?: "₹0"
-                                                val totalVal = row.getOrNull(6) ?: "₹0"
-                                                val isOutOfStock = stock == "0" || stock == "0.000"
+                                                ReportType.STOCK -> {
+                                                    val sNo = row.getOrNull(0) ?: ""
+                                                    val prod = row.getOrNull(1) ?: ""
+                                                    val cat = row.getOrNull(2) ?: "General"
+                                                    val unit = row.getOrNull(3) ?: "PIECE"
+                                                    val stock = row.getOrNull(4) ?: "0"
+                                                    val cost = row.getOrNull(5) ?: "₹0"
+                                                    val totalVal = row.getOrNull(6) ?: "₹0"
+                                                    val isOutOfStock = stock == "0" || stock == "0.000"
 
-                                                Card(
-                                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                                    shape = RoundedCornerShape(12.dp),
-                                                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                                    modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
-                                                ) {
+                                                    Card(
+                                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                        shape = RoundedCornerShape(12.dp),
+                                                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                                                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                    ) {
                                                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                                         Row(
                                                             modifier = Modifier.fillMaxWidth(),
@@ -640,6 +710,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                                     }
                                 }
                             }
+                        }
                         } else {
                             val scrollState = rememberScrollState()
                             Column(modifier = Modifier.fillMaxSize().horizontalScroll(scrollState)) {

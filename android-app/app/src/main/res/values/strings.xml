@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Application Branding -->
+    <string name="app_name">Kadaikutty POS</string>
+    
+    <!-- Authentication & Session -->
+    <string name="welcome_back">Welcome Back</string>
+    <string name="sign_in_subtitle">Sign in to Kadaikutty POS Enterprise System</string>
+    <string name="mobile_number">Mobile Number</string>
+    <string name="enter_10_digit_mobile">Enter 10-digit registered mobile number</string>
+    <string name="password">Password</string>
+    <string name="forgot_password">Forgot Password?</string>
+    <string name="sign_in">Sign In</string>
+    <string name="new_business_register">New Business Registration</string>
+    <string name="sign_in_google">Continue with Google</string>
+    
+    <!-- Merchant Registration -->
+    <string name="register_title">Merchant Registration</string>
+    <string name="register_subtitle">Set up your business profile and credentials</string>
+    <string name="owner_name">Proprietor Name</string>
+    <string name="business_name">Store / Enterprise Name</string>
+    <string name="confirm_password">Confirm Password</string>
+    <string name="register_button">Complete Registration</string>
+    <string name="already_have_account">Already registered? Sign In</string>
+    
+    <!-- Common System Feedback -->
+    <string name="please_wait">Processing, please wait...</string>
+    
+    <!-- Operations & Transactions -->
+    <string name="billing">Point of Sale</string>
+    <string name="purchase">Inward Inventory</string>
+    <string name="checkout">Complete Transaction</string>
+    <string name="add_customer">Register Customer</string>
+    <string name="add_supplier">Register Supplier</string>
+    
+    <!-- Settings & Administration -->
+    <string name="settings_title">System Administration &amp; Preferences</string>
+    <string name="printer_settings">Hardware &amp; Receipt Configuration</string>
+    <string name="cloud_backup">Cloud Data Synchronization</string>
+</resources>

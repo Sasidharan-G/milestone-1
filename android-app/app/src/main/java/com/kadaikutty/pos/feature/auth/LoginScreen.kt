@@ -14,6 +14,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material3.*
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -25,6 +26,7 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kadaikutty.pos.core.auth.LoginMode
+import com.kadaikutty.pos.core.presentation.components.LoadingOverlay
 
 
 @Composable
@@ -100,13 +102,13 @@ fun LoginScreen(
                 Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
-                    text = "Welcome Back",
+                    text = stringResource(com.kadaikutty.pos.R.string.welcome_back),
                     fontSize = 24.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White
                 )
                 Text(
-                    text = "Sign in to Adept POS Client System",
+                    text = stringResource(com.kadaikutty.pos.R.string.sign_in_subtitle),
                     fontSize = 13.sp,
                     color = Color(0xFF94A3B8)
                 )
@@ -116,8 +118,8 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = state.mobileNumber,
                     onValueChange = { viewModel.updateMobileNumber(it) },
-                    label = { Text("Mobile Number", color = Color(0xFF94A3B8)) },
-                    placeholder = { Text("Enter 10-digit mobile number", color = Color(0xFF64748B)) },
+                    label = { Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), color = Color(0xFF94A3B8)) },
+                    placeholder = { Text(stringResource(com.kadaikutty.pos.R.string.enter_10_digit_mobile), color = Color(0xFF64748B)) },
                     leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF94A3B8)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     shape = RoundedCornerShape(12.dp),
@@ -137,7 +139,7 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = state.password,
                     onValueChange = { viewModel.updatePassword(it) },
-                    label = { Text("Password", color = Color(0xFF94A3B8)) },
+                    label = { Text(stringResource(com.kadaikutty.pos.R.string.password), color = Color(0xFF94A3B8)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8)) },
                     visualTransformation = PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
@@ -254,79 +256,95 @@ fun LoginScreen(
         }
         
         if (state.showResetOtpDialog) {
-            AlertDialog(
-                onDismissRequest = { viewModel.dismissResetDialog() },
-                containerColor = Color(0xFF111C2E),
-                titleContentColor = Color.White,
-                textContentColor = Color(0xFFCBD5E1),
-                shape = RoundedCornerShape(20.dp),
-                title = { Text("Reset Password with OTP", fontWeight = FontWeight.Bold) },
-                text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Enter the 6-digit OTP sent to your mobile number and your new password.", fontSize = 13.sp)
-                        OutlinedTextField(
-                            value = state.resetOtp,
-                            onValueChange = { viewModel.updateResetOtp(it) },
-                            label = { Text("6-Digit OTP", color = Color(0xFF94A3B8)) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color(0xFF162238),
-                                unfocusedContainerColor = Color(0xFF162238),
-                                focusedBorderColor = Color(0xFF1E88E5),
-                                unfocusedBorderColor = Color(0xFF334155)
-                            ),
-                            modifier = Modifier.fillMaxWidth()
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { viewModel.dismissResetDialog() }
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color(0xFF0B0F17),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
+                            otpLength = 6,
+                            otpValue = state.resetOtp,
+                            phoneNumber = state.mobileNumber,
+                            onOtpChange = { viewModel.updateResetOtp(it) },
+                            onVerifyTriggered = {
+                                if (state.newPasswordString.isNotBlank()) {
+                                    viewModel.verifyOtpAndResetPassword { success, errMsg ->
+                                        if (success) {
+                                            message = "Password updated successfully! Please Sign In."
+                                        } else {
+                                            message = "Failed to update password: $errMsg"
+                                        }
+                                    }
+                                }
+                            },
+                            onResendClick = {
+                                if (activity != null) {
+                                    viewModel.requestPasswordResetOtp(state.mobileNumber, activity, onCodeSent = {
+                                        message = "SMS OTP resent to your mobile!"
+                                    }, onError = { err -> message = "Failed: $err" })
+                                }
+                            },
+                            isLoading = state.loading,
+                            errorMessage = state.error
                         )
-                        OutlinedTextField(
-                            value = state.newPasswordString,
-                            onValueChange = { viewModel.updateNewPassword(it) },
-                            label = { Text("New Password", color = Color(0xFF94A3B8)) },
-                            visualTransformation = PasswordVisualTransformation(),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                            singleLine = true,
-                            shape = RoundedCornerShape(10.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                focusedContainerColor = Color(0xFF162238),
-                                unfocusedContainerColor = Color(0xFF162238),
-                                focusedBorderColor = Color(0xFF1E88E5),
-                                unfocusedBorderColor = Color(0xFF334155)
-                            ),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        if (state.loading) {
-                            LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = Color(0xFF1E88E5))
+
+                        // New Password Field inside the dialog
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            OutlinedTextField(
+                                value = state.newPasswordString,
+                                onValueChange = { viewModel.updateNewPassword(it) },
+                                label = { Text("New Password", color = Color(0xFF94A3B8)) },
+                                visualTransformation = PasswordVisualTransformation(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                colors = OutlinedTextFieldDefaults.colors(
+                                    focusedTextColor = Color.White,
+                                    unfocusedTextColor = Color.White,
+                                    focusedContainerColor = Color(0xFF162238),
+                                    unfocusedContainerColor = Color(0xFF162238),
+                                    focusedBorderColor = Color(0xFF2EE6A8),
+                                    unfocusedBorderColor = Color(0xFF334155)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            Button(
+                                onClick = {
+                                    viewModel.verifyOtpAndResetPassword { success, errMsg ->
+                                        if (success) {
+                                            message = "Password updated successfully! Please Sign In."
+                                        } else {
+                                            message = "Failed to update password: $errMsg"
+                                        }
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth().height(48.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EE6A8)),
+                                shape = RoundedCornerShape(12.dp),
+                                enabled = !state.loading && state.resetOtp.length == 6 && state.newPasswordString.isNotBlank()
+                            ) {
+                                Text("Confirm & Reset Password", color = Color(0xFF0B0F17), fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
-                },
-                confirmButton = {
-                    Button(
-                        onClick = { 
-                            viewModel.verifyOtpAndResetPassword { success, errMsg ->
-                                if (success) {
-                                    message = "Password updated successfully! Please Sign In."
-                                } else {
-                                    message = "Failed to update password: $errMsg"
-                                }
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E88E5)),
-                        enabled = !state.loading
-                    ) {
-                        Text("Reset Password", color = Color.White, fontWeight = FontWeight.Bold)
-                    }
-                },
-                dismissButton = {
-                    TextButton(onClick = { viewModel.dismissResetDialog() }, enabled = !state.loading) {
-                        Text("Cancel", color = Color(0xFF94A3B8))
-                    }
                 }
-            )
+            }
         }
     }
 }

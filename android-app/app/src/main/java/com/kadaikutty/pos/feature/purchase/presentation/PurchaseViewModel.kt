@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.combine
 import com.kadaikutty.pos.core.auth.SessionStore
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
@@ -52,38 +53,51 @@ class PurchaseViewModel @Inject constructor(
     private val masterDao = database.masterDao()
     private val purchaseDao = database.purchaseDao()
 
-    val products: StateFlow<List<ProductEntity>> = sessionStore.activeSession
+    private val products = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             masterDao.products(companyId, "")
-        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        }
 
-    val suppliers: StateFlow<List<SupplierEntity>> = sessionStore.activeSession
+    private val suppliers = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             masterDao.suppliers(companyId, "")
-        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        }
 
-    val purchases: StateFlow<List<PurchaseEntity>> = sessionStore.activeSession
+    private val purchases = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             purchaseRepository.getPurchases(companyId)
-        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        }
 
-    val stocks: StateFlow<List<ProductStock>> = sessionStore.activeSession
+    private val stocks = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             purchaseRepository.getStockBalances(companyId)
-        }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
+        }
 
     val geminiApiKey: StateFlow<String?> = appPreferences.geminiApi
         .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     private val _selectedSupplierId = MutableStateFlow<String?>(null)
-    val selectedSupplierId: StateFlow<String?> = _selectedSupplierId.asStateFlow()
 
     private val _lines = MutableStateFlow<List<PurchaseLine>>(emptyList())
-    val lines: StateFlow<List<PurchaseLine>> = _lines.asStateFlow()
+    
+    val uiState: StateFlow<PurchaseUiState> = combine(
+        combine(products, suppliers, purchases, stocks) { p, s, pur, st ->
+            PurchaseUiState(products = p, suppliers = s, purchases = pur, stocks = st)
+        },
+        combine(_lines, _selectedSupplierId) { l, sid ->
+            Pair(l, sid)
+        }
+    ) { state1, state2 ->
+        state1.copy(
+            lines = state2.first,
+            selectedSupplierId = state2.second,
+            isLoading = false
+        )
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), PurchaseUiState(isLoading = true))
 
     fun setSupplier(supplierId: String?) {
         _selectedSupplierId.value = supplierId

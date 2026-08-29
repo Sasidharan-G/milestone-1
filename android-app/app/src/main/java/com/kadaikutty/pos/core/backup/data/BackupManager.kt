@@ -20,26 +20,68 @@ class BackupManager(
     private val database: BillingDatabase
 ) {
 
+    private val SYSTEM_TABLES = setOf(
+        "android_metadata",
+        "room_master_table",
+        "sqlite_sequence",
+        "sqlite_stat1",
+        "room_schema_version"
+    )
+
+    /**
+     * Dynamically fetch all user tables from the active SQLite database
+     */
+    private fun getUserTables(db: androidx.sqlite.db.SupportSQLiteDatabase): List<String> {
+        val tables = mutableListOf<String>()
+        try {
+            db.query("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT LIKE 'room_%'").use { cursor ->
+                while (cursor.moveToNext()) {
+                    val name = cursor.getString(0)
+                    if (!SYSTEM_TABLES.contains(name) && !name.startsWith("sqlite_") && !name.startsWith("room_")) {
+                        tables.add(name)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            return listOf(
+                "users", "categories", "products", "customers", "suppliers", "expenses",
+                "sales", "sale_items", "purchases", "purchase_items",
+                "customer_credits", "supplier_credits", "stock_movements",
+                "draft_cart_items", "shifts", "sync_queue", "sync_dead_letter"
+            )
+        }
+        return if (tables.isNotEmpty()) tables else listOf(
+            "users", "categories", "products", "customers", "suppliers", "expenses",
+            "sales", "sale_items", "purchases", "purchase_items",
+            "customer_credits", "supplier_credits", "stock_movements",
+            "draft_cart_items", "shifts"
+        )
+    }
+
+    private fun calculateSha256(bytes: ByteArray): String {
+        val md = java.security.MessageDigest.getInstance("SHA-256")
+        val digest = md.digest(bytes)
+        return digest.joinToString("") { "%02x".format(it) }
+    }
+
     suspend fun createBackup(): BackupResult = withContext(Dispatchers.IO) {
         try {
-            // 1. Checkpoint SQLite WAL
+            // 1. Checkpoint SQLite WAL for consistent snapshot
             try {
                 database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(TRUNCATE)").use { it.moveToFirst() }
             } catch (ignored: Exception) {}
 
-            // 2. Query all tables directly from database
+            // 2. Query all tables dynamically directly from database
             val rawDb = database.openHelper.readableDatabase
+            val tables = getUserTables(rawDb)
 
             val backupJson = JSONObject()
             backupJson.put("version", 18)
-            backupJson.put("timestamp", System.currentTimeMillis())
+            val timestamp = System.currentTimeMillis()
+            backupJson.put("timestamp", timestamp)
 
-            // Export all tables to JSON arrays
-            val tables = listOf(
-                "categories", "products", "customers", "suppliers", "expenses",
-                "sales", "sale_items", "purchases", "purchase_items",
-                "customer_credits", "supplier_credits", "stock_movements"
-            )
+            val tableRowCounts = JSONObject()
+            var totalRecords = 0
 
             for (table in tables) {
                 val array = JSONArray()
@@ -63,16 +105,22 @@ class BackupManager(
                     }
                 } catch (ignored: Exception) {}
                 backupJson.put(table, array)
+                tableRowCounts.put(table, array.length())
+                totalRecords += array.length()
             }
 
             val jsonBytes = backupJson.toString(2).toByteArray(Charsets.UTF_8)
-            val metadataJson = """
-                {
-                  "timestampEpochMs": ${System.currentTimeMillis()},
-                  "dbVersion": 18,
-                  "tablesCount": ${tables.size}
-                }
-            """.trimIndent().toByteArray(Charsets.UTF_8)
+            val jsonChecksum = calculateSha256(jsonBytes)
+
+            val metadataJson = JSONObject().apply {
+                put("timestampEpochMs", timestamp)
+                put("dbVersion", 18)
+                put("tablesCount", tables.size)
+                put("totalRecords", totalRecords)
+                put("dataChecksumSha256", jsonChecksum)
+                put("tableRowCounts", tableRowCounts)
+                put("app", "Kadaikutty POS")
+            }.toString(2).toByteArray(Charsets.UTF_8)
 
             // 3. Package into ZIP
             val bos = ByteArrayOutputStream()
@@ -94,16 +142,22 @@ class BackupManager(
 
     suspend fun restoreBackup(zipBytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
         try {
+            if (zipBytes.isEmpty()) return@withContext false
+
             var jsonContent: String? = null
+            var metadataContent: String? = null
             var legacyDbBytes: ByteArray? = null
 
-            // 1. Extract ZIP entries
+            // 1. Extract and inspect ZIP entries
             ZipInputStream(ByteArrayInputStream(zipBytes)).use { zis ->
                 var entry = zis.nextEntry
                 while (entry != null) {
                     when {
                         entry.name.endsWith("backup_data.json") -> {
                             jsonContent = String(zis.readBytes(), Charsets.UTF_8)
+                        }
+                        entry.name.endsWith("metadata.json") -> {
+                            metadataContent = String(zis.readBytes(), Charsets.UTF_8)
                         }
                         entry.name.endsWith(".db") -> {
                             legacyDbBytes = zis.readBytes()
@@ -114,8 +168,21 @@ class BackupManager(
                 }
             }
 
-            // Path A: Restore from structured JSON (Ultra Reliable)
+            // Path A: Restore from structured JSON (Ultra Reliable with Checksum Verification)
             if (!jsonContent.isNullOrBlank()) {
+                if (!metadataContent.isNullOrBlank()) {
+                    try {
+                        val metaObj = JSONObject(metadataContent!!)
+                        if (metaObj.has("dataChecksumSha256")) {
+                            val expectedChecksum = metaObj.getString("dataChecksumSha256")
+                            val actualChecksum = calculateSha256(jsonContent!!.toByteArray(Charsets.UTF_8))
+                            if (expectedChecksum != actualChecksum) {
+                                return@withContext false
+                            }
+                        }
+                    } catch (ignored: Exception) {}
+                }
+
                 return@withContext restoreFromJson(JSONObject(jsonContent!!))
             }
 
@@ -132,38 +199,45 @@ class BackupManager(
     }
 
     private fun restoreFromJson(json: JSONObject): Boolean {
+        val db = database.openHelper.writableDatabase
+        
         try {
-            val db = database.openHelper.writableDatabase
+            try {
+                db.execSQL("PRAGMA foreign_keys = OFF")
+            } catch (ignored: Exception) {}
 
             db.beginTransaction()
             try {
-                val tables = listOf(
-                    "categories", "products", "customers", "suppliers", "expenses",
-                    "sales", "sale_items", "purchases", "purchase_items",
-                    "customer_credits", "supplier_credits", "stock_movements"
-                )
+                val keys = json.keys()
+                while (keys.hasNext()) {
+                    val table = keys.next()
+                    if (table == "version" || table == "timestamp") continue
 
-                for (table in tables) {
                     val array = json.optJSONArray(table) ?: continue
+                    
+                    try {
+                        db.execSQL("DELETE FROM $table")
+                    } catch (ignored: Exception) {}
+
                     for (i in 0 until array.length()) {
                         val row = array.getJSONObject(i)
                         val cv = android.content.ContentValues()
-                        val keys = row.keys()
-                        while (keys.hasNext()) {
-                            val key = keys.next()
-                            val value = row.get(key)
+                        val colKeys = row.keys()
+                        while (colKeys.hasNext()) {
+                            val col = colKeys.next()
+                            val value = row.get(col)
                             if (value == JSONObject.NULL) {
-                                cv.putNull(key)
+                                cv.putNull(col)
                             } else when (value) {
-                                is Long -> cv.put(key, value)
-                                is Int -> cv.put(key, value)
-                                is Double -> cv.put(key, value)
-                                is Boolean -> cv.put(key, if (value) 1 else 0)
-                                is String -> cv.put(key, value)
+                                is Long -> cv.put(col, value)
+                                is Int -> cv.put(col, value)
+                                is Double -> cv.put(col, value)
+                                is Boolean -> cv.put(col, if (value) 1 else 0)
+                                is String -> cv.put(col, value)
                             }
                         }
                         try {
-                            db.insert(table, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, cv)
+                            db.insert(table, SQLiteDatabase.CONFLICT_REPLACE, cv)
                         } catch (e: Exception) {
                             e.printStackTrace()
                         }
@@ -173,6 +247,13 @@ class BackupManager(
                 return true
             } finally {
                 db.endTransaction()
+                try {
+                    db.execSQL("PRAGMA foreign_keys = ON")
+                } catch (ignored: Exception) {}
+                
+                try {
+                    database.invalidationTracker.refreshVersionsAsync()
+                } catch (ignored: Exception) {}
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -186,21 +267,23 @@ class BackupManager(
             if (tempFile.exists()) tempFile.delete()
             FileOutputStream(tempFile).use { it.write(dbBytes) }
 
-            // Try opening as standard SQLite database
             val legacyDb = SQLiteDatabase.openDatabase(tempFile.absolutePath, null, SQLiteDatabase.OPEN_READONLY)
             val currentDb = database.openHelper.writableDatabase
+            val tables = getUserTables(currentDb)
+
+            try {
+                currentDb.execSQL("PRAGMA foreign_keys = OFF")
+            } catch (ignored: Exception) {}
 
             currentDb.beginTransaction()
             try {
-                val tables = listOf(
-                    "categories", "products", "customers", "suppliers", "expenses",
-                    "sales", "sale_items", "purchases", "purchase_items",
-                    "customer_credits", "supplier_credits", "stock_movements"
-                )
-
                 for (table in tables) {
                     try {
                         legacyDb.rawQuery("SELECT * FROM $table", null).use { cursor ->
+                            try {
+                                currentDb.execSQL("DELETE FROM $table")
+                            } catch (ignored: Exception) {}
+
                             val colNames = cursor.columnNames
                             while (cursor.moveToNext()) {
                                 val cv = android.content.ContentValues()
@@ -215,7 +298,7 @@ class BackupManager(
                                     }
                                 }
                                 try {
-                                    currentDb.insert(table, android.database.sqlite.SQLiteDatabase.CONFLICT_REPLACE, cv)
+                                    currentDb.insert(table, SQLiteDatabase.CONFLICT_REPLACE, cv)
                                 } catch (ignored: Exception) {}
                             }
                         }
@@ -226,6 +309,10 @@ class BackupManager(
             } finally {
                 currentDb.endTransaction()
                 legacyDb.close()
+                try {
+                    currentDb.execSQL("PRAGMA foreign_keys = ON")
+                    database.invalidationTracker.refreshVersionsAsync()
+                } catch (ignored: Exception) {}
             }
         } catch (e: Exception) {
             e.printStackTrace()
@@ -256,10 +343,20 @@ class BackupManager(
                         doc.data?.let { array.put(JSONObject(it)) }
                     }
                 } catch (e: Exception) {
-                    e.printStackTrace()
+                    // Ignore errors for individual collections
                 }
                 backupJson.put(collection, array)
             }
+            
+            // Fetch staff separately to map to users table
+            try {
+                val staffArray = JSONArray()
+                val staffSnapshot = firestore.collection("users").document(companyId).collection("staff").get().await()
+                for (doc in staffSnapshot.documents) {
+                    doc.data?.let { staffArray.put(JSONObject(it)) }
+                }
+                backupJson.put("users", staffArray)
+            } catch (e: Exception) { }
 
             // Fetch Sales and nested items
             try {

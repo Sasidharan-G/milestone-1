@@ -1,0 +1,28 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if the user owns the company
+    function isOwner(companyId) {
+      return request.auth != null && 
+             get(/databases/$(database)/documents/companies/$(companyId)).data.owner_user_id == request.auth.uid;
+    }
+
+    // Companies collection
+    match /companies/{companyId} {
+      allow create: if request.auth != null; // Any authenticated user can create a company
+      allow read, update, delete: if request.auth != null && resource.data.owner_user_id == request.auth.uid;
+    }
+
+    // Company Users (Roles/Mapping)
+    match /company_users/{docId} {
+      allow read, write: if request.auth != null && resource.data.user_id == request.auth.uid;
+      allow create: if request.auth != null;
+    }
+
+    // Tenant Isolated POS Data (Sales, Products, Customers, Staff, etc)
+    match /users/{companyId}/{document=**} {
+      allow read, write: if isOwner(companyId);
+    }
+  }
+}

@@ -1,16 +1,33 @@
 plugins {
-    id("com.android.application")
-    id("org.jetbrains.kotlin.android")
-    id("org.jetbrains.kotlin.plugin.compose")
-    id("com.google.dagger.hilt.android")
-    id("com.google.devtools.ksp")
-    id("org.jetbrains.kotlin.plugin.serialization")
-    id("com.google.gms.google-services")
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.hilt.android)
+    alias(libs.plugins.ksp)
+    alias(libs.plugins.kotlin.serialization)
+    alias(libs.plugins.google.services)
+    alias(libs.plugins.baselineprofile)
 }
 
 android { namespace = "com.kadaikutty.pos"; compileSdk = 35
     defaultConfig { applicationId = "com.kadaikutty.pos"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SENTRY_DSN", "\"\"")
+    }
+    signingConfigs {
+        create("release") {
+            storeFile = file("kadaikutty.jks")
+            storePassword = "kadai123"
+            keyAlias = "kadaikutty_key"
+            keyPassword = "kadai123"
+        }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+            signingConfig = signingConfigs.getByName("release")
+        }
     }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
     buildFeatures { compose = true; buildConfig = true }
@@ -37,65 +54,81 @@ ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
 dependencies {
-    val composeBom = platform("androidx.compose:compose-bom:2024.12.01")
-    implementation(composeBom); androidTestImplementation(composeBom)
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.7")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.7")
-    implementation("androidx.activity:activity-compose:1.10.0")
-    implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
-    implementation("androidx.compose.ui:ui"); implementation("androidx.compose.ui:ui-tooling-preview")
-    debugImplementation("androidx.compose.ui:ui-tooling")
-    implementation("androidx.navigation:navigation-compose:2.8.5")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
-    implementation("com.google.dagger:hilt-android:2.52"); ksp("com.google.dagger:hilt-compiler:2.52")
-    implementation("androidx.hilt:hilt-navigation-compose:1.2.0")
-    implementation("androidx.room:room-runtime:2.6.1"); implementation("androidx.room:room-ktx:2.6.1"); ksp("androidx.room:room-compiler:2.6.1")
-    implementation("androidx.work:work-runtime-ktx:2.10.0")
-    implementation("androidx.datastore:datastore-preferences:1.1.2")
-    implementation("com.google.android.gms:play-services-auth:21.3.0")
-    debugImplementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
-    implementation("io.sentry:sentry-android:7.10.0")
-    testImplementation("junit:junit:4.13.2")
-    testImplementation("org.mockito:mockito-core:5.11.0")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.9.0")
-    implementation("com.google.ai.client.generativeai:generativeai:0.9.0")
+    implementation(platform(libs.compose.bom))
+    androidTestImplementation(platform(libs.compose.bom))
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.androidx.activity.compose)
+    implementation(libs.androidx.compose.material3)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.ui)
+    implementation(libs.androidx.compose.ui.tooling.preview)
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.compiler)
+    implementation(libs.androidx.hilt.navigation.compose)
+    implementation(libs.room.runtime)
+    implementation(libs.room.ktx)
+    ksp(libs.room.compiler)
+    implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.datastore.preferences)
+    implementation(libs.play.services.auth)
+    debugImplementation(libs.okhttp3.logging.interceptor)
+    implementation(libs.sentry.android)
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.kotlinx.coroutines.test)
+    implementation(libs.generativeai)
 
     // Firebase
-    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
-    implementation("com.google.firebase:firebase-auth")
-    implementation("com.google.firebase:firebase-firestore")
-    implementation("com.google.firebase:firebase-storage")
-    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
+    implementation(libs.firebase.storage)
+    implementation(libs.kotlinx.serialization.json)
 
     // Razorpay
-    implementation("com.razorpay:checkout:1.6.40")
+    implementation(libs.razorpay.checkout)
 
     // Coil
-    implementation("io.coil-kt:coil-compose:2.6.0")
-    implementation("io.coil-kt:coil-svg:2.6.0")
+    implementation(libs.coil.compose)
+    implementation(libs.coil.svg)
 
     // Security Dependencies
-    implementation("androidx.biometric:biometric:1.2.0-alpha05")
-    implementation("com.scottyab:rootbeer-lib:0.1.2")
-    implementation("net.zetetic:android-database-sqlcipher:4.5.4")
+    implementation(libs.androidx.biometric)
+    implementation(libs.rootbeer.lib)
+    implementation(libs.android.database.sqlcipher)
 
     // CameraX & Google ML Kit Barcode Scanner
-    val cameraxVersion = "1.3.4"
-    implementation("androidx.camera:camera-core:$cameraxVersion")
-    implementation("androidx.camera:camera-camera2:$cameraxVersion")
-    implementation("androidx.camera:camera-lifecycle:$cameraxVersion")
-    implementation("androidx.camera:camera-view:$cameraxVersion")
-    implementation("com.google.mlkit:barcode-scanning:17.3.0")
-    implementation("com.google.guava:guava:33.3.1-android")
-    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+    implementation(libs.camerax.core)
+    implementation(libs.camerax.camera2)
+    implementation(libs.camerax.lifecycle)
+    implementation(libs.camerax.view)
+    implementation(libs.mlkit.barcode.scanning)
+    implementation(libs.guava)
+    implementation(libs.zxing.android.embedded)
 
     // Android Test dependencies
-    androidTestImplementation("androidx.test.ext:junit:1.3.0")
-    androidTestImplementation("androidx.test:runner:1.7.0")
-    androidTestImplementation("androidx.test:rules:1.7.0")
-    androidTestImplementation("androidx.test:core:1.7.0")
-    androidTestImplementation("junit:junit:4.13.2")
-    androidTestImplementation("androidx.room:room-testing:2.6.1")
+    testImplementation(libs.junit)
+    testImplementation(libs.mockito.core)
+    testImplementation(libs.kotlinx.coroutines.test)
+    
+    androidTestImplementation(libs.androidx.test.ext.junit)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.rules)
+    androidTestImplementation(libs.androidx.test.core)
+    androidTestImplementation(libs.room.testing)
+}
+
+baselineProfile {
+    saveInSrc = true
+    automaticGenerationDuringBuild = true
+    mergeIntoMain = true
+}
+
+dependencies {
+    "baselineProfile"(project(":macrobenchmark"))
 }
