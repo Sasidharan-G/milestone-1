@@ -604,61 +604,83 @@ fun HomeScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .background(heroGradient)
-                            .padding(18.dp)
+                            .padding(16.dp)
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(14.dp)
+                            verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            Surface(
-                                shape = RoundedCornerShape(14.dp),
-                                color = Color.White.copy(alpha = 0.2f),
-                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                             ) {
-                                Icon(
-                                    Icons.Default.ShoppingCart,
-                                    contentDescription = null,
-                                    tint = Color.White,
-                                    modifier = Modifier.padding(12.dp).size(30.dp)
-                                )
-                            }
+                                Surface(
+                                    shape = RoundedCornerShape(14.dp),
+                                    color = Color.White.copy(alpha = 0.2f),
+                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                                ) {
+                                    Icon(
+                                        Icons.Default.ShoppingCart,
+                                        contentDescription = null,
+                                        tint = Color.White,
+                                        modifier = Modifier.padding(10.dp).size(26.dp)
+                                    )
+                                }
 
-                            Column(modifier = Modifier.weight(1f)) {
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Column(modifier = Modifier.weight(1f)) {
                                     Text(
                                         text = "Point of Sale (POS)",
-                                        fontSize = 18.sp,
+                                        fontSize = 17.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color.White
                                     )
-                                    Surface(
-                                        color = Color(0xFF10B981),
-                                        shape = RoundedCornerShape(6.dp)
-                                    ) {
-                                        Text(
-                                            text = "⚡ START BILL",
-                                            fontSize = 9.sp,
-                                            fontWeight = FontWeight.ExtraBold,
-                                            color = Color.White,
-                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                        )
-                                    }
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "Create Invoices, Barcode Scan & Instant Checkout",
+                                        fontSize = 11.sp,
+                                        lineHeight = 15.sp,
+                                        color = Color.White.copy(alpha = 0.9f)
+                                    )
                                 }
-                                Spacer(modifier = Modifier.height(3.dp))
-                                Text(
-                                    text = "Create Invoices, Barcode Scan & Instant Checkout",
-                                    fontSize = 12.sp,
-                                    color = Color.White.copy(alpha = 0.9f)
-                                )
                             }
 
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                contentDescription = null,
-                                tint = Color.White.copy(alpha = 0.9f),
-                                modifier = Modifier.size(18.dp)
-                            )
+                            // ⚡ Dedicated START NEW BILL CTA Button
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = Color.White,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "⚡",
+                                            fontSize = 13.sp
+                                        )
+                                        Text(
+                                            text = "START NEW BILL",
+                                            fontWeight = FontWeight.ExtraBold,
+                                            fontSize = 13.sp,
+                                            color = Color(0xFF1E40AF)
+                                        )
+                                    }
+                                    Icon(
+                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
+                                        contentDescription = null,
+                                        tint = Color(0xFF1E40AF),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                }
+                            }
                         }
                     }
                 }
