@@ -14,15 +14,15 @@ import kotlinx.coroutines.flow.Flow
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertCategoriesSync(items: List<CategoryEntity>)
     @Query("DELETE FROM categories WHERE companyId = :companyId") suspend fun deleteCategoriesByCompany(companyId: String)
     @Query("DELETE FROM categories WHERE companyId = :companyId") fun deleteCategoriesByCompanySync(companyId: String)
-    @Query("SELECT * FROM categories WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 20") fun categories(companyId: String, query: String): Flow<List<CategoryEntity>>
-    @Query("SELECT * FROM categories WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 20") fun categoriesDebounced(companyId: String, query: String): Flow<List<CategoryEntity>>
+    @Query("SELECT * FROM categories WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 500") fun categories(companyId: String, query: String): Flow<List<CategoryEntity>>
+    @Query("SELECT * FROM categories WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 500") fun categoriesDebounced(companyId: String, query: String): Flow<List<CategoryEntity>>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertProduct(item: ProductEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertProducts(items: List<ProductEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertProductsSync(items: List<ProductEntity>)
     @Query("DELETE FROM products WHERE companyId = :companyId") suspend fun deleteProductsByCompany(companyId: String)
     @Query("DELETE FROM products WHERE companyId = :companyId") fun deleteProductsByCompanySync(companyId: String)
-    @Query("SELECT * FROM products WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 20") fun products(companyId: String, query: String): Flow<List<ProductEntity>>
-    @Query("SELECT * FROM products WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 20") fun productsDebounced(companyId: String, query: String): Flow<List<ProductEntity>>
+    @Query("SELECT * FROM products WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 500") fun products(companyId: String, query: String): Flow<List<ProductEntity>>
+    @Query("SELECT * FROM products WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 500") fun productsDebounced(companyId: String, query: String): Flow<List<ProductEntity>>
     @Query("SELECT * FROM products WHERE companyId = :companyId AND id = :id") suspend fun getProductById(companyId: String, id: String): ProductEntity?
     @Query("SELECT * FROM products WHERE companyId = :companyId") suspend fun getAllProducts(companyId: String): List<ProductEntity>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertCustomer(item: CustomerEntity)
@@ -30,16 +30,16 @@ import kotlinx.coroutines.flow.Flow
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertCustomersSync(items: List<CustomerEntity>)
     @Query("DELETE FROM customers WHERE companyId = :companyId") suspend fun deleteCustomersByCompany(companyId: String)
     @Query("DELETE FROM customers WHERE companyId = :companyId") fun deleteCustomersByCompanySync(companyId: String)
-    @Query("SELECT * FROM customers WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 20") fun customers(companyId: String, query: String): Flow<List<CustomerEntity>>
-    @Query("SELECT * FROM customers WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 20") fun customersDebounced(companyId: String, query: String): Flow<List<CustomerEntity>>
+    @Query("SELECT * FROM customers WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 500") fun customers(companyId: String, query: String): Flow<List<CustomerEntity>>
+    @Query("SELECT * FROM customers WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 500") fun customersDebounced(companyId: String, query: String): Flow<List<CustomerEntity>>
     @Query("SELECT * FROM customers WHERE companyId = :companyId AND id = :id") suspend fun getCustomerById(companyId: String, id: String): CustomerEntity?
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertSupplier(item: SupplierEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertSuppliers(items: List<SupplierEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertSuppliersSync(items: List<SupplierEntity>)
     @Query("DELETE FROM suppliers WHERE companyId = :companyId") suspend fun deleteSuppliersByCompany(companyId: String)
     @Query("DELETE FROM suppliers WHERE companyId = :companyId") fun deleteSuppliersByCompanySync(companyId: String)
-    @Query("SELECT * FROM suppliers WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 20") fun suppliers(companyId: String, query: String): Flow<List<SupplierEntity>>
-    @Query("SELECT * FROM suppliers WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 20") fun suppliersDebounced(companyId: String, query: String): Flow<List<SupplierEntity>>
+    @Query("SELECT * FROM suppliers WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 500") fun suppliers(companyId: String, query: String): Flow<List<SupplierEntity>>
+    @Query("SELECT * FROM suppliers WHERE companyId = :companyId AND name LIKE '%' || :query || '%' ORDER BY name LIMIT 500") fun suppliersDebounced(companyId: String, query: String): Flow<List<SupplierEntity>>
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertExpense(item: ExpenseEntity)
     @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun insertExpenses(items: List<ExpenseEntity>)
     @Insert(onConflict = OnConflictStrategy.ABORT) fun insertExpensesSync(items: List<ExpenseEntity>)

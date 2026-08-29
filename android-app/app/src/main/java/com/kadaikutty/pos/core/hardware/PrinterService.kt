@@ -37,8 +37,10 @@ object PrinterService {
         discount: String,
         grandTotal: String
     ): Result<Unit> = withContext(Dispatchers.IO) {
-        if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
-            return@withContext Result.failure(Exception("Bluetooth permission not granted. Please allow Bluetooth access in settings."))
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                return@withContext Result.failure(Exception("Bluetooth permission not granted. Please allow Nearby Devices permission in settings."))
+            }
         }
 
         val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
