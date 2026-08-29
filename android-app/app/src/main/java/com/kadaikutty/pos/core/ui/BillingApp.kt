@@ -446,10 +446,17 @@ fun HomeScreen(
                             fontSize = 18.sp,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
+                        val roleDisplay = when (session?.role?.uppercase()) {
+                            "CASHIER" -> "👤 Cashier: ${session.displayName.ifBlank { session.userId }}"
+                            "STORE_MANAGER" -> "👔 Manager: ${session.displayName.ifBlank { session.userId }}"
+                            "INWARD_CLERK" -> "🚚 Stock: ${session.displayName.ifBlank { session.userId }}"
+                            else -> "👑 Admin: ${session?.displayName?.ifBlank { session.userId } ?: "Owner"}"
+                        }
                         Text(
-                            text = "Terminal Active • ${session?.userId ?: "Cashier"}",
+                            text = "$roleDisplay • Live",
                             fontSize = 11.sp,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.8f)
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
                         )
                     }
                 },
