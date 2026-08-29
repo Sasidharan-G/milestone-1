@@ -531,8 +531,8 @@ fun HomeScreen(
                     title = "Today's Sales",
                     value = "₹${Money(dashboardState.todaySalesMinorUnits)}",
                     subtitle = "${dashboardState.todayInvoicesCount} Invoices",
-                    icon = Icons.Default.TrendingUp,
-                    accentColor = Color(0xFF2E7D32),
+                    icon = Icons.Default.ShoppingCart,
+                    accentColor = Color(0xFF059669),
                     modifier = Modifier.weight(1f),
                     onClick = { if (showReports) onNavigateTo(AppRoute.Reports) }
                 )
@@ -543,7 +543,7 @@ fun HomeScreen(
                     value = "${dashboardState.lowStockCount} Items",
                     subtitle = if (dashboardState.lowStockCount > 0) "Needs Restock" else "Stock Healthy",
                     icon = Icons.Default.Warning,
-                    accentColor = if (dashboardState.lowStockCount > 0) MaterialTheme.colorScheme.error else Color(0xFF2E7D32),
+                    accentColor = if (dashboardState.lowStockCount > 0) MaterialTheme.colorScheme.error else Color(0xFF059669),
                     modifier = Modifier.weight(1f),
                     onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
                 )
@@ -558,8 +558,8 @@ fun HomeScreen(
                     title = "Customer Due",
                     value = "₹${Money(dashboardState.customerCreditDueMinorUnits)}",
                     subtitle = "Ledger Balance",
-                    icon = Icons.Default.AccountBalanceWallet,
-                    accentColor = Color(0xFF1E88E5),
+                    icon = Icons.Default.AccountBox,
+                    accentColor = Color(0xFF2563EB),
                     modifier = Modifier.weight(1f),
                     onClick = { if (showMasters) onNavigateTo(AppRoute.Masters) }
                 )
@@ -569,8 +569,8 @@ fun HomeScreen(
                     title = "Inward Stock",
                     value = "₹${Money(dashboardState.todayPurchasesMinorUnits)}",
                     subtitle = "Purchased Today",
-                    icon = Icons.Default.Inventory2,
-                    accentColor = Color(0xFF7B1FA2),
+                    icon = Icons.Default.Add,
+                    accentColor = Color(0xFF7C3AED),
                     modifier = Modifier.weight(1f),
                     onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
                 )
@@ -678,6 +678,8 @@ fun HomeScreen(
                         title = "Inward Stock",
                         subtitle = "Purchases & Inward Ledger",
                         icon = Icons.Default.AddCircle,
+                        iconContainerColor = Color(0xFFEFF6FF),
+                        iconTint = Color(0xFF2563EB),
                         badge = if (dashboardState.lowStockCount > 0) "${dashboardState.lowStockCount} Low" else null,
                         badgeColor = MaterialTheme.colorScheme.error,
                         modifier = Modifier.weight(1f),
@@ -688,9 +690,11 @@ fun HomeScreen(
                     DashboardTileCard(
                         title = "Master Catalog",
                         subtitle = "Products, Customers & Suppliers",
-                        icon = Icons.Default.Category,
+                        icon = Icons.Default.Menu,
+                        iconContainerColor = Color(0xFFF5F3FF),
+                        iconTint = Color(0xFF7C3AED),
                         badge = "6 Modules",
-                        badgeColor = MaterialTheme.colorScheme.primary,
+                        badgeColor = Color(0xFF7C3AED),
                         modifier = Modifier.weight(1f),
                         onClick = { onNavigateTo(AppRoute.Masters) }
                     )
@@ -702,9 +706,11 @@ fun HomeScreen(
                     DashboardTileCard(
                         title = "Analytics & Reports",
                         subtitle = "Sales, Bills & Profit Margin",
-                        icon = Icons.Default.Assessment,
+                        icon = Icons.Default.List,
+                        iconContainerColor = Color(0xFFECFDF5),
+                        iconTint = Color(0xFF059669),
                         badge = "Live Reports",
-                        badgeColor = Color(0xFF2E7D32),
+                        badgeColor = Color(0xFF059669),
                         modifier = Modifier.weight(1f),
                         onClick = { onNavigateTo(AppRoute.Reports) }
                     )
@@ -714,8 +720,10 @@ fun HomeScreen(
                         title = "Subscription & Cloud",
                         subtitle = "Business Plan & Licenses",
                         icon = Icons.Default.Star,
+                        iconContainerColor = Color(0xFFFFFBEB),
+                        iconTint = Color(0xFFD97706),
                         badge = "PRO",
-                        badgeColor = Color(0xFFF57C00),
+                        badgeColor = Color(0xFFD97706),
                         modifier = Modifier.weight(1f),
                         onClick = { onNavigateTo(AppRoute.Subscription) }
                     )
@@ -750,11 +758,12 @@ fun HomeScreen(
                             .fillMaxWidth()
                             .border(
                                 width = 1.dp,
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                                 shape = RoundedCornerShape(14.dp)
                             ),
                         shape = RoundedCornerShape(14.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                     ) {
                         Row(
                             modifier = Modifier
@@ -785,14 +794,22 @@ fun HomeScreen(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Surface(
-                                    color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f),
+                                    color = when (sale.paymentMode.uppercase()) {
+                                        "CASH" -> Color(0xFFD1FAE5)
+                                        "UPI" -> Color(0xFFDBEAFE)
+                                        else -> Color(0xFFFEF3C7)
+                                    },
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
                                     Text(
                                         text = sale.paymentMode,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = MaterialTheme.colorScheme.primary,
+                                        color = when (sale.paymentMode.uppercase()) {
+                                            "CASH" -> Color(0xFF065F46)
+                                            "UPI" -> Color(0xFF1E40AF)
+                                            else -> Color(0xFF92400E)
+                                        },
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }
@@ -822,7 +839,7 @@ fun DashboardKpiCard(
             .clickable { onClick() }
             .border(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                 shape = RoundedCornerShape(16.dp)
             ),
         shape = RoundedCornerShape(16.dp),
@@ -880,6 +897,8 @@ fun DashboardTileCard(
     title: String,
     subtitle: String,
     icon: ImageVector,
+    iconContainerColor: Color = MaterialTheme.colorScheme.primaryContainer,
+    iconTint: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     badge: String? = null,
     badgeColor: Color = MaterialTheme.colorScheme.primary,
     modifier: Modifier = Modifier,
@@ -890,12 +909,12 @@ fun DashboardTileCard(
             .clickable { onClick() }
             .border(
                 width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                 shape = RoundedCornerShape(16.dp)
             ),
         shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
@@ -909,13 +928,13 @@ fun DashboardTileCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
+                    color = iconContainerColor,
                     shape = RoundedCornerShape(10.dp)
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        tint = iconTint,
                         modifier = Modifier.padding(8.dp).size(22.dp)
                     )
                 }

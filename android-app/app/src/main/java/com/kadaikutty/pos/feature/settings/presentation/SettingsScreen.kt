@@ -37,6 +37,10 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.AccountBox
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
@@ -51,12 +55,12 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 enum class SettingsCategory(val title: String, val icon: ImageVector, val shortSummary: String) {
-    SHOP_PROFILE("Store Profile", Icons.Default.Home, "Business Name, Tax ID, Address"),
+    SHOP_PROFILE("Store Profile", Icons.Default.AccountBox, "Business Name, Tax ID, Address"),
     PRINTER("Hardware & Printer", Icons.Default.Build, "Thermal Receipt, Bluetooth & USB"),
-    CLOUD_BACKUP("Cloud Synchronization", Icons.Default.Share, "Online Backup & Data Recovery"),
-    STAFF("User Management", Icons.Default.Person, "Staff Logins & Role Permissions"),
+    CLOUD_BACKUP("Cloud Synchronization", Icons.Default.Refresh, "Online Backup & Data Recovery"),
+    STAFF("User Management", Icons.Default.AccountCircle, "Staff Logins & Role Permissions"),
     DISPLAY("Display & Interface", Icons.Default.Settings, "Layout Preference & Theme Mode"),
-    MAINTENANCE("Database & Security", Icons.Default.Delete, "Local Archives & System Maintenance")
+    MAINTENANCE("Database & Security", Icons.Default.Lock, "Local Archives & System Maintenance")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1256,24 +1260,25 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                     rows.forEach { rowItems ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
                             rowItems.forEach { cat ->
                                 Card(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(130.dp)
+                                        .height(140.dp)
                                         .clickable(
                                             onClickLabel = "Open ${cat.title} category",
                                             onClick = { activeCategory = cat }
                                         )
                                         .border(
                                             width = 1.dp,
-                                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                                             shape = RoundedCornerShape(16.dp)
                                         ),
                                     shape = RoundedCornerShape(16.dp),
-                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                                 ) {
                                     Column(
                                         modifier = Modifier
@@ -1282,23 +1287,34 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
                                     ) {
-                                        Icon(
-                                            imageVector = cat.icon,
-                                            contentDescription = null,
-                                            tint = MaterialTheme.colorScheme.primary,
-                                            modifier = Modifier.size(36.dp)
-                                        )
-                                        Spacer(modifier = Modifier.height(10.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(12.dp),
+                                            color = MaterialTheme.colorScheme.primaryContainer,
+                                            modifier = Modifier.size(44.dp)
+                                        ) {
+                                            Box(contentAlignment = Alignment.Center) {
+                                                Icon(
+                                                    imageVector = cat.icon,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.primary,
+                                                    modifier = Modifier.size(24.dp)
+                                                )
+                                            }
+                                        }
+                                        Spacer(modifier = Modifier.height(8.dp))
                                         Text(
                                             text = cat.title,
                                             fontWeight = FontWeight.Bold,
-                                            fontSize = 14.sp,
-                                            color = MaterialTheme.colorScheme.onSurface
+                                            fontSize = 13.sp,
+                                            color = MaterialTheme.colorScheme.onSurface,
+                                            textAlign = TextAlign.Center
                                         )
-                                        Spacer(modifier = Modifier.height(4.dp))
+                                        Spacer(modifier = Modifier.height(2.dp))
                                         Text(
                                             text = cat.shortSummary,
                                             fontSize = 10.sp,
+                                            lineHeight = 13.sp,
+                                            maxLines = 2,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
                                             textAlign = TextAlign.Center
                                         )

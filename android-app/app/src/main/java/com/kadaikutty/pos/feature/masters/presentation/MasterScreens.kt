@@ -51,12 +51,12 @@ fun MasterGridCard(
     val containerColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
     } else {
-        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        MaterialTheme.colorScheme.surface
     }
     val contentColor = if (isSelected) {
         MaterialTheme.colorScheme.onPrimary
     } else {
-        MaterialTheme.colorScheme.onSurfaceVariant
+        MaterialTheme.colorScheme.onSurface
     }
 
     Card(
@@ -65,12 +65,12 @@ fun MasterGridCard(
             .clickable(onClick = onClick)
             .border(
                 width = 1.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                 shape = RoundedCornerShape(12.dp)
             ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 0.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 1.dp)
     ) {
         Row(
             modifier = Modifier
@@ -89,7 +89,7 @@ fun MasterGridCard(
             Text(
                 text = title,
                 fontSize = 11.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
                 color = contentColor,
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -123,14 +123,14 @@ fun MasterScreens(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
-            // 📊 2x3 Matrix Grid Header for the 6 Master Data Attributes
+            // 📊 2x3 Matrix Grid Header for the 6 Master Data Attributes with Unique Semantic Icons
             val masterTabs = listOf(
-                Triple(0, "Categories", Icons.Default.List),
-                Triple(1, "Products", Icons.Default.ShoppingCart),
-                Triple(2, "Customers", Icons.Default.Person),
-                Triple(3, "Suppliers", Icons.Default.Home),
-                Triple(4, "Expenses", Icons.Default.Info),
-                Triple(5, "Ledger", Icons.Default.Star)
+                Triple(0, "Categories", Icons.Default.Category),
+                Triple(1, "Products", Icons.Default.Inventory2),
+                Triple(2, "Customers", Icons.Default.Groups),
+                Triple(3, "Suppliers", Icons.Default.LocalShipping),
+                Triple(4, "Expenses", Icons.Default.ReceiptLong),
+                Triple(5, "Ledger", Icons.Default.MenuBook)
             )
 
             Column(
