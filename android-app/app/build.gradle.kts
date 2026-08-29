@@ -6,13 +6,22 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.google.services)
-    alias(libs.plugins.baselineprofile)
 }
 
-android { namespace = "com.kadaikutty.pos"; compileSdk = 35
-    defaultConfig { applicationId = "com.kadaikutty.pos"; minSdk = 26; targetSdk = 35; versionCode = 1; versionName = "0.1.0"; testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+android {
+    namespace = "com.kadaikutty.pos"
+    compileSdk = 35
+
+    defaultConfig {
+        applicationId = "com.kadaikutty.pos"
+        minSdk = 26
+        targetSdk = 35
+        versionCode = 1
+        versionName = "0.1.0"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SENTRY_DSN", "\"\"")
     }
+
     signingConfigs {
         create("release") {
             storeFile = file("kadaikutty.jks")
@@ -21,6 +30,7 @@ android { namespace = "com.kadaikutty.pos"; compileSdk = 35
             keyPassword = "kadai123"
         }
     }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -29,8 +39,26 @@ android { namespace = "com.kadaikutty.pos"; compileSdk = 35
             signingConfig = signingConfigs.getByName("release")
         }
     }
-    compileOptions { sourceCompatibility = JavaVersion.VERSION_21; targetCompatibility = JavaVersion.VERSION_21 }
-    buildFeatures { compose = true; buildConfig = true }
+
+    splits {
+        abi {
+            isEnable = true
+            reset()
+            include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
+            isUniversalApk = true
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_21
+        targetCompatibility = JavaVersion.VERSION_21
+    }
+
+    buildFeatures {
+        compose = true
+        buildConfig = true
+    }
+
     packaging {
         resources {
             excludes += "/META-INF/DEPENDENCIES"
@@ -43,16 +71,20 @@ android { namespace = "com.kadaikutty.pos"; compileSdk = 35
             excludes += "/META-INF/ASL2.0"
         }
     }
+
     sourceSets {
         getByName("androidTest") {
             assets.srcDirs(files("$projectDir/schemas"))
         }
     }
 }
+
 kotlin { jvmToolchain(21) }
+
 ksp {
     arg("room.schemaLocation", "$projectDir/schemas")
 }
+
 dependencies {
     implementation(platform(libs.compose.bom))
     androidTestImplementation(platform(libs.compose.bom))
@@ -112,23 +144,9 @@ dependencies {
     implementation(libs.zxing.android.embedded)
 
     // Android Test dependencies
-    testImplementation(libs.junit)
-    testImplementation(libs.mockito.core)
-    testImplementation(libs.kotlinx.coroutines.test)
-    
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.rules)
     androidTestImplementation(libs.androidx.test.core)
     androidTestImplementation(libs.room.testing)
-}
-
-baselineProfile {
-    saveInSrc = true
-    automaticGenerationDuringBuild = true
-    mergeIntoMain = true
-}
-
-dependencies {
-    "baselineProfile"(project(":macrobenchmark"))
 }
