@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
@@ -34,11 +35,15 @@ import com.kadaikutty.pos.core.presentation.components.LoadingOverlay
 fun LoginScreen(
     viewModel: LoginViewModel,
     onLoginSuccess: () -> Unit,
-    onNavigateToRegister: () -> Unit
+    onNavigateToRegister: () -> Unit,
+    onOpenMasterControl: () -> Unit = {}
 ) {
     val state by viewModel.state.collectAsState()
     var message by remember { mutableStateOf("") }
     val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    var showMasterPinDialog by remember { mutableStateOf(false) }
+    var enteredMasterPin by remember { mutableStateOf("") }
+    var masterPinError by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.complete) {
         if (state.complete) {
@@ -243,6 +248,30 @@ fun LoginScreen(
                         .padding(vertical = 4.dp)
                 )
 
+                HorizontalDivider(color = Color(0xFF1E293B), modifier = Modifier.padding(vertical = 4.dp))
+
+                // 🛡️ Super Master Access Button
+                TextButton(
+                    onClick = { showMasterPinDialog = true },
+                    modifier = Modifier.padding(top = 2.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Surface(
+                            shape = CircleShape,
+                            color = Color(0xFFF59E0B).copy(alpha = 0.2f),
+                            modifier = Modifier.size(20.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text("🛡️", fontSize = 10.sp)
+                            }
+                        }
+                        Text("Super Master Control Panel", color = Color(0xFFF59E0B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
                 if (message.isNotBlank()) {
                     Text(
                         text = message,
@@ -254,6 +283,60 @@ fun LoginScreen(
                     )
                 }
             }
+        }
+
+        // Master Secret PIN Dialog
+        if (showMasterPinDialog) {
+            AlertDialog(
+                onDismissRequest = {
+                    showMasterPinDialog = false
+                    enteredMasterPin = ""
+                    masterPinError = false
+                },
+                title = { Text("🛡️ Super Master Admin Login", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Text("Enter Super Master Secret PIN to open the License Manager Panel:")
+                        OutlinedTextField(
+                            value = enteredMasterPin,
+                            onValueChange = {
+                                enteredMasterPin = it.filter { ch -> ch.isDigit() }.take(6)
+                                masterPinError = false
+                            },
+                            label = { Text("Master PIN") },
+                            placeholder = { Text("e.g. 9840 or 1234") },
+                            isError = masterPinError,
+                            supportingText = if (masterPinError) { { Text("Incorrect Master PIN", color = MaterialTheme.colorScheme.error) } } else null,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            if (enteredMasterPin == "9840" || enteredMasterPin == "1234" || enteredMasterPin == "984011") {
+                                showMasterPinDialog = false
+                                enteredMasterPin = ""
+                                onOpenMasterControl()
+                            } else {
+                                masterPinError = true
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+                    ) {
+                        Text("Open Control Panel", fontWeight = FontWeight.Bold, color = Color.Black)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showMasterPinDialog = false
+                        enteredMasterPin = ""
+                    }) { Text("Cancel") }
+                }
+            )
         }
         
         if (state.showResetOtpDialog) {

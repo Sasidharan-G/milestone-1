@@ -124,6 +124,9 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                         },
                         onNavigateToRegister = {
                             navController.navigate(AppRoute.Register.path)
+                        },
+                        onOpenMasterControl = {
+                            navController.navigate(AppRoute.MasterControl.path)
                         }
                     )
                 }
