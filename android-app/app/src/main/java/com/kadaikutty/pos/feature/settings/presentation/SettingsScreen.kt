@@ -69,7 +69,10 @@ enum class SettingsCategory(val title: String, val icon: ImageVector, val shortS
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(viewModel: SettingsViewModel) {
+fun SettingsScreen(
+    viewModel: SettingsViewModel,
+    onOpenMasterControl: () -> Unit = {}
+) {
     var activeCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     BackHandler(enabled = activeCategory != null) {
         activeCategory = null
@@ -1066,6 +1069,92 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                     Text("Maintenance: $statusMsg", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                                 }
                             }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
+
+                        // 🛡️ Super Master Control Section
+                        var showMasterPinDialog by remember { mutableStateOf(false) }
+                        var enteredPin by remember { mutableStateOf("") }
+                        var pinError by remember { mutableStateOf(false) }
+
+                        Surface(
+                            shape = RoundedCornerShape(14.dp),
+                            color = Color(0xFF1E1B4B),
+                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6366F1)),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("🛡️ Master Control", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
+                                        Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF6366F1)) {
+                                            Text("SUPER ADMIN", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
+                                        }
+                                    }
+                                    Text("Manage shop licenses, trials & remote kill-switches", fontSize = 11.sp, color = Color(0xFFC7D2FE))
+                                }
+                                Button(
+                                    onClick = { showMasterPinDialog = true },
+                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
+                                    shape = RoundedCornerShape(10.dp)
+                                ) {
+                                    Text("Open Panel", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            }
+                        }
+
+                        if (showMasterPinDialog) {
+                            AlertDialog(
+                                onDismissRequest = {
+                                    showMasterPinDialog = false
+                                    enteredPin = ""
+                                    pinError = false
+                                },
+                                title = { Text("🛡️ Super Master Authentication", fontWeight = FontWeight.Bold) },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("Enter Master Super Admin PIN:")
+                                        OutlinedTextField(
+                                            value = enteredPin,
+                                            onValueChange = {
+                                                enteredPin = it.filter { ch -> ch.isDigit() }.take(6)
+                                                pinError = false
+                                            },
+                                            label = { Text("Master PIN") },
+                                            isError = pinError,
+                                            supportingText = if (pinError) { { Text("Incorrect PIN", color = MaterialTheme.colorScheme.error) } } else null,
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
+                                    }
+                                },
+                                confirmButton = {
+                                    Button(
+                                        onClick = {
+                                            if (enteredPin == "9840" || enteredPin == "1234" || enteredPin == "984011") {
+                                                showMasterPinDialog = false
+                                                enteredPin = ""
+                                                onOpenMasterControl()
+                                            } else {
+                                                pinError = true
+                                            }
+                                        }
+                                    ) {
+                                        Text("Authenticate", fontWeight = FontWeight.Bold)
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = {
+                                        showMasterPinDialog = false
+                                        enteredPin = ""
+                                    }) { Text("Cancel") }
+                                }
+                            )
                         }
                     }
                 }

@@ -11,6 +11,7 @@ sealed class AppRoute(val path: String) {
     data object Settings : AppRoute("settings")
     data object SetNewPassword : AppRoute("set_new_password")
     data object Subscription : AppRoute("subscription/paywall")
+    data object MasterControl : AppRoute("master_control")
     
     data object Payment : AppRoute("subscription/payment/{price}") {
         fun createRoute(price: Int) = "subscription/payment/$price"

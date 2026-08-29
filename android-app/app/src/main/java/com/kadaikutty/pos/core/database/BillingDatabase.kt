@@ -19,6 +19,8 @@ import com.kadaikutty.pos.feature.purchase.data.PurchaseItemEntity
 
 import com.kadaikutty.pos.core.auth.UserEntity
 import com.kadaikutty.pos.core.auth.UserDao
+import com.kadaikutty.pos.core.license.LicenseEntity
+import com.kadaikutty.pos.core.license.LicenseDao
 import com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity
 import com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity
 import com.kadaikutty.pos.feature.billing.data.DraftCartItemEntity
@@ -26,7 +28,7 @@ import com.kadaikutty.pos.feature.billing.data.DraftCartDao
 import com.kadaikutty.pos.feature.billing.data.ShiftEntity
 import com.kadaikutty.pos.feature.billing.data.ShiftDao
 
-@Database(entities = [SyncQueueEntity::class, SyncDeadLetterEntity::class, CategoryEntity::class, ProductEntity::class, CustomerEntity::class, SupplierEntity::class, ExpenseEntity::class, SaleEntity::class, SaleItemEntity::class, StockMovementEntity::class, PurchaseEntity::class, PurchaseItemEntity::class, UserEntity::class, CustomerCreditEntity::class, SupplierCreditEntity::class, DraftCartItemEntity::class, ShiftEntity::class], version = 18, exportSchema = true)
+@Database(entities = [SyncQueueEntity::class, SyncDeadLetterEntity::class, CategoryEntity::class, ProductEntity::class, CustomerEntity::class, SupplierEntity::class, ExpenseEntity::class, SaleEntity::class, SaleItemEntity::class, StockMovementEntity::class, PurchaseEntity::class, PurchaseItemEntity::class, UserEntity::class, CustomerCreditEntity::class, SupplierCreditEntity::class, DraftCartItemEntity::class, ShiftEntity::class, LicenseEntity::class], version = 19, exportSchema = true)
 @TypeConverters(SyncStatusConverter::class)
 abstract class BillingDatabase : RoomDatabase() {
     abstract fun syncQueueDao(): SyncQueueDao
@@ -38,4 +40,6 @@ abstract class BillingDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun draftCartDao(): DraftCartDao
     abstract fun shiftDao(): ShiftDao
+    abstract fun licenseDao(): LicenseDao
 }
+

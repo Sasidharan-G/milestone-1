@@ -86,6 +86,15 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
 
     val isLoggedIn by settingsViewModel.isLoggedIn.collectAsState()
     val subscriptionStatus by settingsViewModel.subscriptionStatus.collectAsState()
+    val currentLicense by settingsViewModel.currentLicense.collectAsState()
+    val isClockTampered by settingsViewModel.isClockTampered.collectAsState()
+    var showRenewalDailyDialog by remember { mutableStateOf(false) }
+
+    LaunchedEffect(currentLicense) {
+        if (currentLicense != null && currentLicense!!.isExpiringSoon && settingsViewModel.shouldShowRenewalAlert()) {
+            showRenewalDailyDialog = true
+        }
+    }
 
     if (isLoggedIn == null) {
         Box(
@@ -320,7 +329,12 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
 
                 composable(AppRoute.Settings.path) {
                     val vm: SettingsViewModel = hiltViewModel()
-                    SettingsScreen(viewModel = vm)
+                    SettingsScreen(
+                        viewModel = vm,
+                        onOpenMasterControl = {
+                            navController.navigate(AppRoute.MasterControl.path)
+                        }
+                    )
                 }
 
                 composable(AppRoute.Subscription.path) {
@@ -328,6 +342,14 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                         onSimulatePayment = { planId ->
                             settingsViewModel.simulatePayment(planId)
                         }
+                    )
+                }
+
+                composable(AppRoute.MasterControl.path) {
+                    val masterVm: com.kadaikutty.pos.feature.mastercontrol.presentation.MasterControlViewModel = hiltViewModel()
+                    com.kadaikutty.pos.feature.mastercontrol.presentation.MasterControlScreen(
+                        viewModel = masterVm,
+                        onBack = { navController.popBackStack() }
                     )
                 }
 
@@ -339,11 +361,69 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                     com.kadaikutty.pos.feature.subscription.PaymentScreen(price = price)
                 }
             }
-            
-            if (isLoggedIn == true && subscriptionStatus?.isExpired == true) {
-                com.kadaikutty.pos.feature.subscription.PaywallScreen(
-                    onSimulatePayment = { planId ->
-                        settingsViewModel.simulatePayment(planId)
+
+            // 🔒 Strict Offline/Online Expiry Lock Screen
+            val isLicenseLocked = isLoggedIn == true && (currentLicense?.isExpired == true || isClockTampered)
+            if (isLicenseLocked) {
+                com.kadaikutty.pos.feature.subscription.LicenseExpiredLockScreen(
+                    license = currentLicense,
+                    shopName = shopName,
+                    onRefreshStatus = { settingsViewModel.refreshLicenseStatus() },
+                    onOpenMasterControl = {
+                        navController.navigate(AppRoute.MasterControl.path)
+                    },
+                    onLogout = {
+                        settingsViewModel.logout {
+                            navController.navigate(AppRoute.Login.path) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    }
+                )
+            }
+
+            // ⚠️ 7-Day Expiry Renewal Reminder Dialog (Max 2 times per day)
+            if (showRenewalDailyDialog && currentLicense != null) {
+                val context = LocalContext.current
+                val masterContactPhone = "+919840000000"
+                AlertDialog(
+                    onDismissRequest = {
+                        settingsViewModel.markRenewalAlertShown()
+                        showRenewalDailyDialog = false
+                    },
+                    icon = { Icon(Icons.Default.Timer, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(36.dp)) },
+                    title = { Text("⚠️ License Expiry Reminder", fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Your KadaiKutty POS License expires in ${currentLicense!!.remainingDays} days!", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                            Text("To avoid billing disruptions and maintain your uninterrupted POS operations, please contact the Master Admin to renew your 1-Year license.")
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                try {
+                                    val url = "https://api.whatsapp.com/send?phone=$masterContactPhone&text=Hello%20Master%20Admin,%20I%20want%20to%20renew%20my%20license%20for%20${android.net.Uri.encode(shopName)}"
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {}
+                                settingsViewModel.markRenewalAlertShown()
+                                showRenewalDailyDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
+                        ) {
+                            Text("WhatsApp to Renew", fontWeight = FontWeight.Bold)
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(
+                            onClick = {
+                                settingsViewModel.markRenewalAlertShown()
+                                showRenewalDailyDialog = false
+                            }
+                        ) {
+                            Text("Remind Later")
+                        }
                     }
                 )
             }

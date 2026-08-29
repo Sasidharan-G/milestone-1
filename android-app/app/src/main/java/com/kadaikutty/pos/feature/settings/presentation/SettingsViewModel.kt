@@ -39,7 +39,8 @@ class SettingsViewModel @Inject constructor(
     private val verifier: com.kadaikutty.pos.core.auth.OfflineCredentialVerifier,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore,
     private val subscriptionRepository: com.kadaikutty.pos.feature.subscription.SubscriptionRepository,
-    private val sampleDataGenerator: com.kadaikutty.pos.core.sample.SampleDataGenerator
+    private val sampleDataGenerator: com.kadaikutty.pos.core.sample.SampleDataGenerator,
+    private val licenseManager: com.kadaikutty.pos.core.license.LicenseManager
 ) : ViewModel() {
 
     fun loadDemoSampleData(onResult: (String) -> Unit) {
@@ -158,6 +159,24 @@ class SettingsViewModel @Inject constructor(
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = emptyList()
     )
+
+    val currentLicense: StateFlow<com.kadaikutty.pos.core.license.LicenseEntity?> = licenseManager.currentLicense
+    val isClockTampered: StateFlow<Boolean> = licenseManager.isClockTampered
+
+    fun shouldShowRenewalAlert(): Boolean = licenseManager.shouldShowDailyRenewalAlert()
+    fun markRenewalAlertShown() = licenseManager.recordRenewalAlertShown()
+    fun refreshLicenseStatus() {
+        activeSession.value?.companyId?.let { licenseManager.startRealtimeLicenseSync(it) }
+    }
+
+    fun logout(onComplete: () -> Unit = {}) {
+        viewModelScope.launch {
+            sessionStore.clear()
+            withContext(kotlinx.coroutines.Dispatchers.Main) {
+                onComplete()
+            }
+        }
+    }
 
     val shopName: StateFlow<String> = appPreferences.shopName.stateIn(
         scope = viewModelScope,

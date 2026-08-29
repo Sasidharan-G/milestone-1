@@ -10,6 +10,7 @@ import com.google.firebase.auth.PhoneAuthCredential
 import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
+import com.kadaikutty.pos.core.license.LicenseEntity
 import kotlinx.coroutines.tasks.await
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -237,6 +238,34 @@ class DefaultAuthRepository(
                 "verifier" to verifierStr,
                 "permissions" to Permission.entries.map { it.name }
             )).await()
+
+            // 🛡️ Create Pending License in Firestore for Super Master Control
+            val licenseMap = hashMapOf(
+                "companyId" to companyId,
+                "businessName" to businessName,
+                "ownerName" to ownerName,
+                "ownerMobile" to cleanPhone,
+                "licenseStatus" to "PENDING_APPROVAL",
+                "licenseType" to "TRIAL_2_DAYS",
+                "yearsGranted" to 0,
+                "daysGranted" to 0,
+                "activatedAtEpochMs" to 0L,
+                "validUntilEpochMs" to 0L,
+                "notes" to "New Shop Registered. Waiting for Master Admin Approval."
+            )
+            try {
+                firestore.collection("licenses").document(companyId).set(licenseMap, com.google.firebase.firestore.SetOptions.merge()).await()
+            } catch (ignored: Exception) {}
+
+            val licenseEntity = LicenseEntity(
+                companyId = companyId,
+                businessName = businessName,
+                ownerName = ownerName,
+                ownerMobile = cleanPhone,
+                licenseStatus = "PENDING_APPROVAL",
+                licenseType = "TRIAL_2_DAYS"
+            )
+            database.licenseDao().saveLicense(licenseEntity)
 
             val nowMs = System.currentTimeMillis()
             val offlineValidityMs = 30 * 24 * 60 * 60 * 1000L // 30 days

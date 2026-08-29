@@ -272,3 +272,28 @@ val migration17To18 = object : Migration(17, 18) {
     }
 }
 
+val migration18To19 = object : Migration(18, 19) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `company_licenses` (
+                `companyId` TEXT NOT NULL,
+                `businessName` TEXT NOT NULL DEFAULT '',
+                `ownerName` TEXT NOT NULL DEFAULT '',
+                `ownerMobile` TEXT NOT NULL DEFAULT '',
+                `licenseStatus` TEXT NOT NULL DEFAULT 'PENDING_APPROVAL',
+                `licenseType` TEXT NOT NULL DEFAULT 'TRIAL_2_DAYS',
+                `yearsGranted` INTEGER NOT NULL DEFAULT 0,
+                `daysGranted` INTEGER NOT NULL DEFAULT 0,
+                `activatedAtEpochMs` INTEGER NOT NULL DEFAULT 0,
+                `validUntilEpochMs` INTEGER NOT NULL DEFAULT 0,
+                `lastVerifiedAtEpochMs` INTEGER NOT NULL DEFAULT 0,
+                `highestSeenClockEpochMs` INTEGER NOT NULL DEFAULT 0,
+                `renewalCount` INTEGER NOT NULL DEFAULT 0,
+                `notes` TEXT NOT NULL DEFAULT '',
+                PRIMARY KEY(`companyId`)
+            )
+        """.trimIndent())
+    }
+}
+
+
