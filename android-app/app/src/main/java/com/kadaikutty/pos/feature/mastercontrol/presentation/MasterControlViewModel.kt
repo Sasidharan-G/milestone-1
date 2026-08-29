@@ -34,10 +34,46 @@ class MasterControlViewModel @Inject constructor(
     private val _state = MutableStateFlow(MasterControlUiState())
     val state: StateFlow<MasterControlUiState> = _state.asStateFlow()
 
+    val masterMobile = MutableStateFlow("")
+    val masterPin = MutableStateFlow("9840")
+
     private var licensesListener: ListenerRegistration? = null
+    private var configListener: ListenerRegistration? = null
 
     init {
         listenToLicenses()
+        listenToMasterConfig()
+    }
+
+    private fun listenToMasterConfig() {
+        configListener?.remove()
+        configListener = firestore.collection("master_admin").document("config")
+            .addSnapshotListener { snapshot, _ ->
+                if (snapshot != null && snapshot.exists()) {
+                    masterMobile.value = snapshot.getString("masterMobile") ?: ""
+                    masterPin.value = snapshot.getString("masterPin") ?: "9840"
+                }
+            }
+    }
+
+    fun updateMasterProfile(newMobile: String, newPin: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+        viewModelScope.launch {
+            try {
+                _state.value = _state.value.copy(isLoading = true)
+                val clean = newMobile.replace("[^0-9]".toRegex(), "").takeLast(10)
+                firestore.collection("master_admin").document("config").set(mapOf(
+                    "masterMobile" to clean,
+                    "masterPin" to newPin.trim(),
+                    "updatedAt" to System.currentTimeMillis()
+                ), com.google.firebase.firestore.SetOptions.merge()).await()
+
+                _state.value = _state.value.copy(isLoading = false, successMessage = "Master Mobile and PIN updated in Firebase!")
+                onSuccess()
+            } catch (e: Exception) {
+                _state.value = _state.value.copy(isLoading = false, errorMessage = e.message)
+                onError(e.message ?: "Failed to update profile")
+            }
+        }
     }
 
     fun updateSearchQuery(query: String) {

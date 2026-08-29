@@ -45,6 +45,13 @@ fun MasterControlScreen(
     var selectedShopForLicense by remember { mutableStateOf<LicenseEntity?>(null) }
     var selectedShopForRevoke by remember { mutableStateOf<LicenseEntity?>(null) }
     var showTrialConfirmDialog by remember { mutableStateOf<LicenseEntity?>(null) }
+    var showMasterProfileDialog by remember { mutableStateOf(false) }
+
+    val masterMobile by viewModel.masterMobile.collectAsState()
+    val masterPin by viewModel.masterPin.collectAsState()
+
+    var editMobileInput by remember(masterMobile) { mutableStateOf(masterMobile) }
+    var editPinInput by remember(masterPin) { mutableStateOf(masterPin) }
 
     LaunchedEffect(state.successMessage, state.errorMessage) {
         if (state.successMessage != null) {
@@ -96,6 +103,15 @@ fun MasterControlScreen(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                    }
+                },
+                actions = {
+                    IconButton(onClick = { 
+                        editMobileInput = masterMobile
+                        editPinInput = masterPin
+                        showMasterProfileDialog = true 
+                    }) {
+                        Icon(Icons.Default.Settings, contentDescription = "Master Settings", tint = Color(0xFFF59E0B))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF0F172A))
@@ -448,6 +464,66 @@ fun MasterControlScreen(
             },
             dismissButton = {
                 TextButton(onClick = { selectedShopForRevoke = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Modal 4: Master Admin Profile & Security Settings Dialog
+    if (showMasterProfileDialog) {
+        AlertDialog(
+            onDismissRequest = { showMasterProfileDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("⚙️", fontSize = 18.sp)
+                    Text("Super Master Security Settings", fontWeight = FontWeight.Bold)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                    Text("Change your official Master Mobile Number and Master PIN. Updates are saved permanently in Firebase Cloud:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+
+                    OutlinedTextField(
+                        value = editMobileInput,
+                        onValueChange = { editMobileInput = it.filter { ch -> ch.isDigit() }.take(10) },
+                        label = { Text("Master 10-Digit Mobile Number") },
+                        placeholder = { Text("e.g. 9876543210") },
+                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    OutlinedTextField(
+                        value = editPinInput,
+                        onValueChange = { editPinInput = it.filter { ch -> ch.isDigit() }.take(6) },
+                        label = { Text("Master Secret PIN (4-6 Digits)") },
+                        placeholder = { Text("e.g. 9840") },
+                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editMobileInput.length == 10 && editPinInput.length >= 4) {
+                            viewModel.updateMasterProfile(
+                                newMobile = editMobileInput,
+                                newPin = editPinInput,
+                                onSuccess = { showMasterProfileDialog = false }
+                            )
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                    enabled = editMobileInput.length == 10 && editPinInput.length >= 4
+                ) {
+                    Text("Save to Cloud", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showMasterProfileDialog = false }) { Text("Cancel") }
             }
         )
     }
