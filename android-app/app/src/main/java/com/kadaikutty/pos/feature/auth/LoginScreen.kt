@@ -44,10 +44,22 @@ fun LoginScreen(
     var showMasterPinDialog by remember { mutableStateOf(false) }
     var enteredMasterPin by remember { mutableStateOf("") }
     var masterPinError by remember { mutableStateOf(false) }
+    var isCheckingMasterPin by remember { mutableStateOf(false) }
+
+    var showMasterOtpResetDialog by remember { mutableStateOf(false) }
+    var masterResetVerificationId by remember { mutableStateOf<String?>(null) }
+    var masterResetOtp by remember { mutableStateOf("") }
+    var masterNewPin by remember { mutableStateOf("") }
+    var masterResetTargetPhone by remember { mutableStateOf("") }
+    var masterResetLoading by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.complete) {
         if (state.complete) {
-            onLoginSuccess()
+            if (state.isSuperMaster) {
+                onOpenMasterControl()
+            } else {
+                onLoginSuccess()
+            }
         }
     }
 
@@ -285,7 +297,7 @@ fun LoginScreen(
             }
         }
 
-        // Master Secret PIN Dialog
+        // Master Secret PIN Dialog with Cloud Sync and Forgot PIN OTP
         if (showMasterPinDialog) {
             AlertDialog(
                 onDismissRequest = {
@@ -293,10 +305,15 @@ fun LoginScreen(
                     enteredMasterPin = ""
                     masterPinError = false
                 },
-                title = { Text("🛡️ Super Master Admin Login", fontWeight = FontWeight.Bold) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("🛡️", fontSize = 18.sp)
+                        Text("Super Master Authentication", fontWeight = FontWeight.Bold)
+                    }
+                },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Text("Enter Super Master Secret PIN to open the License Manager Panel:")
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Enter Super Master Secret PIN (Cloud Synced):")
                         OutlinedTextField(
                             value = enteredMasterPin,
                             onValueChange = {
@@ -304,9 +321,112 @@ fun LoginScreen(
                                 masterPinError = false
                             },
                             label = { Text("Master PIN") },
-                            placeholder = { Text("e.g. 9840 or 1234") },
+                            placeholder = { Text("Enter 4-6 digit PIN") },
                             isError = masterPinError,
-                            supportingText = if (masterPinError) { { Text("Incorrect Master PIN", color = MaterialTheme.colorScheme.error) } } else null,
+                            supportingText = if (masterPinError) { { Text("Incorrect Master PIN. Check your cloud PIN or use SMS OTP.", color = MaterialTheme.colorScheme.error) } } else null,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            visualTransformation = PasswordVisualTransformation(),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        // 📱 Master Forgot PIN via Firebase SMS OTP
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = {
+                                    if (activity != null) {
+                                        masterResetLoading = true
+                                        viewModel.requestMasterResetOtp(
+                                            activity = activity,
+                                            customMobile = state.mobileNumber.ifBlank { null },
+                                            onCodeSent = { vId, targetPhone ->
+                                                masterResetLoading = false
+                                                masterResetVerificationId = vId
+                                                masterResetTargetPhone = targetPhone
+                                                showMasterPinDialog = false
+                                                showMasterOtpResetDialog = true
+                                            },
+                                            onError = { err ->
+                                                masterResetLoading = false
+                                                message = "Failed to send Master OTP: $err"
+                                            }
+                                        )
+                                    }
+                                },
+                                enabled = !masterResetLoading
+                            ) {
+                                Text(
+                                    text = if (masterResetLoading) "Sending SMS OTP..." else "Forgot Master PIN? (SMS OTP)",
+                                    fontSize = 12.sp,
+                                    color = Color(0xFF38BDF8),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            isCheckingMasterPin = true
+                            viewModel.validateMasterPin(enteredMasterPin) { isValid ->
+                                isCheckingMasterPin = false
+                                if (isValid) {
+                                    showMasterPinDialog = false
+                                    enteredMasterPin = ""
+                                    onOpenMasterControl()
+                                } else {
+                                    masterPinError = true
+                                }
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                        enabled = enteredMasterPin.length >= 4 && !isCheckingMasterPin
+                    ) {
+                        Text(if (isCheckingMasterPin) "Verifying..." else "Open Control Panel", fontWeight = FontWeight.Bold, color = Color.Black)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        showMasterPinDialog = false
+                        enteredMasterPin = ""
+                    }) { Text("Cancel") }
+                }
+            )
+        }
+
+        // Master SMS OTP Reset Dialog
+        if (showMasterOtpResetDialog && masterResetVerificationId != null) {
+            AlertDialog(
+                onDismissRequest = {
+                    showMasterOtpResetDialog = false
+                    masterResetOtp = ""
+                    masterNewPin = ""
+                    masterResetVerificationId = null
+                },
+                title = { Text("🛡️ Reset Master Secret PIN", fontWeight = FontWeight.Bold) },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("SMS OTP sent to Master mobile ($masterResetTargetPhone):", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        
+                        OutlinedTextField(
+                            value = masterResetOtp,
+                            onValueChange = { masterResetOtp = it.filter { ch -> ch.isDigit() }.take(6) },
+                            label = { Text("6-Digit SMS OTP") },
+                            placeholder = { Text("Enter 6-digit OTP") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = masterNewPin,
+                            onValueChange = { masterNewPin = it.filter { ch -> ch.isDigit() }.take(6) },
+                            label = { Text("New Master PIN (4-6 Digits)") },
+                            placeholder = { Text("Enter new secret PIN") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                             visualTransformation = PasswordVisualTransformation(),
                             singleLine = true,
@@ -317,23 +437,37 @@ fun LoginScreen(
                 confirmButton = {
                     Button(
                         onClick = {
-                            if (enteredMasterPin == "9840" || enteredMasterPin == "1234" || enteredMasterPin == "984011") {
-                                showMasterPinDialog = false
-                                enteredMasterPin = ""
-                                onOpenMasterControl()
-                            } else {
-                                masterPinError = true
+                            masterResetLoading = true
+                            viewModel.verifyMasterOtpAndSetNewPin(
+                                verificationId = masterResetVerificationId!!,
+                                otp = masterResetOtp,
+                                newPin = masterNewPin
+                            ) { success, errMsg ->
+                                masterResetLoading = false
+                                if (success) {
+                                    showMasterOtpResetDialog = false
+                                    masterResetOtp = ""
+                                    masterNewPin = ""
+                                    masterResetVerificationId = null
+                                    message = "Master PIN successfully updated in Firebase! Opening panel..."
+                                    onOpenMasterControl()
+                                } else {
+                                    message = "Master OTP verification failed: $errMsg"
+                                }
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B))
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                        enabled = masterResetOtp.length == 6 && masterNewPin.length >= 4 && !masterResetLoading
                     ) {
-                        Text("Open Control Panel", fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text(if (masterResetLoading) "Updating..." else "Verify & Set PIN", fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = {
-                        showMasterPinDialog = false
-                        enteredMasterPin = ""
+                        showMasterOtpResetDialog = false
+                        masterResetOtp = ""
+                        masterNewPin = ""
+                        masterResetVerificationId = null
                     }) { Text("Cancel") }
                 }
             )
