@@ -26,8 +26,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Info
@@ -40,6 +43,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Phone
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
@@ -635,7 +639,7 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 Card(
                     modifier = modifier.border(
                         width = 1.dp,
-                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
                         shape = RoundedCornerShape(20.dp)
                     ),
                     shape = RoundedCornerShape(20.dp),
@@ -644,25 +648,48 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Text("Staff User Management", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-
-                        Text(
-                            "Create staff logins, assign specific screen permissions, and reset user passwords here.",
-                            fontSize = 13.sp,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    "Staff & Cashier Management",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    "Create cashier logins using mobile numbers, configure role-based permissions, and manage terminal accounts.",
+                                    fontSize = 12.sp,
+                                    lineHeight = 15.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
 
                         Column(
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             if (users.isEmpty()) {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp),
-                                    contentAlignment = Alignment.Center
+                                Surface(
+                                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
                                 ) {
-                                    Text("No custom users created yet. Click 'Add User' below.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Column(
+                                        modifier = Modifier.padding(20.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                                    ) {
+                                        Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(40.dp))
+                                        Text("No staff users created yet", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                        Text("Add your cashiers and store managers below with custom access.", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center)
+                                    }
                                 }
                             } else {
                                 users.forEach { user ->
@@ -671,33 +698,102 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                                             .fillMaxWidth()
                                             .border(
                                                 width = 1.dp,
-                                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
-                                                shape = RoundedCornerShape(12.dp)
+                                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                                                shape = RoundedCornerShape(14.dp)
                                             )
                                             .clickable {
                                                 selectedUser = user
                                                 showEditDialog = true
                                             },
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                                     ) {
                                         Row(
-                                            modifier = Modifier.padding(12.dp).fillMaxWidth(),
+                                            modifier = Modifier.padding(14.dp).fillMaxWidth(),
                                             horizontalArrangement = Arrangement.SpaceBetween,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Column {
-                                                Text(user.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                                Text("ID/Username: ${user.username}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Surface(
+                                                    shape = RoundedCornerShape(12.dp),
+                                                    color = when (user.role.uppercase()) {
+                                                        "STORE_MANAGER" -> Color(0xFFF5F3FF)
+                                                        "ADMIN" -> Color(0xFFFEF3C7)
+                                                        else -> Color(0xFFEFF6FF)
+                                                    },
+                                                    modifier = Modifier.size(44.dp)
+                                                ) {
+                                                    Box(contentAlignment = Alignment.Center) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Person,
+                                                            contentDescription = null,
+                                                            tint = when (user.role.uppercase()) {
+                                                                "STORE_MANAGER" -> Color(0xFF7C3AED)
+                                                                "ADMIN" -> Color(0xFFD97706)
+                                                                else -> Color(0xFF2563EB)
+                                                            },
+                                                            modifier = Modifier.size(24.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                                    ) {
+                                                        Text(user.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                        Surface(
+                                                            shape = RoundedCornerShape(4.dp),
+                                                            color = when (user.role.uppercase()) {
+                                                                "STORE_MANAGER" -> Color(0xFFEDE9FE)
+                                                                "ADMIN" -> Color(0xFFFEF3C7)
+                                                                else -> Color(0xFFDBEAFE)
+                                                            }
+                                                        ) {
+                                                            Text(
+                                                                text = when (user.role.uppercase()) {
+                                                                    "STORE_MANAGER" -> "MANAGER"
+                                                                    else -> user.role.uppercase()
+                                                                },
+                                                                fontSize = 9.sp,
+                                                                fontWeight = FontWeight.ExtraBold,
+                                                                color = when (user.role.uppercase()) {
+                                                                    "STORE_MANAGER" -> Color(0xFF6D28D9)
+                                                                    "ADMIN" -> Color(0xFFB45309)
+                                                                    else -> Color(0xFF1D4ED8)
+                                                                },
+                                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                    Spacer(modifier = Modifier.height(2.dp))
+                                                    Text(
+                                                        text = "📱 Login ID: +91 ${user.username}",
+                                                        fontSize = 12.sp,
+                                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                                    )
+                                                }
                                             }
-                                            Icon(Icons.Default.Edit, contentDescription = "Edit User", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
+
+                                            IconButton(
+                                                onClick = {
+                                                    selectedUser = user
+                                                    showEditDialog = true
+                                                }
+                                            ) {
+                                                Icon(Icons.Default.Edit, contentDescription = "Edit User", tint = MaterialTheme.colorScheme.primary)
+                                            }
                                         }
                                     }
                                 }
                             }
                         }
-
-                        Spacer(modifier = Modifier.height(4.dp))
 
                         Button(
                             onClick = { showAddDialog = true },
@@ -706,27 +802,47 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
                         ) {
                             Icon(Icons.Default.Add, contentDescription = null)
                             Spacer(Modifier.width(8.dp))
-                            Text("Add User")
+                            Text("Add New Staff / Cashier", fontWeight = FontWeight.Bold)
                         }
                     }
                 }
 
                 // Render dialogs for adding/editing users
                 if (showAddDialog) {
-                    AddUserDialog(onDismiss = { showAddDialog = false }, onCreate = { u, d, p, perms ->
-                        viewModel.createUser(u, d, p, perms)
-                        showAddDialog = false
-                    })
+                    AddUserDialog(
+                        onDismiss = { showAddDialog = false },
+                        onCreate = { phone, name, pass, role, perms ->
+                            viewModel.createUser(phone, name, pass, role, perms) { success, msg ->
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                if (success) {
+                                    showAddDialog = false
+                                }
+                            }
+                        }
+                    )
                 }
 
                 if (showEditDialog && selectedUser != null) {
-                    EditUserDialog(user = selectedUser!!, onDismiss = { showEditDialog = false }, onSave = { pass, perms ->
-                        viewModel.updateUserCredentials(selectedUser!!.id, pass, perms)
-                        showEditDialog = false
-                    }, onDelete = {
-                        viewModel.deleteUser(selectedUser!!.id)
-                        showEditDialog = false
-                    })
+                    EditUserDialog(
+                        user = selectedUser!!,
+                        onDismiss = { showEditDialog = false },
+                        onSave = { name, role, pass, perms ->
+                            viewModel.updateUserCredentials(selectedUser!!.id, name, role, pass, perms) { success, msg ->
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                if (success) {
+                                    showEditDialog = false
+                                }
+                            }
+                        },
+                        onDelete = {
+                            viewModel.deleteUser(selectedUser!!.id) { success, msg ->
+                                android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                if (success) {
+                                    showEditDialog = false
+                                }
+                            }
+                        }
+                    )
                 }
             }
 
@@ -1384,89 +1500,240 @@ fun SettingsScreen(viewModel: SettingsViewModel) {
 @Composable
 fun AddUserDialog(
     onDismiss: () -> Unit,
-    onCreate: (username: String, displayName: String, password: CharArray, permissions: Set<Permission>) -> Unit
+    onCreate: (phone: String, displayName: String, password: CharArray, role: String, permissions: Set<Permission>) -> Unit
 ) {
-    var username by remember { mutableStateOf("") }
+    var phone by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
 
+    var selectedRole by remember { mutableStateOf("CASHIER") }
+
+    var accessBilling by remember { mutableStateOf(true) }
     var accessMasters by remember { mutableStateOf(true) }
-    var accessSales by remember { mutableStateOf(true) }
     var accessPurchases by remember { mutableStateOf(false) }
     var accessReports by remember { mutableStateOf(false) }
     var accessSettings by remember { mutableStateOf(false) }
 
     var errorMsg by remember { mutableStateOf("") }
 
+    fun applyRoleDefaults(role: String) {
+        selectedRole = role
+        when (role) {
+            "CASHIER" -> {
+                accessBilling = true
+                accessMasters = true
+                accessPurchases = false
+                accessReports = false
+                accessSettings = false
+            }
+            "STORE_MANAGER" -> {
+                accessBilling = true
+                accessMasters = true
+                accessPurchases = true
+                accessReports = true
+                accessSettings = false
+            }
+            "INWARD_CLERK" -> {
+                accessBilling = false
+                accessMasters = true
+                accessPurchases = true
+                accessReports = false
+                accessSettings = false
+            }
+            "ADMIN" -> {
+                accessBilling = true
+                accessMasters = true
+                accessPurchases = true
+                accessReports = true
+                accessSettings = true
+            }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Create Staff Account") },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text("Add New Cashier / Staff", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
             ) {
-                OutlinedTextField(value = username, onValueChange = { username = it.trim().lowercase() }, label = { Text("Username / Login ID") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = displayName, onValueChange = { displayName = it }, label = { Text("Full Display Name") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = password, onValueChange = { password = it }, label = { Text("Initial Password") }, modifier = Modifier.fillMaxWidth())
+                Text(
+                    "Assign login credentials and screen access privileges for this terminal user.",
+                    fontSize = 12.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
-                Spacer(Modifier.height(8.dp))
-                Text("Role Permissions Access:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                // Cashier Name
+                OutlinedTextField(
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("Staff / Cashier Name *") },
+                    placeholder = { Text("e.g. Ramesh Kumar") },
+                    leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it })
-                    Text("Master Lists (Products/Customers/Suppliers)", fontSize = 13.sp)
+                // Mobile Number Login ID
+                OutlinedTextField(
+                    value = phone,
+                    onValueChange = { input ->
+                        val digits = input.filter { it.isDigit() }.take(10)
+                        phone = digits
+                    },
+                    label = { Text("Mobile Number (Login User ID) *") },
+                    placeholder = { Text("10-digit mobile number") },
+                    leadingIcon = {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(start = 8.dp, end = 4.dp)
+                        ) {
+                            Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("+91", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        }
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                // Password / PIN
+                OutlinedTextField(
+                    value = password,
+                    onValueChange = { password = it },
+                    label = { Text("Security Password / 4-6 Digit PIN *") },
+                    placeholder = { Text("Enter terminal login password or PIN") },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                    trailingIcon = {
+                        IconButton(onClick = { showPassword = !showPassword }) {
+                            Text(if (showPassword) "HIDE" else "SHOW", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    },
+                    visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                // Role Presets
+                Text("Select Staff Role Preset:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedRole == "CASHIER",
+                        onClick = { applyRoleDefaults("CASHIER") },
+                        label = { Text("🛒 Cashier", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    FilterChip(
+                        selected = selectedRole == "STORE_MANAGER",
+                        onClick = { applyRoleDefaults("STORE_MANAGER") },
+                        label = { Text("📦 Manager", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    FilterChip(
+                        selected = selectedRole == "INWARD_CLERK",
+                        onClick = { applyRoleDefaults("INWARD_CLERK") },
+                        label = { Text("🚚 Stock Inward", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    FilterChip(
+                        selected = selectedRole == "CUSTOM",
+                        onClick = { selectedRole = "CUSTOM" },
+                        label = { Text("⚙️ Custom", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(16.dp)
+                    )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessSales, onCheckedChange = { accessSales = it })
-                    Text("Sales Billing & Invoicing Screen", fontSize = 13.sp)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it })
-                    Text("Purchases & Inward Stock Screen", fontSize = 13.sp)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessReports, onCheckedChange = { accessReports = it })
-                    Text("Reports & Stock Analytics Screen", fontSize = 13.sp)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it })
-                    Text("App Printer & Data Settings Screen", fontSize = 13.sp)
+
+                Spacer(Modifier.height(4.dp))
+                Text("Custom Screen Permissions:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessBilling, onCheckedChange = { accessBilling = it; selectedRole = "CUSTOM" })
+                            Text("🛒 Point of Sale Billing & Checkout", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it; selectedRole = "CUSTOM" })
+                            Text("📦 Inventory & Inward Stock Purchases", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it; selectedRole = "CUSTOM" })
+                            Text("🗂️ Master Catalog (Products & Pricing)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessReports, onCheckedChange = { accessReports = it; selectedRole = "CUSTOM" })
+                            Text("📊 Business Reports & Profit Analytics", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" })
+                            Text("⚙️ Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
                 }
 
                 if (errorMsg.isNotBlank()) {
-                    Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                    Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                 }
             }
         },
         confirmButton = {
-            Button(onClick = {
-                if (username.isBlank() || displayName.isBlank() || password.isBlank()) {
-                    errorMsg = "Please fill in all fields"
-                } else if (password.length < 6) {
-                    errorMsg = "Password must be at least 6 characters for security"
-                } else {
-                    val pSet = buildSet {
-                        if (accessMasters) {
-                            addAll(listOf(Permission.CATEGORY_VIEW, Permission.CATEGORY_CREATE, Permission.CATEGORY_EDIT, Permission.PRODUCT_VIEW, Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT))
+            Button(
+                onClick = {
+                    val cleanDigits = phone.filter { it.isDigit() }
+                    if (displayName.isBlank() || cleanDigits.isBlank() || password.isBlank()) {
+                        errorMsg = "Please fill in all mandatory fields"
+                    } else if (cleanDigits.length < 10) {
+                        errorMsg = "Please enter a valid 10-digit mobile number"
+                    } else if (password.length < 4) {
+                        errorMsg = "Password / PIN must be at least 4 characters"
+                    } else {
+                        val pSet = buildSet {
+                            if (accessMasters) {
+                                addAll(listOf(Permission.CATEGORY_VIEW, Permission.CATEGORY_CREATE, Permission.CATEGORY_EDIT, Permission.PRODUCT_VIEW, Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT))
+                            }
+                            if (accessBilling) {
+                                addAll(listOf(Permission.SALE_CREATE, Permission.SALE_VIEW))
+                            }
+                            if (accessPurchases) {
+                                addAll(listOf(Permission.PURCHASE_CREATE, Permission.PURCHASE_VIEW))
+                            }
+                            if (accessReports) {
+                                addAll(listOf(Permission.REPORT_SALES, Permission.REPORT_STOCK, Permission.REPORT_PROFIT))
+                            }
+                            if (accessSettings) {
+                                addAll(listOf(Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT, Permission.BACKUP_CREATE))
+                            }
                         }
-                        if (accessSales) {
-                            addAll(listOf(Permission.SALE_CREATE, Permission.SALE_VIEW))
-                        }
-                        if (accessPurchases) {
-                            addAll(listOf(Permission.PURCHASE_CREATE, Permission.PURCHASE_VIEW))
-                        }
-                        if (accessReports) {
-                            addAll(listOf(Permission.REPORT_SALES, Permission.REPORT_STOCK, Permission.REPORT_PROFIT))
-                        }
-                        if (accessSettings) {
-                            addAll(listOf(Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT, Permission.BACKUP_CREATE))
-                        }
+                        onCreate(cleanDigits, displayName.trim(), password.toCharArray(), selectedRole, pSet)
                     }
-                    onCreate(username, displayName, password.toCharArray(), pSet)
-                }
-            }) {
-                Text("Create")
+                },
+                shape = RoundedCornerShape(10.dp)
+            ) {
+                Text("Create Staff Account", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
@@ -1481,56 +1748,181 @@ fun AddUserDialog(
 fun EditUserDialog(
     user: UserEntity,
     onDismiss: () -> Unit,
-    onSave: (newPassword: CharArray?, permissions: Set<Permission>) -> Unit,
+    onSave: (displayName: String?, role: String?, newPassword: CharArray?, permissions: Set<Permission>) -> Unit,
     onDelete: () -> Unit
 ) {
+    var displayName by remember { mutableStateOf(user.displayName) }
+    var selectedRole by remember { mutableStateOf(user.role.ifBlank { "CASHIER" }) }
     var newPassword by remember { mutableStateOf("") }
+    var showPassword by remember { mutableStateOf(false) }
+
     val initialPerms = remember(user.permissions) { user.toPermissionsSet() }
 
+    var accessBilling by remember { mutableStateOf(initialPerms.contains(Permission.SALE_CREATE)) }
     var accessMasters by remember { mutableStateOf(initialPerms.contains(Permission.PRODUCT_VIEW)) }
-    var accessSales by remember { mutableStateOf(initialPerms.contains(Permission.SALE_CREATE)) }
     var accessPurchases by remember { mutableStateOf(initialPerms.contains(Permission.PURCHASE_CREATE)) }
     var accessReports by remember { mutableStateOf(initialPerms.contains(Permission.REPORT_SALES)) }
     var accessSettings by remember { mutableStateOf(initialPerms.contains(Permission.SETTINGS_VIEW)) }
 
+    fun applyRoleDefaults(role: String) {
+        selectedRole = role
+        when (role) {
+            "CASHIER" -> {
+                accessBilling = true
+                accessMasters = true
+                accessPurchases = false
+                accessReports = false
+                accessSettings = false
+            }
+            "STORE_MANAGER" -> {
+                accessBilling = true
+                accessMasters = true
+                accessPurchases = true
+                accessReports = true
+                accessSettings = false
+            }
+            "INWARD_CLERK" -> {
+                accessBilling = false
+                accessMasters = true
+                accessPurchases = true
+                accessReports = false
+                accessSettings = false
+            }
+            "ADMIN" -> {
+                accessBilling = true
+                accessMasters = true
+                accessPurchases = true
+                accessReports = true
+                accessSettings = true
+            }
+        }
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Edit User: ${user.displayName}") },
+        title = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+                Text("Edit Staff Account", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+            }
+        },
         text = {
             Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
             ) {
-                Text("Username: ${user.username}", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Surface(
+                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
+                    shape = RoundedCornerShape(10.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(Icons.Default.Phone, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                        Column {
+                            Text("Mobile Login User ID (Fixed)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("+91 ${user.username}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+
+                // Name
                 OutlinedTextField(
-                    value = newPassword,
-                    onValueChange = { newPassword = it },
-                    label = { Text("Reset Password (Leave blank to keep current)") },
+                    value = displayName,
+                    onValueChange = { displayName = it },
+                    label = { Text("Staff Full Name") },
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(Modifier.height(8.dp))
-                Text("Role Permissions Access:", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                // Password Reset
+                OutlinedTextField(
+                    value = newPassword,
+                    onValueChange = { newPassword = it },
+                    label = { Text("Reset Password / PIN") },
+                    placeholder = { Text("Leave blank to keep current") },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                    trailingIcon = {
+                        IconButton(onClick = { showPassword = !showPassword }) {
+                            Text(if (showPassword) "HIDE" else "SHOW", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        }
+                    },
+                    visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    shape = RoundedCornerShape(12.dp),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it })
-                    Text("Master Lists (Products/Customers/Suppliers)", fontSize = 13.sp)
+                // Role Presets
+                Text("Role Preset:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    FilterChip(
+                        selected = selectedRole == "CASHIER",
+                        onClick = { applyRoleDefaults("CASHIER") },
+                        label = { Text("🛒 Cashier", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    FilterChip(
+                        selected = selectedRole == "STORE_MANAGER",
+                        onClick = { applyRoleDefaults("STORE_MANAGER") },
+                        label = { Text("📦 Manager", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    FilterChip(
+                        selected = selectedRole == "INWARD_CLERK",
+                        onClick = { applyRoleDefaults("INWARD_CLERK") },
+                        label = { Text("🚚 Stock Inward", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(16.dp)
+                    )
+                    FilterChip(
+                        selected = selectedRole == "CUSTOM",
+                        onClick = { selectedRole = "CUSTOM" },
+                        label = { Text("⚙️ Custom", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        shape = RoundedCornerShape(16.dp)
+                    )
                 }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessSales, onCheckedChange = { accessSales = it })
-                    Text("Sales Billing & Invoicing Screen", fontSize = 13.sp)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it })
-                    Text("Purchases & Inward Stock Screen", fontSize = 13.sp)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessReports, onCheckedChange = { accessReports = it })
-                    Text("Reports & Stock Analytics Screen", fontSize = 13.sp)
-                }
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it })
-                    Text("App Printer & Data Settings Screen", fontSize = 13.sp)
+
+                Spacer(Modifier.height(4.dp))
+                Text("Custom Screen Permissions:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.25f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessBilling, onCheckedChange = { accessBilling = it; selectedRole = "CUSTOM" })
+                            Text("🛒 Point of Sale Billing & Checkout", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it; selectedRole = "CUSTOM" })
+                            Text("📦 Inventory & Inward Stock Purchases", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it; selectedRole = "CUSTOM" })
+                            Text("🗂️ Master Catalog (Products & Pricing)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessReports, onCheckedChange = { accessReports = it; selectedRole = "CUSTOM" })
+                            Text("📊 Business Reports & Profit Analytics", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" })
+                            Text("⚙️ Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
                 }
             }
         },
@@ -1538,32 +1930,36 @@ fun EditUserDialog(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
                     onClick = onDelete,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("Delete User")
+                    Text("Delete")
                 }
-                Button(onClick = {
-                    val pSet = buildSet {
-                        if (accessMasters) {
-                            addAll(listOf(Permission.CATEGORY_VIEW, Permission.CATEGORY_CREATE, Permission.CATEGORY_EDIT, Permission.PRODUCT_VIEW, Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT))
+                Button(
+                    onClick = {
+                        val pSet = buildSet {
+                            if (accessMasters) {
+                                addAll(listOf(Permission.CATEGORY_VIEW, Permission.CATEGORY_CREATE, Permission.CATEGORY_EDIT, Permission.PRODUCT_VIEW, Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT))
+                            }
+                            if (accessBilling) {
+                                addAll(listOf(Permission.SALE_CREATE, Permission.SALE_VIEW))
+                            }
+                            if (accessPurchases) {
+                                addAll(listOf(Permission.PURCHASE_CREATE, Permission.PURCHASE_VIEW))
+                            }
+                            if (accessReports) {
+                                addAll(listOf(Permission.REPORT_SALES, Permission.REPORT_STOCK, Permission.REPORT_PROFIT))
+                            }
+                            if (accessSettings) {
+                                addAll(listOf(Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT, Permission.BACKUP_CREATE))
+                            }
                         }
-                        if (accessSales) {
-                            addAll(listOf(Permission.SALE_CREATE, Permission.SALE_VIEW))
-                        }
-                        if (accessPurchases) {
-                            addAll(listOf(Permission.PURCHASE_CREATE, Permission.PURCHASE_VIEW))
-                        }
-                        if (accessReports) {
-                            addAll(listOf(Permission.REPORT_SALES, Permission.REPORT_STOCK, Permission.REPORT_PROFIT))
-                        }
-                        if (accessSettings) {
-                            addAll(listOf(Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT, Permission.BACKUP_CREATE))
-                        }
-                    }
-                    val passArray = if (newPassword.isBlank()) null else newPassword.toCharArray()
-                    onSave(passArray, pSet)
-                }) {
-                    Text("Save")
+                        val passArray = if (newPassword.isBlank()) null else newPassword.toCharArray()
+                        onSave(displayName.trim(), selectedRole, passArray, pSet)
+                    },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Save Changes")
                 }
             }
         },

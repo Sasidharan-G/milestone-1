@@ -476,28 +476,49 @@ class SettingsViewModel @Inject constructor(
     val cloudSyncStatus: StateFlow<String?> = _cloudSyncStatus.asStateFlow()
 
 
-    fun createUser(username: String, displayName: String, password: CharArray, permissions: Set<com.kadaikutty.pos.core.security.Permission>) {
+    fun createUser(
+        phone: String,
+        displayName: String,
+        password: CharArray,
+        role: String = "CASHIER",
+        permissions: Set<com.kadaikutty.pos.core.security.Permission>,
+        onResult: (Boolean, String) -> Unit
+    ) {
         viewModelScope.launch {
             try {
-                val session = sessionStore.activeSession.first() ?: return@launch
+                val cleanPhone = phone.replace("[^0-9]".toRegex(), "").takeLast(10)
+                if (cleanPhone.length < 10) {
+                    onResult(false, "Please enter a valid 10-digit mobile number")
+                    return@launch
+                }
+                val existing = database.userDao().getUserByUsername(cleanPhone, cleanPhone)
+                if (existing != null) {
+                    onResult(false, "A staff user with mobile number $cleanPhone already exists!")
+                    return@launch
+                }
+
+                val session = sessionStore.activeSession.first() ?: run {
+                    onResult(false, "No active admin session")
+                    return@launch
+                }
                 val companyId = session.companyId
-                val credResult = createCredentials(username, password, java.util.UUID.randomUUID().toString(), displayName)
+                val credResult = createCredentials(cleanPhone, password, java.util.UUID.randomUUID().toString(), displayName)
                 
                 val userEntity = com.kadaikutty.pos.core.auth.UserEntity(
                     id = credResult.userId,
-                    username = username,
+                    username = cleanPhone,
                     displayName = displayName,
                     salt = credResult.saltStr,
                     verifier = credResult.verifierStr,
                     permissions = permissions.joinToString(",") { it.name },
                     companyId = companyId,
-                    role = "CASHIER",
+                    role = role,
                     lastOnlineVerifiedAt = System.currentTimeMillis(),
-                    offlineValidUntil = System.currentTimeMillis() + (7 * 24 * 60 * 60 * 1000L)
+                    offlineValidUntil = System.currentTimeMillis() + (30 * 24 * 60 * 60 * 1000L)
                 )
                 database.userDao().insertUser(userEntity)
 
-                // Call Firebase Cloud Function or similar logic
+                // Sync to Firestore Cloud
                 try {
                     val map = hashMapOf(
                         "id" to userEntity.id,
@@ -515,38 +536,99 @@ class SettingsViewModel @Inject constructor(
                 } catch (rpcEx: Exception) {
                     rpcEx.printStackTrace()
                 }
+
+                onResult(true, "Staff account for '$displayName' ($cleanPhone) created successfully!")
             } catch (e: Exception) {
-                // Outer failure handling
+                onResult(false, e.message ?: "Failed to create staff account")
             }
         }
     }
 
-    fun updateUserCredentials(userId: String, newPassword: CharArray?, permissions: Set<com.kadaikutty.pos.core.security.Permission>) {
+    fun updateUserCredentials(
+        userId: String,
+        displayName: String?,
+        role: String?,
+        newPassword: CharArray?,
+        permissions: Set<com.kadaikutty.pos.core.security.Permission>,
+        onResult: (Boolean, String) -> Unit = { _, _ -> }
+    ) {
         viewModelScope.launch {
-            val userDao = database.userDao()
-            val existing = userDao.getUserById(userId) ?: return@launch
+            try {
+                val userDao = database.userDao()
+                val existing = userDao.getUserById(userId) ?: run {
+                    onResult(false, "User not found")
+                    return@launch
+                }
 
-            val updatedUser = if (newPassword != null && newPassword.isNotEmpty()) {
-                val credResult = createCredentials(existing.username, newPassword, existing.id, existing.displayName)
-                existing.copy(
-                    salt = credResult.saltStr,
-                    verifier = credResult.verifierStr,
-                    permissions = permissions.joinToString(",") { it.name }
-                )
-            } else {
-                existing.copy(
-                    permissions = permissions.joinToString(",") { it.name }
-                )
+                val finalDisplayName = displayName?.ifBlank { null } ?: existing.displayName
+                val finalRole = role ?: existing.role
+
+                val updatedUser = if (newPassword != null && newPassword.isNotEmpty()) {
+                    val credResult = createCredentials(existing.username, newPassword, existing.id, finalDisplayName)
+                    existing.copy(
+                        displayName = finalDisplayName,
+                        role = finalRole,
+                        salt = credResult.saltStr,
+                        verifier = credResult.verifierStr,
+                        permissions = permissions.joinToString(",") { it.name }
+                    )
+                } else {
+                    existing.copy(
+                        displayName = finalDisplayName,
+                        role = finalRole,
+                        permissions = permissions.joinToString(",") { it.name }
+                    )
+                }
+                userDao.updateUser(updatedUser)
+
+                // Sync to Firestore
+                try {
+                    val session = sessionStore.activeSession.first()
+                    if (session != null) {
+                        val map = hashMapOf(
+                            "id" to updatedUser.id,
+                            "username" to updatedUser.username,
+                            "displayName" to updatedUser.displayName,
+                            "salt" to updatedUser.salt,
+                            "verifier" to updatedUser.verifier,
+                            "permissions" to updatedUser.permissions,
+                            "companyId" to updatedUser.companyId,
+                            "role" to updatedUser.role,
+                            "lastOnlineVerifiedAt" to updatedUser.lastOnlineVerifiedAt,
+                            "offlineValidUntil" to updatedUser.offlineValidUntil
+                        )
+                        firestore.collection("users").document(session.companyId).collection("staff").document(updatedUser.id).set(map)
+                    }
+                } catch (ignored: Exception) {}
+
+                onResult(true, "Staff account updated successfully!")
+            } catch (e: Exception) {
+                onResult(false, e.message ?: "Failed to update staff account")
             }
-            userDao.updateUser(updatedUser)
         }
     }
 
-    fun deleteUser(userId: String) {
+    fun deleteUser(userId: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
-            val userDao = database.userDao()
-            val existing = userDao.getUserById(userId) ?: return@launch
-            userDao.deleteUser(existing)
+            try {
+                val userDao = database.userDao()
+                val existing = userDao.getUserById(userId) ?: run {
+                    onResult(false, "User not found")
+                    return@launch
+                }
+                userDao.deleteUser(existing)
+
+                try {
+                    val session = sessionStore.activeSession.first()
+                    if (session != null) {
+                        firestore.collection("users").document(session.companyId).collection("staff").document(userId).delete()
+                    }
+                } catch (ignored: Exception) {}
+
+                onResult(true, "Staff user deleted successfully!")
+            } catch (e: Exception) {
+                onResult(false, e.message ?: "Failed to delete user")
+            }
         }
     }
 
