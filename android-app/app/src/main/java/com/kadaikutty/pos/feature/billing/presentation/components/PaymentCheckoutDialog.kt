@@ -54,7 +54,7 @@ fun PaymentCheckoutDialog(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("Previous Due: ₹${Money(customerCreditDue)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
+                                Text("Previous Due: ${Money(customerCreditDue)}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error, fontSize = 13.sp)
                                 Text(if (includePreviousDueInCheckout) "Added to Total Bill" else "Skipped (Current Bill Only)", fontSize = 11.sp)
                             }
                             Switch(
@@ -75,8 +75,8 @@ fun PaymentCheckoutDialog(
                             onPerformSave("CASH", finalPayableTotal, Money.Zero, Money.Zero)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF4CAF50))
-                    ) { Text("Full Cash (₹$finalPayableTotal)") }
+                        colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF059669))
+                    ) { Text("Full Cash ($finalPayableTotal)") }
                     
                     Button(
                         onClick = {
@@ -84,8 +84,8 @@ fun PaymentCheckoutDialog(
                             onPerformSave("GPAY", Money.Zero, finalPayableTotal, Money.Zero)
                         },
                         modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF2196F3))
-                    ) { Text("Full GPay / UPI (₹$finalPayableTotal)") }
+                        colors = ButtonDefaults.buttonColors(containerColor = androidx.compose.ui.graphics.Color(0xFF2563EB))
+                    ) { Text("Full GPay / UPI ($finalPayableTotal)") }
                     
                     Button(
                         onClick = {
@@ -99,7 +99,7 @@ fun PaymentCheckoutDialog(
                         },
                         modifier = Modifier.fillMaxWidth(),
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                    ) { Text("Full Credit (₹$finalPayableTotal)") }
+                    ) { Text("Full Credit ($finalPayableTotal)") }
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     

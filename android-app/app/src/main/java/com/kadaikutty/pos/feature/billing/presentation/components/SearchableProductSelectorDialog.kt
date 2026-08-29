@@ -256,10 +256,10 @@ fun SearchableProductSelectorDialog(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "₹${Money(product.salePriceMinorUnits)}",
+                                            text = "${Money(product.salePriceMinorUnits)}",
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 14.sp,
-                                            color = Color(0xFF2E7D32)
+                                            color = Color(0xFF059669)
                                         )
 
                                         Surface(

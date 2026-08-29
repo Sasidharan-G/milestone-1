@@ -227,7 +227,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(
-                                        text = if (customerCreditDue > 0L) "Customer (Due: ₹${Money(customerCreditDue)})" else "Customer",
+                                        text = if (customerCreditDue > 0L) "Customer (Due: ${Money(customerCreditDue)})" else "Customer",
                                         style = MaterialTheme.typography.labelSmall,
                                         color = if (customerCreditDue > 0L) MaterialTheme.colorScheme.error else if (selectedCustomerId != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                     )
@@ -474,7 +474,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "₹${line.unitPrice} each",
+                                            text = "${line.unitPrice} each",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                                         )

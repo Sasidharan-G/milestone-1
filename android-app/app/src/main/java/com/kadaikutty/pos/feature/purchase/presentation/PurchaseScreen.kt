@@ -90,7 +90,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
             title = { Text("Edit Quantity - ${prod?.name ?: "Product"}", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Unit Cost: ₹${line.unitValue}", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                    Text("Unit Cost: ${line.unitValue}", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
                     OutlinedTextField(
                         value = inputQty,
                         onValueChange = { inputQty = it },
@@ -422,7 +422,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                                         ) {
                                             Text("🏢 $lineSuppName", fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
                                         }
-                                        Text("₹${line.unitValue} each", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                        Text("${line.unitValue} each", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                     }
 
                                     // Quantity Stepper: [-] [ Qty ] [+]

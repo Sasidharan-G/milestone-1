@@ -529,7 +529,7 @@ fun HomeScreen(
                 // KPI 1: Today's Revenue
                 DashboardKpiCard(
                     title = "Today's Sales",
-                    value = "₹${Money(dashboardState.todaySalesMinorUnits)}",
+                    value = "${Money(dashboardState.todaySalesMinorUnits)}",
                     subtitle = "${dashboardState.todayInvoicesCount} Invoices",
                     icon = Icons.Default.ShoppingCart,
                     accentColor = Color(0xFF059669),
@@ -556,7 +556,7 @@ fun HomeScreen(
                 // KPI 3: Customer Due
                 DashboardKpiCard(
                     title = "Customer Due",
-                    value = "₹${Money(dashboardState.customerCreditDueMinorUnits)}",
+                    value = "${Money(dashboardState.customerCreditDueMinorUnits)}",
                     subtitle = "Ledger Balance",
                     icon = Icons.Default.AccountBox,
                     accentColor = Color(0xFF2563EB),
@@ -567,7 +567,7 @@ fun HomeScreen(
                 // KPI 4: Inward Purchases
                 DashboardKpiCard(
                     title = "Inward Stock",
-                    value = "₹${Money(dashboardState.todayPurchasesMinorUnits)}",
+                    value = "${Money(dashboardState.todayPurchasesMinorUnits)}",
                     subtitle = "Purchased Today",
                     icon = Icons.Default.Add,
                     accentColor = Color(0xFF7C3AED),
@@ -788,7 +788,7 @@ fun HomeScreen(
 
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = "₹${Money(sale.totalMinorUnits)}",
+                                    text = "${Money(sale.totalMinorUnits)}",
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
                                     color = MaterialTheme.colorScheme.primary

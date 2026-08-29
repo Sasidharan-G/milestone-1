@@ -161,7 +161,7 @@ fun BillDetailsDialog(
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
                                         Text(
-                                            text = "$qtyLabel × ₹${Money(item.unitPriceMinorUnits)}",
+                                            text = "$qtyLabel × ${Money(item.unitPriceMinorUnits)}",
                                             fontSize = 12.sp,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -190,7 +190,7 @@ fun BillDetailsDialog(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Text("Discount Applied", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
-                                Text("- ₹${Money(sale.discountMinorUnits)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                                Text("- ${Money(sale.discountMinorUnits)}", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
                             }
                         }
 
@@ -252,10 +252,10 @@ fun BillDetailsDialog(
                                     appendLine("Customer: ${billDetail.customerName}")
                                     appendLine("-------------------------")
                                     billDetail.items.forEach { itm ->
-                                        appendLine("${itm.productName} (${itm.quantity}) = ₹${Money(itm.lineTotalMinorUnits)}")
+                                        appendLine("${itm.productName} (${itm.quantity}) = ${Money(itm.lineTotalMinorUnits)}")
                                     }
                                     appendLine("-------------------------")
-                                    appendLine("Total: ₹${Money(sale.totalMinorUnits)}")
+                                    appendLine("Total: ${Money(sale.totalMinorUnits)}")
                                 }
                                 val sendIntent = android.content.Intent().apply {
                                     action = android.content.Intent.ACTION_SEND

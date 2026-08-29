@@ -30,7 +30,7 @@ fun EditQuantityDialog(
         title = { Text("Edit Quantity - ${line.productName}", fontWeight = FontWeight.Bold, fontSize = 16.sp) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Text("Unit Price: ₹${line.unitPrice}", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
+                Text("Unit Price: ${line.unitPrice}", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
                 OutlinedTextField(
                     value = inputQty,
                     onValueChange = { inputQty = it },
