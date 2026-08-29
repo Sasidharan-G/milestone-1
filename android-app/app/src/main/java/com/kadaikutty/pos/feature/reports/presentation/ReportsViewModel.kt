@@ -55,6 +55,9 @@ class ReportsViewModel @Inject constructor(
     private val _purchaseCostSum = MutableStateFlow(0L)
     val purchaseCostSum: StateFlow<Long> = _purchaseCostSum.asStateFlow()
 
+    private val _totalPurchasesSum = MutableStateFlow(0L)
+    val totalPurchasesSum: StateFlow<Long> = _totalPurchasesSum.asStateFlow()
+
     private val _netProfitSum = MutableStateFlow(0L)
     val netProfitSum: StateFlow<Long> = _netProfitSum.asStateFlow()
 
@@ -86,6 +89,7 @@ class ReportsViewModel @Inject constructor(
                 
                 // Query live KPI sums
                 val salesSum = database.reportDao().getTotalSalesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
+                val purchasesSum = database.reportDao().getTotalPurchasesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
                 val expensesSum = database.reportDao().getTotalExpensesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
                 val profitRaw = database.reportDao().getProfitReportRaw(companyId, _fromEpochMs.value, _toEpochMs.value)
                 
@@ -97,6 +101,7 @@ class ReportsViewModel @Inject constructor(
 
                 _totalSalesSum.value = salesSum
                 _purchaseCostSum.value = totalCogs
+                _totalPurchasesSum.value = purchasesSum
                 _expensesSum.value = expensesSum
                 _netProfitSum.value = salesSum - totalCogs - expensesSum
 

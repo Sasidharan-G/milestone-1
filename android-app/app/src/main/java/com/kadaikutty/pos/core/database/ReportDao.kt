@@ -122,11 +122,11 @@ interface ReportDao {
             p.orderNumber as orderNumber,
             p.invoiceNumber as invoiceNumber,
             strftime('%Y-%m-%d %H:%M:%S', datetime(p.createdAtEpochMs / 1000, 'unixepoch', 'localtime')) as date, 
-            s.name as supplierName, 
+            COALESCE(s.name, 'General Supplier') as supplierName, 
             p.paymentMode as paymentMode,
             p.totalMinorUnits as totalAmount
         FROM purchases p
-        INNER JOIN suppliers s ON p.supplierId = s.id AND s.companyId = :companyId
+        LEFT JOIN suppliers s ON p.supplierId = s.id AND s.companyId = :companyId
         WHERE p.companyId = :companyId
           AND (:fromEpochMs IS NULL OR p.createdAtEpochMs >= :fromEpochMs)
           AND (:toEpochMs IS NULL OR p.createdAtEpochMs <= :toEpochMs)

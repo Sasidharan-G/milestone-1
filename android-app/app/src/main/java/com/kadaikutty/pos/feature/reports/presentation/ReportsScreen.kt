@@ -191,12 +191,13 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
             ) {
                 val totalSalesSum by viewModel.totalSalesSum.collectAsState()
                 val purchaseCostSum by viewModel.purchaseCostSum.collectAsState()
+                val totalPurchasesSum by viewModel.totalPurchasesSum.collectAsState()
                 val expensesSum by viewModel.expensesSum.collectAsState()
                 val netProfitSum by viewModel.netProfitSum.collectAsState()
 
                 ScrollableTabRow(
                     selectedTabIndex = activeReportTab,
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant,
+                    containerColor = MaterialTheme.colorScheme.surface,
                     contentColor = MaterialTheme.colorScheme.primary,
                     edgePadding = 12.dp
                 ) {
@@ -311,67 +312,106 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             .padding(top = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
+                        // Card 1: Sales
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
-                                Text("Sales", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                Text("Sales", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = Money(totalSalesSum).toString(),
-                                    fontSize = 13.sp,
+                                    text = "${Money(totalSalesSum)}",
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color.White
+                                    color = Color(0xFF059669),
+                                    maxLines = 1
                                 )
                             }
                         }
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
+
+                        // Card 2: COGS / Purchases
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
-                                Text("COGS", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                Text(if (activeReportTab == 3) "Purchases" else "COGS", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = Money(purchaseCostSum).toString(),
-                                    fontSize = 13.sp,
+                                    text = if (activeReportTab == 3) "${Money(totalPurchasesSum)}" else "${Money(purchaseCostSum)}",
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFFD54F)
+                                    color = Color(0xFF2563EB),
+                                    maxLines = 1
                                 )
                             }
                         }
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
+
+                        // Card 3: Expenses
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
-                                Text("Expenses", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                Text("Expenses", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = Money(expensesSum).toString(),
-                                    fontSize = 13.sp,
+                                    text = "${Money(expensesSum)}",
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFFFAB91)
+                                    color = Color(0xFFD97706),
+                                    maxLines = 1
                                 )
                             }
                         }
-                        Surface(
-                            color = MaterialTheme.colorScheme.primary,
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f)
+
+                        // Card 4: Net Profit
+                        Card(
+                            modifier = Modifier
+                                .weight(1f)
+                                .border(
+                                    width = 1.dp,
+                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                         ) {
-                            Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 8.dp)) {
-                                Text("Net Profit", fontSize = 10.sp, color = Color.White, fontWeight = FontWeight.Bold)
+                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                Text("Net Profit", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                 Spacer(modifier = Modifier.height(2.dp))
                                 Text(
-                                    text = Money(netProfitSum).toString(),
-                                    fontSize = 13.sp,
+                                    text = "${Money(netProfitSum)}",
+                                    fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = if (netProfitSum >= 0) Color(0xFF69F0AE) else Color(0xFFFF8A80)
+                                    color = if (netProfitSum >= 0) Color(0xFF059669) else Color(0xFFDC2626),
+                                    maxLines = 1
                                 )
                             }
                         }

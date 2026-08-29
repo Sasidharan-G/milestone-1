@@ -278,6 +278,93 @@ class SampleDataGenerator(
             count += 1
         }
 
+        // 8. Completed Inward Purchase Invoices (8 Realistic Supplier Invoices)
+        for (i in 1..8) {
+            val purchaseId = newRecordId()
+            val orderNumber = "PO-%04d".format(i)
+            val invNumber = "SUP-INV-%05d".format(1000 + i)
+            val supp = suppliers[i % suppliers.size]
+            val p1 = products[(i * 4) % products.size]
+            val p2 = products[(i * 4 + 1) % products.size]
+            val p3 = products[(i * 4 + 2) % products.size]
+
+            val item1 = PurchaseItemEntity(
+                companyId = companyId,
+                purchaseId = purchaseId,
+                productId = p1.id,
+                quantity = 50L,
+                unitValueMinorUnits = p1.purchasePriceMinorUnits,
+                lineTotalMinorUnits = p1.purchasePriceMinorUnits * 50L
+            )
+            val item2 = PurchaseItemEntity(
+                companyId = companyId,
+                purchaseId = purchaseId,
+                productId = p2.id,
+                quantity = 30L,
+                unitValueMinorUnits = p2.purchasePriceMinorUnits,
+                lineTotalMinorUnits = p2.purchasePriceMinorUnits * 30L
+            )
+            val item3 = PurchaseItemEntity(
+                companyId = companyId,
+                purchaseId = purchaseId,
+                productId = p3.id,
+                quantity = 40L,
+                unitValueMinorUnits = p3.purchasePriceMinorUnits,
+                lineTotalMinorUnits = p3.purchasePriceMinorUnits * 40L
+            )
+            val total = item1.lineTotalMinorUnits + item2.lineTotalMinorUnits + item3.lineTotalMinorUnits
+            val isUpi = (i % 2 == 0)
+
+            val purchase = PurchaseEntity(
+                id = purchaseId,
+                companyId = companyId,
+                supplierId = supp.id,
+                totalMinorUnits = total,
+                createdAtEpochMs = now - (i * 86400000L),
+                syncStatus = SyncStatus.LOCAL_ONLY,
+                invoiceNumber = invNumber,
+                orderNumber = orderNumber,
+                paymentMode = if (isUpi) "UPI" else "CASH",
+                paidCashMinorUnits = if (isUpi) 0L else total,
+                paidUpiMinorUnits = if (isUpi) total else 0L,
+                creditAppliedMinorUnits = 0L,
+                notes = "Inward wholesale stock delivery from ${supp.name}"
+            )
+
+            val purchaseMovements = listOf(
+                StockMovementEntity(
+                    id = newRecordId(),
+                    companyId = companyId,
+                    productId = p1.id,
+                    quantityDelta = 50L,
+                    type = "INWARD_PURCHASE",
+                    referenceId = purchaseId,
+                    createdAtEpochMs = now - (i * 86400000L)
+                ),
+                StockMovementEntity(
+                    id = newRecordId(),
+                    companyId = companyId,
+                    productId = p2.id,
+                    quantityDelta = 30L,
+                    type = "INWARD_PURCHASE",
+                    referenceId = purchaseId,
+                    createdAtEpochMs = now - (i * 86400000L)
+                ),
+                StockMovementEntity(
+                    id = newRecordId(),
+                    companyId = companyId,
+                    productId = p3.id,
+                    quantityDelta = 40L,
+                    type = "INWARD_PURCHASE",
+                    referenceId = purchaseId,
+                    createdAtEpochMs = now - (i * 86400000L)
+                )
+            )
+
+            database.purchaseDao().savePurchase(purchase, listOf(item1, item2, item3), purchaseMovements)
+            count += 1
+        }
+
         database.invalidationTracker.refreshVersionsAsync()
         count
     }
