@@ -72,8 +72,8 @@ data class LoginUiState(
             mutableState.update { it.copy(error = "All fields are required") }
             return
         }
-        if (current.newPasswordString.length < 6) {
-            mutableState.update { it.copy(error = "Password must be at least 6 characters") }
+        if (current.newPasswordString.length < 4) {
+            mutableState.update { it.copy(error = "Password / PIN must be at least 4 characters") }
             return
         }
 

@@ -12,6 +12,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -271,6 +272,22 @@ fun LoginScreen(
                             .padding(bottom = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Reset Password / PIN", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            IconButton(onClick = { viewModel.dismissResetDialog() }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF94A3B8))
+                            }
+                        }
+
+                        HorizontalDivider(color = Color(0xFF1E293B))
+                        Spacer(modifier = Modifier.height(8.dp))
+
                         com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
                             otpLength = 6,
                             otpValue = state.resetOtp,
@@ -280,7 +297,7 @@ fun LoginScreen(
                                 if (state.newPasswordString.isNotBlank()) {
                                     viewModel.verifyOtpAndResetPassword { success, errMsg ->
                                         if (success) {
-                                            message = "Password updated successfully! Please Sign In."
+                                            message = "Password / PIN updated successfully! Please Sign In."
                                         } else {
                                             message = "Failed to update password: $errMsg"
                                         }
@@ -308,7 +325,8 @@ fun LoginScreen(
                             OutlinedTextField(
                                 value = state.newPasswordString,
                                 onValueChange = { viewModel.updateNewPassword(it) },
-                                label = { Text("New Password", color = Color(0xFF94A3B8)) },
+                                label = { Text("New Password / 4-6 Digit PIN", color = Color(0xFF94A3B8)) },
+                                placeholder = { Text("Enter new password or PIN", color = Color(0xFF64748B)) },
                                 visualTransformation = PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                 singleLine = true,
@@ -328,7 +346,7 @@ fun LoginScreen(
                                 onClick = {
                                     viewModel.verifyOtpAndResetPassword { success, errMsg ->
                                         if (success) {
-                                            message = "Password updated successfully! Please Sign In."
+                                            message = "Password / PIN updated successfully! Please Sign In."
                                         } else {
                                             message = "Failed to update password: $errMsg"
                                         }

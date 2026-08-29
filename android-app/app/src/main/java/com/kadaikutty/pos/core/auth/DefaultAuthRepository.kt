@@ -291,7 +291,7 @@ class DefaultAuthRepository(
         return try {
             val credential = PhoneAuthProvider.getCredential(verificationId, otp)
             val authResult = firebaseAuth.signInWithCredential(credential).await()
-            val user = authResult.user ?: return RecoveryResult.Failure("Authentication failed")
+            val user = authResult.user ?: return RecoveryResult.Failure("Phone authentication failed")
             val phone = user.phoneNumber ?: ""
             val cleanPhone = normalizePhone(phone)
 
@@ -299,20 +299,49 @@ class DefaultAuthRepository(
             val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
             val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
 
-            if (cleanPhone.isNotBlank()) {
-                firestore.collection("users").document(cleanPhone).update(mapOf(
-                    "salt" to saltStr,
-                    "verifier" to verifierStr
-                )).await()
+            var updatedAny = false
 
-                val localUser = database.userDao().getUserByUsername(cleanPhone)
-                if (localUser != null) {
-                    database.userDao().updateUser(localUser.copy(salt = saltStr, verifier = verifierStr))
+            // 1. Update in Local SQLite Database (Works for both Admin and Staff/Cashier)
+            val localUser = database.userDao().getUserByUsername(cleanPhone, cleanPhone)
+            if (localUser != null) {
+                database.userDao().updateUser(localUser.copy(salt = saltStr, verifier = verifierStr))
+                updatedAny = true
+
+                // If Staff, sync to company's staff sub-collection in Firestore
+                if (localUser.companyId.isNotBlank()) {
+                    try {
+                        firestore.collection("users")
+                            .document(localUser.companyId)
+                            .collection("staff")
+                            .document(localUser.id)
+                            .update(mapOf(
+                                "salt" to saltStr,
+                                "verifier" to verifierStr
+                            )).await()
+                    } catch (ignored: Exception) {}
                 }
             }
 
+            // 2. Update in Root Firestore 'users' collection (For Shop Owner / Admin accounts)
+            try {
+                val adminDocRef = firestore.collection("users").document(cleanPhone)
+                val adminDoc = adminDocRef.get().await()
+                if (adminDoc.exists()) {
+                    adminDocRef.update(mapOf(
+                        "salt" to saltStr,
+                        "verifier" to verifierStr
+                    )).await()
+                    updatedAny = true
+                }
+            } catch (ignored: Exception) {}
+
             newPassword.fill('\u0000')
-            RecoveryResult.Success
+
+            if (updatedAny) {
+                RecoveryResult.Success
+            } else {
+                RecoveryResult.Failure("No user found with mobile number +91 $cleanPhone. Please contact your Store Admin.")
+            }
         } catch (e: Exception) {
             newPassword.fill('\u0000')
             RecoveryResult.Failure(e.message ?: "Failed to reset password")
