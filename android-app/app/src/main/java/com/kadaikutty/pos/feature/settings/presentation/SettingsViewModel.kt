@@ -38,7 +38,7 @@ class SettingsViewModel @Inject constructor(
     private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
     private val verifier: com.kadaikutty.pos.core.auth.OfflineCredentialVerifier,
     private val firestore: com.google.firebase.firestore.FirebaseFirestore,
-    private val subscriptionRepository: com.kadaikutty.pos.feature.subscription.SubscriptionRepository,
+
     private val sampleDataGenerator: com.kadaikutty.pos.core.sample.SampleDataGenerator,
     private val licenseManager: com.kadaikutty.pos.core.license.LicenseManager
 ) : ViewModel() {
@@ -92,17 +92,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    val subscriptionStatus = subscriptionRepository.getSubscriptionStatus().stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = null
-    )
 
-    fun simulatePayment(planId: String) {
-        viewModelScope.launch {
-            subscriptionRepository.simulatePayment(planId)
-        }
-    }
 
     // Biometric authentication state
     private val _biometricAuthPending = MutableStateFlow<(() -> Unit)?>(null)
@@ -505,6 +495,14 @@ class SettingsViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first() ?: run {
+                    onResult(false, "No active session")
+                    return@launch
+                }
+                if (!session.permissions.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE)) {
+                    onResult(false, "You do not have permission to manage users.")
+                    return@launch
+                }
                 val cleanPhone = phone.replace("[^0-9]".toRegex(), "").takeLast(10)
                 if (cleanPhone.length < 10) {
                     onResult(false, "Please enter a valid 10-digit mobile number")
@@ -516,10 +514,6 @@ class SettingsViewModel @Inject constructor(
                     return@launch
                 }
 
-                val session = sessionStore.activeSession.first() ?: run {
-                    onResult(false, "No active admin session")
-                    return@launch
-                }
                 val companyId = session.companyId
                 val credResult = createCredentials(cleanPhone, password, java.util.UUID.randomUUID().toString(), displayName)
                 
@@ -552,6 +546,19 @@ class SettingsViewModel @Inject constructor(
                         "offlineValidUntil" to userEntity.offlineValidUntil
                     )
                     firestore.collection("users").document(companyId).collection("staff").document(userEntity.id).set(map)
+                    
+                    val rootMap = hashMapOf(
+                        "user_id" to userEntity.id,
+                        "username" to userEntity.username,
+                        "mobile" to userEntity.username,
+                        "full_name" to userEntity.displayName,
+                        "salt" to userEntity.salt,
+                        "verifier" to userEntity.verifier,
+                        "permissions" to permissions.map { it.name },
+                        "company_id" to userEntity.companyId,
+                        "role" to userEntity.role
+                    )
+                    firestore.collection("users").document(userEntity.username).set(rootMap)
                 } catch (rpcEx: Exception) {
                     rpcEx.printStackTrace()
                 }
@@ -573,6 +580,11 @@ class SettingsViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first()
+                if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE)) {
+                    onResult(false, "You do not have permission to manage users.")
+                    return@launch
+                }
                 val userDao = database.userDao()
                 val existing = userDao.getUserById(userId) ?: run {
                     onResult(false, "User not found")
@@ -617,6 +629,19 @@ class SettingsViewModel @Inject constructor(
                             "offlineValidUntil" to updatedUser.offlineValidUntil
                         )
                         firestore.collection("users").document(session.companyId).collection("staff").document(updatedUser.id).set(map)
+                        
+                        val rootMap = hashMapOf(
+                            "user_id" to updatedUser.id,
+                            "username" to updatedUser.username,
+                            "mobile" to updatedUser.username,
+                            "full_name" to updatedUser.displayName,
+                            "salt" to updatedUser.salt,
+                            "verifier" to updatedUser.verifier,
+                            "permissions" to permissions.map { it.name },
+                            "company_id" to updatedUser.companyId,
+                            "role" to updatedUser.role
+                        )
+                        firestore.collection("users").document(updatedUser.username).set(rootMap, com.google.firebase.firestore.SetOptions.merge())
                     }
                 } catch (ignored: Exception) {}
 
@@ -630,6 +655,11 @@ class SettingsViewModel @Inject constructor(
     fun deleteUser(userId: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first()
+                if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE)) {
+                    onResult(false, "You do not have permission to manage users.")
+                    return@launch
+                }
                 val userDao = database.userDao()
                 val existing = userDao.getUserById(userId) ?: run {
                     onResult(false, "User not found")
@@ -641,6 +671,7 @@ class SettingsViewModel @Inject constructor(
                     val session = sessionStore.activeSession.first()
                     if (session != null) {
                         firestore.collection("users").document(session.companyId).collection("staff").document(userId).delete()
+                        firestore.collection("users").document(existing.username).delete()
                     }
                 } catch (ignored: Exception) {}
 

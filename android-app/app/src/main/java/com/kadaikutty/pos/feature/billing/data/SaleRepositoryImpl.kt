@@ -13,7 +13,8 @@ import kotlinx.coroutines.flow.first
 class SaleRepositoryImpl(
     private val saleDao: SaleDao,
     private val syncManager: SyncManager,
-    private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore
+    private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
+    private val appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences
 ) : SaleRepository {
     override suspend fun save(draft: SaleDraft): AppResult<String> {
         return try {
@@ -26,14 +27,23 @@ class SaleRepositoryImpl(
             val existingBills = saleDao.getAllBillNumbers(companyId)
             var maxSeq = 0
             for (b in existingBills) {
-                val cleanDigits = b.filter { it.isDigit() }.toIntOrNull()
-                // Ignore legacy timestamp based huge numbers
-                if (cleanDigits != null && cleanDigits in 1..99999 && cleanDigits > maxSeq) {
+                // Split by '-' and get the last part which is the number (e.g. XYZ-01)
+                val cleanDigits = b.substringAfterLast("-").filter { it.isDigit() }.toIntOrNull()
+                if (cleanDigits != null && cleanDigits > maxSeq) {
                     maxSeq = cleanDigits
                 }
             }
             val nextSeq = maxSeq + 1
-            val billNumber = String.format(java.util.Locale.US, "%02d", nextSeq)
+            
+            // Get or generate device prefix
+            var prefix = appPreferences.devicePrefix.first()
+            if (prefix == null) {
+                val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                prefix = (1..3).map { chars.random() }.joinToString("")
+                appPreferences.saveDevicePrefix(prefix)
+            }
+            
+            val billNumber = String.format(java.util.Locale.US, "%s-%04d", prefix, nextSeq)
             
             val sale = SaleEntity(
                 id = saleId,
@@ -89,6 +99,9 @@ class SaleRepositoryImpl(
             
             saleDao.saveSale(sale, items, movements, customerCredit)
             syncManager.enqueueSale(sale, items)
+            movements.forEach { movement ->
+                syncManager.enqueueStockMovement(movement)
+            }
             AppResult.Success(billNumber)
         } catch (e: Exception) {
             AppResult.Failure(AppError.Unexpected(e.message ?: "Unexpected error"))

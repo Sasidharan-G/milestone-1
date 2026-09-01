@@ -9,6 +9,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -17,11 +19,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
-import java.io.File
-import android.graphics.BitmapFactory
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.BorderStroke
 import com.kadaikutty.pos.core.common.Money
@@ -36,6 +36,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -43,6 +44,8 @@ import androidx.navigation.compose.rememberNavController
 import com.kadaikutty.pos.core.navigation.AppRoute
 import com.kadaikutty.pos.feature.settings.presentation.SettingsScreen
 import com.kadaikutty.pos.feature.settings.presentation.SettingsViewModel
+import com.kadaikutty.pos.feature.settings.presentation.SyncDiagnosticsScreen
+import com.kadaikutty.pos.feature.settings.presentation.SyncDiagnosticsViewModel
 import com.kadaikutty.pos.feature.auth.LoginScreen
 import com.kadaikutty.pos.feature.auth.LoginViewModel
 import com.kadaikutty.pos.feature.auth.RegisterScreen
@@ -55,7 +58,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.kadaikutty.pos.feature.home.HomeViewModel
-import com.kadaikutty.pos.feature.home.HomeDashboardUiState
 import com.kadaikutty.pos.feature.reports.presentation.components.BillDetailsDialog
 import com.kadaikutty.pos.feature.billing.presentation.BillingScreen
 import com.kadaikutty.pos.feature.billing.presentation.BillingViewModel
@@ -67,17 +69,17 @@ import com.kadaikutty.pos.feature.reports.presentation.ReportsViewModel
 import com.kadaikutty.pos.core.ui.theme.BillingTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
+import com.google.firebase.auth.FirebaseAuth
 
 val LocalLayoutMode = staticCompositionLocalOf { "Auto" }
 
 @Composable
-fun BillingApp(isRecoveryFlow: Boolean = false) {
+fun BillingApp() {
     val navController = rememberNavController()
     val settingsViewModel: SettingsViewModel = hiltViewModel()
     val layoutMode by settingsViewModel.layoutMode.collectAsState()
     val themeMode by settingsViewModel.themeMode.collectAsState()
     val shopName by settingsViewModel.shopName.collectAsState()
-    val shopLogoPath by settingsViewModel.shopLogoPath.collectAsState()
     val useDarkTheme = when (themeMode) {
         "Dark" -> true
         "Light" -> false
@@ -85,15 +87,27 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
     }
 
     val isLoggedIn by settingsViewModel.isLoggedIn.collectAsState()
-    val subscriptionStatus by settingsViewModel.subscriptionStatus.collectAsState()
+
     val currentLicense by settingsViewModel.currentLicense.collectAsState()
     val isClockTampered by settingsViewModel.isClockTampered.collectAsState()
-    var showRenewalDailyDialog by remember { mutableStateOf(false) }
+    var showRenewalDailyDialog by remember { mutableStateOf(value = false) }
 
     LaunchedEffect(currentLicense) {
-        if (currentLicense != null && currentLicense!!.isExpiringSoon && settingsViewModel.shouldShowRenewalAlert()) {
+        if ((currentLicense?.isExpiringSoon == true) && settingsViewModel.shouldShowRenewalAlert()) {
             showRenewalDailyDialog = true
         }
+    }
+
+    // Auth Revocation Listener
+    LaunchedEffect(Unit) {
+        val auth = FirebaseAuth.getInstance()
+        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
+            if (firebaseAuth.currentUser == null && settingsViewModel.isLoggedIn.value == true) {
+                // Token revoked or user deleted remotely. Force local logout.
+                settingsViewModel.logout { }
+            }
+        }
+        auth.addAuthStateListener(listener)
     }
 
     if (isLoggedIn == null) {
@@ -101,7 +115,7 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
             modifier = Modifier
                 .fillMaxSize()
                 .background(Color(0xFF0F172A)),
-            contentAlignment = Alignment.Center
+            contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator(color = Color(0xFF1E88E5))
         }
@@ -112,7 +126,14 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
         BillingTheme(darkTheme = useDarkTheme) {
             val startDest = if (isLoggedIn == true) AppRoute.Home.path else AppRoute.Login.path
             Box(modifier = Modifier.fillMaxSize()) {
-                NavHost(navController = navController, startDestination = startDest) {
+                NavHost(
+                    navController = navController,
+                    startDestination = startDest,
+                    enterTransition = { androidx.compose.animation.EnterTransition.None },
+                    exitTransition = { androidx.compose.animation.ExitTransition.None },
+                    popEnterTransition = { androidx.compose.animation.EnterTransition.None },
+                    popExitTransition = { androidx.compose.animation.ExitTransition.None }
+                ) {
                 composable(AppRoute.Login.path) {
                     val vm: LoginViewModel = hiltViewModel()
                     LoginScreen(
@@ -125,10 +146,9 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                         onNavigateToRegister = {
                             navController.navigate(AppRoute.Register.path)
                         },
-                        onOpenMasterControl = {
-                            navController.navigate(AppRoute.MasterControl.path)
-                        }
-                    )
+                    ) {
+                        navController.navigate(AppRoute.MasterControl.path)
+                    }
                 }
 
                 composable(AppRoute.Register.path) {
@@ -137,31 +157,29 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                         viewModel = vm,
                         onNavigateBackToLogin = {
                             navController.popBackStack()
-                        },
-                        onRegisterSuccess = {
-                            navController.navigate(AppRoute.Home.path) {
-                                popUpTo(AppRoute.Login.path) { inclusive = true }
-                            }
                         }
-                    )
+                    ) {
+                        navController.navigate(AppRoute.Home.path) {
+                            popUpTo(AppRoute.Login.path) { inclusive = true }
+                        }
+                    }
                 }
 
                 composable(AppRoute.SetNewPassword.path) {
                     val vm: SetNewPasswordViewModel = hiltViewModel()
                     SetNewPasswordScreen(
-                        viewModel = vm,
-                        onPasswordSetSuccess = {
-                            navController.navigate(AppRoute.Login.path) {
-                                popUpTo(0) { inclusive = true }
-                            }
+                        viewModel = vm
+                    ) {
+                        navController.navigate(AppRoute.Login.path) {
+                            popUpTo(0) { inclusive = true }
                         }
-                    )
+                    }
                 }
 
                 composable(AppRoute.Home.path) {
-                    val vm: com.kadaikutty.pos.feature.home.HomeViewModel = hiltViewModel()
+                    val vm: HomeViewModel = hiltViewModel()
                     val session by vm.activeSession.collectAsState()
-                    var showCloseShiftDialog by remember { mutableStateOf(false) }
+                    var showCloseShiftDialog by remember { mutableStateOf(value = false) }
                     var shiftCashInput by remember { mutableStateOf("") }
                     var shiftMessage by remember { mutableStateOf("") }
 
@@ -169,7 +187,6 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                         viewModel = vm,
                         session = session,
                         shopName = shopName,
-                        shopLogoPath = shopLogoPath,
                         onNavigateTo = { route -> navController.navigate(route.path) },
                         onLogout = {
                             vm.logout()
@@ -181,7 +198,7 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                     )
 
                     val shiftHistory by vm.shiftHistory.collectAsState()
-                    var shiftDialogTab by remember { mutableStateOf(0) }
+                    var shiftDialogTab by remember { mutableIntStateOf(0) }
 
                     if (showCloseShiftDialog) {
                         AlertDialog(
@@ -278,13 +295,17 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                                         onClick = {
                                             val declared = shiftCashInput.toDoubleOrNull() ?: 0.0
                                             val minorUnits = (declared * 100).toLong()
-                                            vm.closeShift(minorUnits, onSuccess = {
-                                                shiftMessage = "Shift closed and tallied successfully!"
-                                                shiftCashInput = ""
-                                                shiftDialogTab = 1
-                                            }, onError = { err ->
-                                                shiftMessage = "Error: $err"
-                                            })
+                                            vm.closeShift(
+                                                declaredCashMinorUnits = minorUnits,
+                                                onSuccess = {
+                                                    shiftMessage = "Shift closed and tallied successfully!"
+                                                    shiftCashInput = ""
+                                                    shiftDialogTab = 1
+                                                },
+                                                onError = { err ->
+                                                    shiftMessage = "Error: $err"
+                                                }
+                                            )
                                         },
                                         shape = RoundedCornerShape(8.dp)
                                     ) {
@@ -305,13 +326,15 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                     val custVm: CustomerViewModel = hiltViewModel()
                     val suppVm: SupplierViewModel = hiltViewModel()
                     val expVm: ExpenseViewModel = hiltViewModel()
+                    val settingsVm: SettingsViewModel = hiltViewModel()
 
                     MasterScreens(
                         categoryVm = catVm,
                         productVm = prodVm,
                         customerVm = custVm,
                         supplierVm = suppVm,
-                        expenseVm = expVm
+                        expenseVm = expVm,
+                        settingsVm = settingsVm
                     )
                 }
 
@@ -336,17 +359,22 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                         viewModel = vm,
                         onOpenMasterControl = {
                             navController.navigate(AppRoute.MasterControl.path)
+                        },
+                        onOpenSyncDiagnostics = {
+                            navController.navigate(AppRoute.SyncDiagnostics.path)
                         }
                     )
                 }
 
-                composable(AppRoute.Subscription.path) {
-                    com.kadaikutty.pos.feature.subscription.PaywallScreen(
-                        onSimulatePayment = { planId ->
-                            settingsViewModel.simulatePayment(planId)
-                        }
+                composable(AppRoute.SyncDiagnostics.path) {
+                    val vm: SyncDiagnosticsViewModel = hiltViewModel()
+                    SyncDiagnosticsScreen(
+                        viewModel = vm,
+                        onBack = { navController.popBackStack() }
                     )
                 }
+
+
 
                 composable(AppRoute.MasterControl.path) {
                     val masterVm: com.kadaikutty.pos.feature.mastercontrol.presentation.MasterControlViewModel = hiltViewModel()
@@ -356,17 +384,11 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                     )
                 }
 
-                composable(
-                    route = AppRoute.Payment.path,
-                    arguments = listOf(androidx.navigation.navArgument("price") { type = androidx.navigation.NavType.IntType })
-                ) { backStackEntry ->
-                    val price = backStackEntry.arguments?.getInt("price") ?: 0
-                    com.kadaikutty.pos.feature.subscription.PaymentScreen(price = price)
-                }
+
             }
 
             // 🔒 Strict Offline/Online Expiry Lock Screen
-            val isLicenseLocked = isLoggedIn == true && (currentLicense?.isExpired == true || isClockTampered)
+            val isLicenseLocked = (isLoggedIn == true) && ((currentLicense?.isExpired == true) || isClockTampered)
             if (isLicenseLocked) {
                 com.kadaikutty.pos.feature.subscription.LicenseExpiredLockScreen(
                     license = currentLicense,
@@ -386,7 +408,7 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
             }
 
             // ⚠️ 7-Day Expiry Renewal Reminder Dialog (Max 2 times per day)
-            if (showRenewalDailyDialog && currentLicense != null) {
+            if (showRenewalDailyDialog && (currentLicense != null)) {
                 val context = LocalContext.current
                 val masterContactPhone = "+919840000000"
                 AlertDialog(
@@ -407,9 +429,9 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
                             onClick = {
                                 try {
                                     val url = "https://api.whatsapp.com/send?phone=$masterContactPhone&text=Hello%20Master%20Admin,%20I%20want%20to%20renew%20my%20license%20for%20${android.net.Uri.encode(shopName)}"
-                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                                    val intent = android.content.Intent(android.content.Intent.ACTION_VIEW, url.toUri())
                                     context.startActivity(intent)
-                                } catch (e: Exception) {}
+                                } catch (_: Exception) {}
                                 settingsViewModel.markRenewalAlertShown()
                                 showRenewalDailyDialog = false
                             },
@@ -435,21 +457,12 @@ fun BillingApp(isRecoveryFlow: Boolean = false) {
     } // Close CompositionLocalProvider
 } // Close BillingApp function
 
-data class DashboardItem(
-    val title: String,
-    val subtitle: String,
-    val icon: ImageVector,
-    val route: AppRoute,
-    val badge: String? = null
-)
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
     session: Session?,
     shopName: String,
-    shopLogoPath: String,
     onNavigateTo: (AppRoute) -> Unit,
     onLogout: () -> Unit,
     onCloseShiftClick: () -> Unit = {}
@@ -458,7 +471,7 @@ fun HomeScreen(
     val dashboardState by viewModel.dashboardState.collectAsState()
     val permissions = session?.permissions ?: emptySet()
     
-    val showMasters = permissions.any { it == Permission.CATEGORY_VIEW || it == Permission.PRODUCT_VIEW || it == Permission.USER_MANAGE }
+    val showMasters = permissions.any { (it == Permission.CATEGORY_VIEW) || (it == Permission.PRODUCT_VIEW) || (it == Permission.USER_MANAGE) }
     val showSales = permissions.any { it == Permission.SALE_CREATE || it == Permission.SALE_VIEW }
     val showPurchases = permissions.any { it == Permission.PURCHASE_CREATE || it == Permission.PURCHASE_VIEW }
     val showReports = permissions.any { it == Permission.REPORT_SALES || it == Permission.REPORT_STOCK || it == Permission.REPORT_PROFIT }
@@ -477,12 +490,12 @@ fun HomeScreen(
     )
 
     var selectedBillNumForDetail by remember { mutableStateOf<String?>(null) }
-    var showLogoutDialog by remember { mutableStateOf(false) }
+    var showLogoutDialog by remember { mutableStateOf(value = false) }
 
     // Bill Details Dialog for Recent Invoices
     if (selectedBillNumForDetail != null) {
         var billDetailData by remember(selectedBillNumForDetail) { mutableStateOf<com.kadaikutty.pos.feature.reports.presentation.BillDetailData?>(null) }
-        var isBillLoading by remember(selectedBillNumForDetail) { mutableStateOf(true) }
+        var isBillLoading by remember(selectedBillNumForDetail) { mutableStateOf(value = true) }
 
         LaunchedEffect(selectedBillNumForDetail) {
             isBillLoading = true
@@ -503,10 +516,12 @@ fun HomeScreen(
             title = { Text("Confirm Logout") },
             text = { Text("Are you sure you want to logout? Unsynced data will be preserved in cloud queue.") },
             confirmButton = {
-                TextButton(onClick = {
-                    showLogoutDialog = false
-                    onLogout()
-                }) {
+                TextButton(
+                    onClick = {
+                        showLogoutDialog = false
+                        onLogout()
+                    }
+                ) {
                     Text("Logout", color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -589,7 +604,7 @@ fun HomeScreen(
                         Icon(Icons.Default.Lock, contentDescription = "Close Shift", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                     IconButton(onClick = { showLogoutDialog = true }) {
-                        Icon(Icons.Default.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             )
@@ -619,7 +634,7 @@ fun HomeScreen(
                 // KPI 1: Today's Revenue
                 DashboardKpiCard(
                     title = "Today's Sales",
-                    value = "${Money(dashboardState.todaySalesMinorUnits)}",
+                    value = Money(dashboardState.todaySalesMinorUnits).toString(),
                     subtitle = "${dashboardState.todayInvoicesCount} Invoices",
                     icon = Icons.Default.ShoppingCart,
                     accentColor = Color(0xFF059669),
@@ -646,7 +661,7 @@ fun HomeScreen(
                 // KPI 3: Customer Due
                 DashboardKpiCard(
                     title = "Customer Due",
-                    value = "${Money(dashboardState.customerCreditDueMinorUnits)}",
+                    value = Money(dashboardState.customerCreditDueMinorUnits).toString(),
                     subtitle = "Ledger Balance",
                     icon = Icons.Default.AccountBox,
                     accentColor = Color(0xFF2563EB),
@@ -657,7 +672,7 @@ fun HomeScreen(
                 // KPI 4: Inward Purchases
                 DashboardKpiCard(
                     title = "Inward Stock",
-                    value = "${Money(dashboardState.todayPurchasesMinorUnits)}",
+                    value = Money(dashboardState.todayPurchasesMinorUnits).toString(),
                     subtitle = "Purchased Today",
                     icon = Icons.Default.Add,
                     accentColor = Color(0xFF7C3AED),
@@ -788,7 +803,6 @@ fun HomeScreen(
                 if (showPurchases) {
                     DashboardTileCard(
                         title = "Inward Stock",
-                        subtitle = "Purchases & Inward Ledger",
                         icon = Icons.Default.AddCircle,
                         iconContainerColor = Color(0xFFEFF6FF),
                         iconTint = Color(0xFF2563EB),
@@ -801,7 +815,6 @@ fun HomeScreen(
                 if (showMasters) {
                     DashboardTileCard(
                         title = "Master Catalog",
-                        subtitle = "Products, Customers & Suppliers",
                         icon = Icons.Default.Menu,
                         iconContainerColor = Color(0xFFF5F3FF),
                         iconTint = Color(0xFF7C3AED),
@@ -817,27 +830,13 @@ fun HomeScreen(
                 if (showReports) {
                     DashboardTileCard(
                         title = "Analytics & Reports",
-                        subtitle = "Sales, Bills & Profit Margin",
-                        icon = Icons.Default.List,
+                        icon = Icons.AutoMirrored.Filled.List,
                         iconContainerColor = Color(0xFFECFDF5),
                         iconTint = Color(0xFF059669),
                         badge = "Live Reports",
                         badgeColor = Color(0xFF059669),
                         modifier = Modifier.weight(1f),
                         onClick = { onNavigateTo(AppRoute.Reports) }
-                    )
-                }
-                if (showSettings) {
-                    DashboardTileCard(
-                        title = "Subscription & Cloud",
-                        subtitle = "Business Plan & Licenses",
-                        icon = Icons.Default.Star,
-                        iconContainerColor = Color(0xFFFFFBEB),
-                        iconTint = Color(0xFFD97706),
-                        badge = "PRO",
-                        badgeColor = Color(0xFFD97706),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateTo(AppRoute.Subscription) }
                     )
                 }
             }
@@ -900,7 +899,7 @@ fun HomeScreen(
 
                             Column(horizontalAlignment = Alignment.End) {
                                 Text(
-                                    text = "${Money(sale.totalMinorUnits)}",
+                                    text = Money(sale.totalMinorUnits).toString(),
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 15.sp,
                                     color = MaterialTheme.colorScheme.primary
@@ -1007,13 +1006,12 @@ fun DashboardKpiCard(
 @Composable
 fun DashboardTileCard(
     title: String,
-    subtitle: String,
     icon: ImageVector,
+    modifier: Modifier = Modifier,
     iconContainerColor: Color = MaterialTheme.colorScheme.primaryContainer,
     iconTint: Color = MaterialTheme.colorScheme.onPrimaryContainer,
     badge: String? = null,
     badgeColor: Color = MaterialTheme.colorScheme.primary,
-    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Card(
@@ -1073,14 +1071,6 @@ fun DashboardTileCard(
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurface
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = subtitle,
-                    fontSize = 11.sp,
-                    lineHeight = 14.sp,
-                    maxLines = 2,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
                 )
             }
         }

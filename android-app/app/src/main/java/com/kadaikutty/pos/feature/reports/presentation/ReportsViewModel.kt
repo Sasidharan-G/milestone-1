@@ -19,6 +19,8 @@ import com.kadaikutty.pos.feature.billing.domain.SaleRepository
 import com.kadaikutty.pos.core.database.BillingDatabase
 import com.kadaikutty.pos.core.auth.SessionStore
 import kotlinx.coroutines.flow.first
+import androidx.room.InvalidationTracker
+import com.kadaikutty.pos.core.sharing.ShareManager
 
 @HiltViewModel
 class ReportsViewModel @Inject constructor(
@@ -28,7 +30,8 @@ class ReportsViewModel @Inject constructor(
     private val excelExporter: ExcelExporter,
     private val database: BillingDatabase,
     private val saleRepository: SaleRepository,
-    private val sessionStore: SessionStore
+    private val sessionStore: SessionStore,
+    private val shareManager: ShareManager
 ) : ViewModel() {
 
     private val _selectedType = MutableStateFlow(ReportType.SALES)
@@ -64,8 +67,23 @@ class ReportsViewModel @Inject constructor(
     private val _expensesSum = MutableStateFlow(0L)
     val expensesSum: StateFlow<Long> = _expensesSum.asStateFlow()
 
+    private val tableObserver = object : InvalidationTracker.Observer(
+        "sales", "sale_items", "purchases", "purchase_items", "expenses", 
+        "stock_movements", "products", "categories", "customers", "suppliers"
+    ) {
+        override fun onInvalidated(tables: Set<String>) {
+            loadReport()
+        }
+    }
+
     init {
+        database.invalidationTracker.addObserver(tableObserver)
         loadReport()
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        database.invalidationTracker.removeObserver(tableObserver)
     }
 
     fun setReportType(type: ReportType) {
@@ -124,6 +142,18 @@ class ReportsViewModel @Inject constructor(
     fun exportPdf(): ByteArray {
         val data = _reportData.value ?: throw java.lang.IllegalStateException("No report data loaded to export")
         return pdfExporter.export(data)
+    }
+
+    fun shareReportPdf() {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                val pdfBytes = exportPdf()
+                val filename = "${_selectedType.value.name.lowercase()}_report.pdf"
+                shareManager.shareFile(pdfBytes, filename, "application/pdf")
+            } catch (e: Exception) {
+                _error.value = "Share failed: ${e.message}"
+            }
+        }
     }
 
     fun exportExcel(): ByteArray {

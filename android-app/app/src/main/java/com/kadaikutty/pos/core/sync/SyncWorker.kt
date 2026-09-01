@@ -3,6 +3,7 @@ package com.kadaikutty.pos.core.sync
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.WorkerParameters
+import com.google.firebase.firestore.FirebaseFirestore
 import com.kadaikutty.pos.core.common.newRecordId
 import com.kadaikutty.pos.core.database.BillingDatabase
 import com.kadaikutty.pos.core.database.SyncDeadLetterEntity
@@ -11,12 +12,12 @@ import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
-import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.tasks.await
+import org.json.JSONArray
 import org.json.JSONObject
 
 class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -27,30 +28,33 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     @InstallIn(SingletonComponent::class)
     interface SyncEntryPoint {
         fun database(): BillingDatabase
-        fun firestore(): FirebaseFirestore
         fun sessionStore(): com.kadaikutty.pos.core.auth.SessionStore
+        fun analyticsManager(): com.kadaikutty.pos.core.analytics.AnalyticsManager
     }
 
-    private val MAX_RETRY_ATTEMPTS = 5
-    private val BASE_RETRY_DELAY_MINUTES = 1L
+    private val MaxRetryAttempts = 5
+    private val BaseRetryDelayMinutes = 1L
 
     override suspend fun doWork(): Result {
         val entryPoint = EntryPointAccessors.fromApplication(
             applicationContext,
-            SyncEntryPoint::class.java
+            SyncEntryPoint::class.java,
         )
         val database = entryPoint.database()
-        val firestore = entryPoint.firestore()
         val sessionStore = entryPoint.sessionStore()
+        val analyticsManager = entryPoint.analyticsManager()
 
         val activeSession = sessionStore.activeSession.first() ?: return Result.success()
         val companyId = activeSession.companyId
-
+        
         val syncQueueDao = database.syncQueueDao()
+        val firestore = FirebaseFirestore.getInstance()
 
         try {
             var cursor = 0L
             val batchSize = 50
+            var totalSynced = 0
+            val syncStartTime = System.currentTimeMillis()
 
             while (true) {
                 val pendingItems = syncQueueDao.pendingAfterCursor(companyId, cursor, batchSize)
@@ -76,7 +80,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     when (result) {
                         EntitySyncResult.FAILURE -> hasFailure = true
                         EntitySyncResult.RETRY -> hasRetry = true
-                        EntitySyncResult.SUCCESS -> {}
+                        EntitySyncResult.SUCCESS -> totalSynced++
                     }
                 }
 
@@ -92,8 +96,20 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     return if (hasRetry && !hasFailure) Result.retry() else Result.failure()
                 }
             }
+
+            if (totalSynced > 0) {
+                val durationMs = System.currentTimeMillis() - syncStartTime
+                analyticsManager.logEvent(
+                    com.kadaikutty.pos.core.analytics.AnalyticsEvents.EVENT_SYNC_COMPLETED,
+                    mapOf(
+                        com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_RECORDS_PUSHED to totalSynced * batchSize,
+                        com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_SYNC_DURATION to durationMs
+                    )
+                )
+            }
             return Result.success()
         } catch (e: Exception) {
+            e.printStackTrace()
             return Result.failure()
         }
     }
@@ -108,7 +124,14 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         now: Long
     ): EntitySyncResult {
         var allSuccessful = true
-        val collectionName = getCollectionName(entityType) ?: return EntitySyncResult.FAILURE
+        val collectionName = getCollectionName(entityType)
+        
+        if (collectionName == null) {
+            items.forEach { 
+                syncQueueDao.updateStatus(it.id, SyncStatus.FAILED, now, "Unknown entity type") 
+            }
+            return EntitySyncResult.FAILURE
+        }
 
         for (item in items) {
             val operation = item.operation
@@ -118,7 +141,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             try {
                 if (operation != "DELETE") {
                     val localUpdatedAt = extractUpdatedAtFromPayload(payload)
-                    if (localUpdatedAt > 0 && item.lastSyncedAtEpochMs >= localUpdatedAt) {
+                    if ((localUpdatedAt > 0) && (item.lastSyncedAtEpochMs >= localUpdatedAt)) {
                         syncQueueDao.updateStatus(item.id, SyncStatus.SYNCED, now)
                         syncQueueDao.updateLastSyncedAt(item.id, now)
                         updateEntitySyncStatus(database, entityType, entityId, "SYNCED")
@@ -129,62 +152,32 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 val docRef = firestore.collection("users").document(companyId).collection(collectionName).document(entityId)
 
                 if (operation == "DELETE") {
-                    docRef.delete().await()
+                    docRef.set(mapOf(
+                        "isDeleted" to true, 
+                        "updatedAtEpochMs" to com.google.firebase.firestore.FieldValue.serverTimestamp()
+                    ), com.google.firebase.firestore.SetOptions.merge()).await()
                 } else {
-                    val map = jsonToMap(JSONObject(payload))
-                    
-                    // Special handling for Sales/Purchases to separate items subcollection
-                    if (entityType == "Sale" || entityType == "Purchase") {
-                        val itemsList = map["items"] as? List<Map<String, Any>>
-                        val mainDoc = map.toMutableMap().apply { remove("items") }
-                        docRef.set(mainDoc).await()
-                        
-                        if (itemsList != null) {
-                            val itemsCollection = docRef.collection("items")
-                            // Delete existing items to avoid duplicates
-                            val existingItems = itemsCollection.get().await()
-                            existingItems.documents.forEach { it.reference.delete() }
-                            
-                            // Insert new items
-                            for (subItem in itemsList) {
-                                itemsCollection.document().set(subItem).await()
-                            }
-                        }
-                    } else {
-                        docRef.set(map).await()
-                    }
+                    val jsonMap = jsonObjectToMap(JSONObject(payload)).toMutableMap()
+                    jsonMap["updatedAtEpochMs"] = com.google.firebase.firestore.FieldValue.serverTimestamp()
+                    docRef.set(jsonMap, com.google.firebase.firestore.SetOptions.merge()).await()
                 }
 
                 syncQueueDao.updateStatus(item.id, SyncStatus.SYNCED, now)
                 syncQueueDao.updateLastSyncedAt(item.id, now)
                 updateEntitySyncStatus(database, entityType, entityId, "SYNCED")
+
             } catch (e: Exception) {
                 val attemptCount = item.attemptCount + 1
                 if (isNetworkException(e) || isRetryableError(e)) {
-                    if (attemptCount < MAX_RETRY_ATTEMPTS) {
-                        val delayMinutes = BASE_RETRY_DELAY_MINUTES * (2L shl (attemptCount - 1))
+                    if (attemptCount < MaxRetryAttempts) {
+                        val delayMinutes = BaseRetryDelayMinutes * (2L shl (attemptCount - 1))
                         syncQueueDao.updateStatus(item.id, SyncStatus.PENDING, now,
-                            "Retry $attemptCount/$MAX_RETRY_ATTEMPTS in ${delayMinutes}min: ${e.message ?: "Unknown error"}")
+                            "Retry $attemptCount/$MaxRetryAttempts in ${delayMinutes}min: ${e.message ?: "Unknown error"}")
                         syncQueueDao.updateAttemptCount(item.id, attemptCount)
                         return EntitySyncResult.RETRY
                     } else {
                         allSuccessful = false
-                        val deadLetter = SyncDeadLetterEntity(
-                            id = com.kadaikutty.pos.core.common.newRecordId(),
-                            companyId = companyId,
-                            entityType = entityType,
-                            entityId = entityId,
-                            operation = operation,
-                            payload = payload,
-                            lastError = "Max retries ($MAX_RETRY_ATTEMPTS) exceeded: ${e.message ?: "Unknown error"}",
-                            attemptCount = attemptCount,
-                            createdAtEpochMs = item.createdAtEpochMs,
-                            lastAttemptAtEpochMs = now,
-                            originalQueueId = item.id
-                        )
-                        database.syncDeadLetterDao().insert(deadLetter)
-                        syncQueueDao.updateStatus(item.id, SyncStatus.FAILED, now, "Moved to dead letter after max retries")
-                        updateEntitySyncStatus(database, item.entityType, item.entityId, "FAILED")
+                        moveToDeadLetter(database, syncQueueDao, item, companyId, attemptCount, now, e)
                     }
                 } else {
                     allSuccessful = false
@@ -200,6 +193,33 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         return EntitySyncResult.SUCCESS
     }
 
+    private suspend fun moveToDeadLetter(
+        database: BillingDatabase,
+        syncQueueDao: com.kadaikutty.pos.core.database.SyncQueueDao,
+        item: SyncQueueEntity,
+        companyId: String,
+        attemptCount: Int,
+        now: Long,
+        e: Exception
+    ) {
+        val deadLetter = SyncDeadLetterEntity(
+            id = newRecordId(),
+            companyId = companyId,
+            entityType = item.entityType,
+            entityId = item.entityId,
+            operation = item.operation,
+            payload = item.payload,
+            lastError = "Max retries ($MaxRetryAttempts) exceeded: ${e.message ?: "Unknown error"}",
+            attemptCount = attemptCount,
+            createdAtEpochMs = item.createdAtEpochMs,
+            lastAttemptAtEpochMs = now,
+            originalQueueId = item.id
+        )
+        database.syncDeadLetterDao().insert(deadLetter)
+        syncQueueDao.updateStatus(item.id, SyncStatus.FAILED, now, "Moved to dead letter after max retries")
+        updateEntitySyncStatus(database, item.entityType, item.entityId, "FAILED")
+    }
+
     private fun getCollectionName(entityType: String): String? = when (entityType) {
         "Category" -> "categories"
         "Product" -> "products"
@@ -210,51 +230,21 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         "Purchase" -> "purchases"
         "CustomerCredit" -> "customer_credits"
         "SupplierCredit" -> "supplier_credits"
+        "StockMovement" -> "stock_movements"
         else -> null
     }
 
-    private fun jsonToMap(json: JSONObject): Map<String, Any> {
-        val map = mutableMapOf<String, Any>()
-        val keys = json.keys()
-        while (keys.hasNext()) {
-            val key = keys.next()
-            val value = json.get(key)
-            if (value is org.json.JSONArray) {
-                map[key] = jsonToList(value)
-            } else if (value is JSONObject) {
-                map[key] = jsonToMap(value)
-            } else {
-                map[key] = value
-            }
-        }
-        return map
-    }
-
-    private fun jsonToList(array: org.json.JSONArray): List<Any> {
-        val list = mutableListOf<Any>()
-        for (i in 0 until array.length()) {
-            val value = array.get(i)
-            if (value is org.json.JSONArray) {
-                list.add(jsonToList(value))
-            } else if (value is JSONObject) {
-                list.add(jsonToMap(value))
-            } else {
-                list.add(value)
-            }
-        }
-        return list
-    }
-
     private fun isNetworkException(e: Throwable): Boolean {
-        return e is java.io.IOException ||
-               e is java.net.ConnectException ||
-               e is java.net.UnknownHostException ||
-               e is java.net.SocketTimeoutException
+        val message = e.message?.lowercase() ?: ""
+        return e is java.io.IOException || message.contains("network") || message.contains("timeout") || message.contains("offline")
     }
 
     private fun isRetryableError(e: Throwable): Boolean {
         val message = e.message?.lowercase() ?: ""
-        return message.contains("unavailable") || message.contains("deadline_exceeded")
+        return message.contains("unavailable") || 
+               message.contains("deadline_exceeded") ||
+               message.contains("500") ||
+               message.contains("503")
     }
 
     private fun updateEntitySyncStatus(database: BillingDatabase, entityType: String, id: String, status: String) {
@@ -264,12 +254,12 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 database.openHelper.writableDatabase.execSQL(
                     "UPDATE $tableName SET syncStatus = '$status' WHERE id = '$id'"
                 )
-            } catch (ignored: Exception) {}
+            } catch (_: Exception) {}
         }
     }
 
     private fun extractUpdatedAtFromPayload(payload: String): Long {
-        try {
+        return try {
             val start = payload.indexOf("\"updatedAtEpochMs\":")
             if (start == -1) return 0L
             val valueStart = start + "\"updatedAtEpochMs\":".length
@@ -277,9 +267,43 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             if (valueEnd == -1) valueEnd = payload.indexOf('}', valueStart)
             if (valueEnd == -1) return 0L
             val valueStr = payload.substring(valueStart, valueEnd).trim()
-            return valueStr.toLongOrNull() ?: 0L
-        } catch (e: Exception) {
-            return 0L
+            valueStr.toLongOrNull() ?: 0L
+        } catch (_: Exception) {
+            0L
         }
+    }
+
+    private fun jsonObjectToMap(json: JSONObject): Map<String, Any> {
+        val map = mutableMapOf<String, Any>()
+        val keys = json.keys()
+        while (keys.hasNext()) {
+            val key = keys.next()
+            var value = json.get(key)
+            if (value is JSONArray) {
+                value = jsonArrayToList(value)
+            } else if (value is JSONObject) {
+                value = jsonObjectToMap(value)
+            } else if (value == JSONObject.NULL) {
+                continue
+            }
+            map[key] = value
+        }
+        return map
+    }
+
+    private fun jsonArrayToList(array: JSONArray): List<Any> {
+        val list = mutableListOf<Any>()
+        for (i in 0 until array.length()) {
+            var value = array.get(i)
+            if (value is JSONArray) {
+                value = jsonArrayToList(value)
+            } else if (value is JSONObject) {
+                value = jsonObjectToMap(value)
+            } else if (value == JSONObject.NULL) {
+                continue
+            }
+            list.add(value)
+        }
+        return list
     }
 }

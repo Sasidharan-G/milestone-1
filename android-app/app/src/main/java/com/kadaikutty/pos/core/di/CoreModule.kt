@@ -13,6 +13,7 @@ import com.kadaikutty.pos.core.database.migration15To16
 import com.kadaikutty.pos.core.database.migration16To17
 import com.kadaikutty.pos.core.database.migration17To18
 import com.kadaikutty.pos.core.database.migration18To19
+import com.kadaikutty.pos.core.database.migration19To20
 import com.kadaikutty.pos.core.database.migration1To2
 import com.kadaikutty.pos.core.database.migration2To3
 import com.kadaikutty.pos.core.database.migration3To4
@@ -73,7 +74,7 @@ object CoreModule {
         
         var db = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
             .openHelperFactory(factory)
-            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18, migration18To19)
+            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18, migration18To19, migration19To20)
             .build()
             
         try {
@@ -89,7 +90,7 @@ object CoreModule {
             // Re-build a fresh database instance
             db = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
                 .openHelperFactory(factory)
-                .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18, migration18To19)
+                .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18, migration18To19, migration19To20)
                 .build()
         }
         return db
@@ -108,14 +109,15 @@ object CoreModule {
         sessions: SessionStore, 
         credentials: OfflineCredentialStore, 
         verifier: OfflineCredentialVerifier, 
-        database: BillingDatabase
+        database: BillingDatabase,
     ): AuthRepository = DefaultAuthRepository(firebaseAuth, firestore, sessions, credentials, verifier, database)
     @Provides @Singleton fun logger(): AppLogger = AndroidLogger()
+    @Provides @Singleton fun analyticsManager(@ApplicationContext context: Context) = com.kadaikutty.pos.core.analytics.AnalyticsManager(context)
     @Provides @Singleton fun syncScheduler(@ApplicationContext context: Context) = SyncScheduler(context)
     @Provides @Singleton fun syncManager(database: BillingDatabase, syncScheduler: SyncScheduler, sessionStore: SessionStore) = SyncManager(database, syncScheduler, sessionStore)
 
-    @Provides @Singleton fun saleRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore): SaleRepository = SaleRepositoryImpl(database.saleDao(), syncManager, sessionStore)
-    @Provides @Singleton fun purchaseRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore): PurchaseRepository = PurchaseRepositoryImpl(database.purchaseDao(), syncManager, sessionStore)
+    @Provides @Singleton fun saleRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore, appPreferences: AppPreferences): SaleRepository = SaleRepositoryImpl(database.saleDao(), syncManager, sessionStore, appPreferences)
+    @Provides @Singleton fun purchaseRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore, appPreferences: AppPreferences): PurchaseRepository = PurchaseRepositoryImpl(database.purchaseDao(), syncManager, sessionStore, appPreferences)
     @Provides @Singleton fun costingStrategy(database: BillingDatabase, sessionStore: SessionStore): CostingStrategy = DefaultCostingStrategy(database.purchaseDao(), database.masterDao(), sessionStore)
     @Provides @Singleton fun reportRepository(database: BillingDatabase, costingStrategy: CostingStrategy, sessionStore: SessionStore): ReportRepository = ReportRepositoryImpl(database.reportDao(), costingStrategy, sessionStore)
     @Provides @Singleton fun reportService(reportRepository: ReportRepository): ReportService = DefaultReportService(reportRepository)

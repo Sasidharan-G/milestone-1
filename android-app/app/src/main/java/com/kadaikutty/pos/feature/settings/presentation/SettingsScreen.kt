@@ -7,10 +7,6 @@ import com.kadaikutty.pos.core.security.Permission
 import com.kadaikutty.pos.core.security.BiometricAuthenticator
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
-import com.google.android.gms.auth.api.signin.GoogleSignIn
-import com.google.android.gms.auth.api.signin.GoogleSignInOptions
-import com.google.android.gms.common.api.Scope
-import com.google.android.gms.common.api.ApiException
 import androidx.compose.ui.platform.LocalContext
 
 import androidx.activity.compose.BackHandler
@@ -39,7 +35,7 @@ import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.AccountBox
 import androidx.compose.material.icons.filled.AccountCircle
@@ -58,20 +54,21 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-enum class SettingsCategory(val title: String, val icon: ImageVector, val shortSummary: String) {
-    SHOP_PROFILE("Store Profile", Icons.Default.AccountBox, "Business Name, Tax ID, Address"),
-    PRINTER("Hardware & Printer", Icons.Default.Build, "Thermal Receipt, Bluetooth & USB"),
-    CLOUD_BACKUP("Cloud Synchronization", Icons.Default.Refresh, "Online Backup & Data Recovery"),
-    STAFF("User Management", Icons.Default.AccountCircle, "Staff Logins & Role Permissions"),
-    DISPLAY("Display & Interface", Icons.Default.Settings, "Layout Preference & Theme Mode"),
-    MAINTENANCE("Database & Security", Icons.Default.Lock, "Local Archives & System Maintenance")
+enum class SettingsCategory(val title: String, val icon: ImageVector) {
+    SHOP_PROFILE("Store Profile", Icons.Default.AccountBox),
+    PRINTER("Hardware & Printer", Icons.Default.Build),
+    CLOUD_BACKUP("Cloud Synchronization", Icons.Default.Refresh),
+    STAFF("User Management", Icons.Default.AccountCircle),
+    DISPLAY("Display & Interface", Icons.Default.Settings),
+    MAINTENANCE("Database & Security", Icons.Default.Lock)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
-    onOpenMasterControl: () -> Unit = {}
+    onOpenMasterControl: () -> Unit = {},
+    onOpenSyncDiagnostics: () -> Unit = {}
 ) {
     var activeCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     BackHandler(enabled = activeCategory != null) {
@@ -314,6 +311,18 @@ fun SettingsScreen(
                             }
                         }
 
+                        if (currentSession != null) {
+                            OutlinedButton(
+                                onClick = onOpenSyncDiagnostics,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Icon(Icons.Default.Build, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("View Sync Diagnostics & Errors", fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+
                         if (!cloudSyncStatus.isNullOrBlank()) {
                             Card(
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -523,7 +532,7 @@ fun SettingsScreen(
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                                    modifier = Modifier.menuAnchor(androidx.compose.material3.MenuAnchorType.PrimaryNotEditable).fillMaxWidth()
                                 )
                                 ExposedDropdownMenu(
                                     expanded = expanded,
@@ -664,13 +673,6 @@ fun SettingsScreen(
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
-                                )
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    "Create cashier logins using mobile numbers, configure role-based permissions, and manage terminal accounts.",
-                                    fontSize = 12.sp,
-                                    lineHeight = 15.sp,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
                         }
@@ -1071,91 +1073,7 @@ fun SettingsScreen(
                             }
                         }
 
-                        HorizontalDivider(modifier = Modifier.padding(vertical = 6.dp))
 
-                        // 🛡️ Super Master Control Section
-                        var showMasterPinDialog by remember { mutableStateOf(false) }
-                        var enteredPin by remember { mutableStateOf("") }
-                        var pinError by remember { mutableStateOf(false) }
-
-                        Surface(
-                            shape = RoundedCornerShape(14.dp),
-                            color = Color(0xFF1E1B4B),
-                            border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF6366F1)),
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                        Text("🛡️ Master Control", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 14.sp)
-                                        Surface(shape = RoundedCornerShape(4.dp), color = Color(0xFF6366F1)) {
-                                            Text("SUPER ADMIN", fontSize = 8.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
-                                        }
-                                    }
-                                    Text("Manage shop licenses, trials & remote kill-switches", fontSize = 11.sp, color = Color(0xFFC7D2FE))
-                                }
-                                Button(
-                                    onClick = { showMasterPinDialog = true },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF6366F1)),
-                                    shape = RoundedCornerShape(10.dp)
-                                ) {
-                                    Text("Open Panel", fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                }
-                            }
-                        }
-
-                        if (showMasterPinDialog) {
-                            AlertDialog(
-                                onDismissRequest = {
-                                    showMasterPinDialog = false
-                                    enteredPin = ""
-                                    pinError = false
-                                },
-                                title = { Text("🛡️ Super Master Authentication", fontWeight = FontWeight.Bold) },
-                                text = {
-                                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        Text("Enter Master Super Admin PIN:")
-                                        OutlinedTextField(
-                                            value = enteredPin,
-                                            onValueChange = {
-                                                enteredPin = it.filter { ch -> ch.isDigit() }.take(6)
-                                                pinError = false
-                                            },
-                                            label = { Text("Master PIN") },
-                                            isError = pinError,
-                                            supportingText = if (pinError) { { Text("Incorrect PIN", color = MaterialTheme.colorScheme.error) } } else null,
-                                            singleLine = true,
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-                                    }
-                                },
-                                confirmButton = {
-                                    Button(
-                                        onClick = {
-                                            if (enteredPin == "9840" || enteredPin == "1234" || enteredPin == "984011") {
-                                                showMasterPinDialog = false
-                                                enteredPin = ""
-                                                onOpenMasterControl()
-                                            } else {
-                                                pinError = true
-                                            }
-                                        }
-                                    ) {
-                                        Text("Authenticate", fontWeight = FontWeight.Bold)
-                                    }
-                                },
-                                dismissButton = {
-                                    TextButton(onClick = {
-                                        showMasterPinDialog = false
-                                        enteredPin = ""
-                                    }) { Text("Cancel") }
-                                }
-                            )
-                        }
                     }
                 }
             }
@@ -1515,14 +1433,6 @@ fun SettingsScreen(
                                             textAlign = TextAlign.Center
                                         )
                                         Spacer(modifier = Modifier.height(2.dp))
-                                        Text(
-                                            text = cat.shortSummary,
-                                            fontSize = 10.sp,
-                                            lineHeight = 13.sp,
-                                            maxLines = 2,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f),
-                                            textAlign = TextAlign.Center
-                                        )
                                     }
                                 }
                             }
@@ -1541,7 +1451,7 @@ fun SettingsScreen(
                     ) {
                         IconButton(onClick = { activeCategory = null }) {
                             Icon(
-                                imageVector = Icons.Default.ArrowBack,
+                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                                 contentDescription = "Go back to settings dashboard"
                             )
                         }
@@ -1603,6 +1513,8 @@ fun AddUserDialog(
     var accessPurchases by remember { mutableStateOf(false) }
     var accessReports by remember { mutableStateOf(false) }
     var accessSettings by remember { mutableStateOf(false) }
+
+    var requirePasswordChange by remember { mutableStateOf(false) }
 
     var errorMsg by remember { mutableStateOf("") }
 
@@ -1718,41 +1630,7 @@ fun AddUserDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(Modifier.height(4.dp))
 
-                // Role Presets
-                Text("Select Staff Role Preset:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedRole == "CASHIER",
-                        onClick = { applyRoleDefaults("CASHIER") },
-                        label = { Text("🛒 Cashier", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    FilterChip(
-                        selected = selectedRole == "STORE_MANAGER",
-                        onClick = { applyRoleDefaults("STORE_MANAGER") },
-                        label = { Text("📦 Manager", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    FilterChip(
-                        selected = selectedRole == "INWARD_CLERK",
-                        onClick = { applyRoleDefaults("INWARD_CLERK") },
-                        label = { Text("🚚 Stock Inward", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    FilterChip(
-                        selected = selectedRole == "CUSTOM",
-                        onClick = { selectedRole = "CUSTOM" },
-                        label = { Text("⚙️ Custom", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                }
-
-                Spacer(Modifier.height(4.dp))
                 Text("Custom Screen Permissions:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
 
                 Surface(
@@ -1780,6 +1658,23 @@ fun AddUserDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" })
                             Text("⚙️ Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Checkbox(checked = requirePasswordChange, onCheckedChange = { requirePasswordChange = it })
+                        Column {
+                            Text("Force Password Reset on Login", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("User must set a new PIN when they first log in", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -1815,6 +1710,9 @@ fun AddUserDialog(
                             }
                             if (accessSettings) {
                                 addAll(listOf(Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT, Permission.BACKUP_CREATE))
+                            }
+                            if (requirePasswordChange) {
+                                add(Permission.REQUIRE_PASSWORD_CHANGE)
                             }
                         }
                         onCreate(cleanDigits, displayName.trim(), password.toCharArray(), selectedRole, pSet)
@@ -1852,6 +1750,9 @@ fun EditUserDialog(
     var accessPurchases by remember { mutableStateOf(initialPerms.contains(Permission.PURCHASE_CREATE)) }
     var accessReports by remember { mutableStateOf(initialPerms.contains(Permission.REPORT_SALES)) }
     var accessSettings by remember { mutableStateOf(initialPerms.contains(Permission.SETTINGS_VIEW)) }
+    
+    var isActive by remember { mutableStateOf(!initialPerms.contains(Permission.ACCOUNT_INACTIVE)) }
+    var requirePasswordChange by remember { mutableStateOf(initialPerms.contains(Permission.REQUIRE_PASSWORD_CHANGE)) }
 
     fun applyRoleDefaults(role: String) {
         selectedRole = role
@@ -1914,10 +1815,48 @@ fun EditUserDialog(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Icon(Icons.Default.Phone, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        Column {
+                        Column(modifier = Modifier.weight(1f)) {
                             Text("Mobile Login User ID (Fixed)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             Text("+91 ${user.username}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
                         }
+                    }
+                }
+
+                // Account Status (Active / Deactivated)
+                Surface(
+                    color = if (isActive) Color(0xFFEFF6FF) else Color(0xFFFEF2F2),
+                    shape = RoundedCornerShape(12.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isActive) Color(0xFFBFDBFE) else Color(0xFFFECACA)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp).fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column {
+                            Text(
+                                text = if (isActive) "Account is Active" else "Account is Deactivated",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 14.sp,
+                                color = if (isActive) Color(0xFF1D4ED8) else Color(0xFFB91C1C)
+                            )
+                            Text(
+                                text = if (isActive) "User can login to their device" else "User is blocked from logging in",
+                                fontSize = 11.sp,
+                                color = if (isActive) Color(0xFF3B82F6) else Color(0xFFEF4444)
+                            )
+                        }
+                        Switch(
+                            checked = isActive,
+                            onCheckedChange = { isActive = it },
+                            colors = SwitchDefaults.colors(
+                                checkedThumbColor = Color.White,
+                                checkedTrackColor = Color(0xFF3B82F6),
+                                uncheckedThumbColor = Color.White,
+                                uncheckedTrackColor = Color(0xFFEF4444)
+                            )
+                        )
                     }
                 }
 
@@ -1950,39 +1889,7 @@ fun EditUserDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                // Role Presets
-                Text("Role Preset:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    FilterChip(
-                        selected = selectedRole == "CASHIER",
-                        onClick = { applyRoleDefaults("CASHIER") },
-                        label = { Text("🛒 Cashier", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    FilterChip(
-                        selected = selectedRole == "STORE_MANAGER",
-                        onClick = { applyRoleDefaults("STORE_MANAGER") },
-                        label = { Text("📦 Manager", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    FilterChip(
-                        selected = selectedRole == "INWARD_CLERK",
-                        onClick = { applyRoleDefaults("INWARD_CLERK") },
-                        label = { Text("🚚 Stock Inward", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                    FilterChip(
-                        selected = selectedRole == "CUSTOM",
-                        onClick = { selectedRole = "CUSTOM" },
-                        label = { Text("⚙️ Custom", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        shape = RoundedCornerShape(16.dp)
-                    )
-                }
 
-                Spacer(Modifier.height(4.dp))
                 Text("Custom Screen Permissions:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
 
                 Surface(
@@ -2010,6 +1917,23 @@ fun EditUserDialog(
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" })
                             Text("⚙️ Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                        }
+                    }
+                }
+
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(8.dp)
+                    ) {
+                        Checkbox(checked = requirePasswordChange, onCheckedChange = { requirePasswordChange = it })
+                        Column {
+                            Text("Force Password Reset on Login", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Text("User must set a new PIN when they next log in", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -2041,6 +1965,12 @@ fun EditUserDialog(
                             }
                             if (accessSettings) {
                                 addAll(listOf(Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT, Permission.BACKUP_CREATE))
+                            }
+                            if (!isActive) {
+                                add(Permission.ACCOUNT_INACTIVE)
+                            }
+                            if (requirePasswordChange) {
+                                add(Permission.REQUIRE_PASSWORD_CHANGE)
                             }
                         }
                         val passArray = if (newPassword.isBlank()) null else newPassword.toCharArray()

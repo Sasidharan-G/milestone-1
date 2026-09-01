@@ -24,6 +24,8 @@ import com.kadaikutty.pos.core.common.Money
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.QrCodeScanner
 import com.kadaikutty.pos.core.ui.CameraBarcodeScannerDialog
+import androidx.compose.material.icons.filled.Search
+import com.kadaikutty.pos.feature.billing.presentation.components.SearchableProductSelectorDialog
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -76,6 +78,18 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
             onDismiss = { showCameraScanner = false }
         )
     }
+
+    var showProductSearchDialog by remember { mutableStateOf(false) }
+
+    SearchableProductSelectorDialog(
+        showDialog = showProductSearchDialog,
+        products = products,
+        stockMap = uiState.stocks.associate { it.productId to it.currentStock },
+        onProductSelected = { prod ->
+            selectedProductId = prod.id
+            expandedProduct = false
+        },
+    ) { showProductSearchDialog = false }
 
     if (editingPurchaseLine != null) {
         val line = editingPurchaseLine!!
@@ -180,50 +194,50 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                 Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Draft Purchase Order", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
 
-                    // 1. Select Supplier
+                    // 1. Select Supplier & Invoice No.
                     val selectedSupplierName = suppliers.find { it.id == selectedSupplierId }?.name ?: "Select Supplier"
-                    ExposedDropdownMenuBox(
-                        expanded = expandedSupplier,
-                        onExpandedChange = { expandedSupplier = !expandedSupplier }
-                    ) {
-                        OutlinedTextField(
-                            readOnly = true,
-                            value = selectedSupplierName,
-                            onValueChange = {},
-                            label = { Text("Supplier") },
-                            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSupplier) },
-                            colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.menuAnchor().fillMaxWidth()
-                        )
-                        ExposedDropdownMenu(
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        ExposedDropdownMenuBox(
                             expanded = expandedSupplier,
-                            onDismissRequest = { expandedSupplier = false }
+                            onExpandedChange = { expandedSupplier = !expandedSupplier },
+                            modifier = Modifier.weight(1.4f)
                         ) {
-                            suppliers.forEach { supplier ->
-                                DropdownMenuItem(
-                                    text = { Text(supplier.name) },
-                                    onClick = {
-                                        viewModel.setSupplier(supplier.id)
-                                        expandedSupplier = false
-                                    }
-                                )
+                            OutlinedTextField(
+                                readOnly = true,
+                                value = selectedSupplierName,
+                                onValueChange = {},
+                                label = { Text("Supplier", fontSize = 11.sp) },
+                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSupplier) },
+                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                                shape = RoundedCornerShape(10.dp),
+                                modifier = Modifier.menuAnchor().fillMaxWidth(),
+                                singleLine = true
+                            )
+                            ExposedDropdownMenu(
+                                expanded = expandedSupplier,
+                                onDismissRequest = { expandedSupplier = false }
+                            ) {
+                                suppliers.forEach { supplier ->
+                                    DropdownMenuItem(
+                                        text = { Text(supplier.name) },
+                                        onClick = {
+                                            viewModel.setSupplier(supplier.id)
+                                            expandedSupplier = false
+                                        }
+                                    )
+                                }
                             }
                         }
-                    }
-                    if (suppliers.isEmpty()) {
-                        Text("No suppliers found! Please create a supplier in Masters screen first.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
-                    }
 
-                    // Supplier Invoice / Bill Number
-                    OutlinedTextField(
-                        value = supplierInvoiceNumber,
-                        onValueChange = { supplierInvoiceNumber = it },
-                        label = { Text("Supplier Bill / Invoice No. (Optional)") },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
+                        OutlinedTextField(
+                            value = supplierInvoiceNumber,
+                            onValueChange = { supplierInvoiceNumber = it },
+                            label = { Text("Invoice No.", fontSize = 11.sp) },
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                    }
 
                     HorizontalDivider()
 
@@ -235,53 +249,61 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        ExposedDropdownMenuBox(
-                            expanded = expandedProduct,
-                            onExpandedChange = { expandedProduct = !expandedProduct },
-                            modifier = Modifier.weight(1f)
+                        Surface(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(56.dp)
+                                .clickable { showProductSearchDialog = true },
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, if (selectedProductId.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                            color = MaterialTheme.colorScheme.surface
                         ) {
-                            OutlinedTextField(
-                                readOnly = true,
-                                value = selectedProductName,
-                                onValueChange = {},
-                                label = { Text("Product") },
-                                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedProduct) },
-                                colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
-                            )
-                            ExposedDropdownMenu(
-                                expanded = expandedProduct,
-                                onDismissRequest = { expandedProduct = false }
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .padding(horizontal = 12.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.SpaceBetween
                             ) {
-                                products.forEach { product ->
-                                    DropdownMenuItem(
-                                        text = { Text(product.name) },
-                                        onClick = {
-                                            selectedProductId = product.id
-                                            expandedProduct = false
-                                        }
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = "Product",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = if (selectedProductId.isNotBlank()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                    Text(
+                                        text = selectedProductName,
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        fontWeight = if (selectedProductId.isNotBlank()) FontWeight.Bold else FontWeight.Normal,
+                                        maxLines = 1,
+                                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                        color = if (selectedProductId.isNotBlank()) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                                     )
                                 }
+                                Icon(
+                                    androidx.compose.material.icons.Icons.Default.Search,
+                                    contentDescription = "Search Product",
+                                    tint = MaterialTheme.colorScheme.primary
+                                )
                             }
                         }
 
                         FilledTonalIconButton(
                             onClick = { showCameraScanner = true },
-                            modifier = Modifier.size(54.dp).padding(top = 6.dp),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.size(48.dp).padding(top = 6.dp),
+                            shape = RoundedCornerShape(10.dp)
                         ) {
                             Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = MaterialTheme.colorScheme.primary)
                         }
                     }
                     if (products.isEmpty()) {
-                        Text("No products found! Please create a product in Masters screen first.", color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
+                        Text("No products found! Please create a product in Masters screen first.", color = MaterialTheme.colorScheme.error, fontSize = 11.sp)
                     }
 
-                    // Quantity Stepper with [-] and [+] + Cost input
+                    // Quantity Stepper with [-] and [+] + Cost input + Add Button
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         // Minus Button
@@ -298,24 +320,24 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                                     quantityText = next.toString()
                                 }
                             },
-                            modifier = Modifier.size(44.dp).padding(top = 6.dp),
-                            shape = RoundedCornerShape(10.dp)
+                            modifier = Modifier.size(36.dp).padding(top = 4.dp),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("-", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("-", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedTextField(
                             value = quantityText,
                             onValueChange = { quantityText = it },
-                            label = { Text("Qty", fontSize = 11.sp) },
+                            label = { Text("Qty", fontSize = 10.sp) },
                             keyboardOptions = KeyboardOptions(keyboardType = if (selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER") KeyboardType.Decimal else KeyboardType.Number),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(0.7f),
                             singleLine = true,
                             textStyle = androidx.compose.ui.text.TextStyle(
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 14.sp
+                                fontSize = 12.sp
                             )
                         )
 
@@ -333,57 +355,58 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
                                     quantityText = next.toString()
                                 }
                             },
-                            modifier = Modifier.size(44.dp).padding(top = 6.dp),
-                            shape = RoundedCornerShape(10.dp)
+                            modifier = Modifier.size(36.dp).padding(top = 4.dp),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Text("+", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                            Text("+", fontSize = 16.sp, fontWeight = FontWeight.Bold)
                         }
 
                         OutlinedTextField(
                             value = costText,
                             onValueChange = { costText = it },
-                            label = { Text("Unit Cost", fontSize = 11.sp) },
+                            label = { Text("Cost", fontSize = 10.sp) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            shape = RoundedCornerShape(10.dp),
-                            modifier = Modifier.weight(1.4f),
-                            singleLine = true
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(0.9f),
+                            singleLine = true,
+                            textStyle = androidx.compose.ui.text.TextStyle(fontSize = 12.sp)
                         )
-                    }
-
-                    Button(
-                        onClick = {
-                            val isDecimalUnit = selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER"
-                            val parsedQty = if (isDecimalUnit) {
-                                val qty = quantityText.toDoubleOrNull()
-                                if (qty != null && qty > 0) (qty * 1000).toLong() else null
-                            } else {
-                                quantityText.toLongOrNull()
-                            }
-                            val costDouble = costText.toDoubleOrNull()
-                            if (selectedSupplierId.isNullOrBlank()) {
-                                message = "Validation Error: Please select a supplier first before adding product"
-                            } else if (selectedProductId.isBlank()) {
-                                message = "Validation Error: Please select a product first"
-                            } else if (parsedQty == null || parsedQty <= 0) {
-                                message = "Validation Error: Quantity must be a valid number greater than 0"
-                            } else if (costDouble == null || costDouble <= 0.0) {
-                                message = "Validation Error: Unit cost must be a valid number greater than 0"
-                            } else {
-                                viewModel.addLine(selectedProductId, parsedQty, Money((costDouble * 100).toLong()), selectedSupplierId)
-                                val suppName = suppliers.find { it.id == selectedSupplierId }?.name ?: "Supplier"
-                                val prodName = selectedProduct?.name ?: "Product"
-                                selectedProductId = ""
-                                quantityText = "1"
-                                costText = ""
-                                message = "Added '$prodName' under $suppName"
-                            }
-                        },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Icon(Icons.Default.Add, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text("Add Purchase Line")
+                        
+                        // Add Button
+                        Button(
+                            onClick = {
+                                val isDecimalUnit = selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER"
+                                val parsedQty = if (isDecimalUnit) {
+                                    val qty = quantityText.toDoubleOrNull()
+                                    if (qty != null && qty > 0) (qty * 1000).toLong() else null
+                                } else {
+                                    quantityText.toLongOrNull()
+                                }
+                                val costDouble = costText.toDoubleOrNull()
+                                if (selectedSupplierId.isNullOrBlank()) {
+                                    message = "Validation Error: Please select a supplier first before adding product"
+                                } else if (selectedProductId.isBlank()) {
+                                    message = "Validation Error: Please select a product first"
+                                } else if (parsedQty == null || parsedQty <= 0) {
+                                    message = "Validation Error: Quantity must be a valid number greater than 0"
+                                } else if (costDouble == null || costDouble <= 0.0) {
+                                    message = "Validation Error: Unit cost must be a valid number greater than 0"
+                                } else {
+                                    viewModel.addLine(selectedProductId, parsedQty, Money((costDouble * 100).toLong()), selectedProduct?.unitType ?: "PIECE", selectedSupplierId)
+                                    val suppName = suppliers.find { it.id == selectedSupplierId }?.name ?: "Supplier"
+                                    val prodName = selectedProduct?.name ?: "Product"
+                                    selectedProductId = ""
+                                    quantityText = "1"
+                                    costText = ""
+                                    message = "Added '$prodName' under $suppName"
+                                }
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.padding(top = 4.dp),
+                            contentPadding = PaddingValues(horizontal = 8.dp)
+                        ) {
+                            Text("Add", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
                     }
 
                     HorizontalDivider()

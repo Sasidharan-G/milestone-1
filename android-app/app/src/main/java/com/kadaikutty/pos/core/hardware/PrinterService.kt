@@ -1,7 +1,6 @@
 package com.kadaikutty.pos.core.hardware
 
 import android.Manifest
-import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothDevice
 import android.bluetooth.BluetoothManager
 import android.content.Context
@@ -35,7 +34,7 @@ object PrinterService {
         items: List<PrintItem>,
         subtotal: String,
         discount: String,
-        grandTotal: String
+        grandTotal: String,
     ): Result<Unit> = withContext(Dispatchers.IO) {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
             if (ActivityCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
@@ -50,10 +49,9 @@ object PrinterService {
             return@withContext Result.failure(Exception("Bluetooth is disabled. Please turn it on."))
         }
 
-        var device: BluetoothDevice? = null
-        try {
-            device = adapter.getRemoteDevice(macAddress)
-        } catch (e: Exception) {
+        val device = try {
+            adapter.getRemoteDevice(macAddress)
+        } catch (_: Exception) {
             return@withContext Result.failure(Exception("Invalid Printer MAC Address. Please check settings."))
         }
 
@@ -101,9 +99,9 @@ object PrinterService {
             out.write("Subtotal: ".padEnd(24).toByteArray())
             out.write(subtotal.padStart(8).toByteArray() + "\n".toByteArray())
             
-            if (discount != "0.00" && discount.isNotBlank()) {
+            if ((discount != "0.00") && discount.isNotBlank()) {
                 out.write("Discount: ".padEnd(24).toByteArray())
-                out.write(("-"+discount).padStart(8).toByteArray() + "\n".toByteArray())
+                out.write("-$discount".padStart(8).toByteArray() + "\n".toByteArray())
             }
 
             out.write(BOLD_ON)

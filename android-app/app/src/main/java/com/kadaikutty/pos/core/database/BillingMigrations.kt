@@ -296,4 +296,12 @@ val migration18To19 = object : Migration(18, 19) {
     }
 }
 
-
+val migration19To20 = object : Migration(19, 20) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("DROP INDEX IF EXISTS `index_categories_companyId_name`")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_categories_companyId_name` ON `categories` (`companyId`, `name`)")
+        
+        db.execSQL("DROP INDEX IF EXISTS `index_products_companyId_name`")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_companyId_name` ON `products` (`companyId`, `name`)")
+    }
+}

@@ -6,7 +6,7 @@ import androidx.room.Index
 import androidx.room.PrimaryKey
 import com.kadaikutty.pos.core.sync.SyncStatus
 
-@Entity(tableName = "categories", indices = [Index(value = ["companyId", "name"], unique = true), Index(value = ["companyId", "syncStatus"])])
+@Entity(tableName = "categories", indices = [Index(value = ["companyId", "name"]), Index(value = ["companyId", "syncStatus"])])
 data class CategoryEntity(
     @PrimaryKey val id: String,
     val companyId: String,
@@ -19,7 +19,7 @@ data class CategoryEntity(
 @Entity(
     tableName = "products",
     foreignKeys = [ForeignKey(entity = CategoryEntity::class, parentColumns = ["id"], childColumns = ["categoryId"], onDelete = ForeignKey.RESTRICT)],
-    indices = [Index("categoryId"), Index(value = ["companyId", "name"], unique = true), Index(value = ["companyId", "syncStatus"])]
+    indices = [Index("categoryId"), Index(value = ["companyId", "name"]), Index(value = ["companyId", "syncStatus"])]
 )
 data class ProductEntity(
     @PrimaryKey val id: String,

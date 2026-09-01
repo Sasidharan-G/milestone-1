@@ -6,4 +6,3 @@ dependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_P
 rootProject.name = "ClientBilling"
 include(":app")
 include(":macrobenchmark")
-

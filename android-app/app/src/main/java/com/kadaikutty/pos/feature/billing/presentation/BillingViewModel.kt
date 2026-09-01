@@ -15,7 +15,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -35,13 +34,14 @@ import kotlinx.coroutines.flow.flowOf
 
 @HiltViewModel
 class BillingViewModel @Inject constructor(
-    private val database: BillingDatabase,
+    database: BillingDatabase,
     private val saleRepository: SaleRepository,
     private val shareManager: ShareManager,
     private val appPreferences: AppPreferences,
     private val sessionStore: SessionStore,
     private val syncManager: SyncManager,
-    private val syncScheduler: com.kadaikutty.pos.core.sync.SyncScheduler
+    private val syncScheduler: com.kadaikutty.pos.core.sync.SyncScheduler,
+    private val analyticsManager: com.kadaikutty.pos.core.analytics.AnalyticsManager
 ) : ViewModel() {
 
     fun forceSync() {
@@ -53,12 +53,13 @@ class BillingViewModel @Inject constructor(
     private val purchaseDao = database.purchaseDao()
     private val draftCartDao = database.draftCartDao()
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val stockBalances = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             purchaseDao.getStockBalances(companyId).map { list ->
-                list.associate { it.productId to it.currentStock }
-            }
+                list.associateBy { it.productId }
+            }.map { map -> map.mapValues { it.value.currentStock } }
         }
 
     init {
@@ -83,7 +84,7 @@ class BillingViewModel @Inject constructor(
             if (_lines.value.isNotEmpty()) {
                 val entities = _lines.value.map { line ->
                     com.kadaikutty.pos.feature.billing.data.DraftCartItemEntity(
-                        id = com.kadaikutty.pos.core.common.newRecordId(),
+                        id = newRecordId(),
                         companyId = companyId,
                         productId = line.productId,
                         productName = line.productName,
@@ -97,18 +98,21 @@ class BillingViewModel @Inject constructor(
         }
     }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val products = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             masterDao.products(companyId, "")
         }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val customers = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             masterDao.customers(companyId, "")
         }
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val sales = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
@@ -117,10 +121,11 @@ class BillingViewModel @Inject constructor(
 
     private val _selectedCustomerId = MutableStateFlow<String?>(null)
 
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val selectedCustomerCreditBalance = combine(sessionStore.activeSession, _selectedCustomerId) { session, customerId ->
         session to customerId
     }.flatMapLatest { (session, customerId) ->
-        if (session == null || customerId.isNullOrBlank() || customerId == "online") {
+        if ((session == null) || customerId.isNullOrBlank() || (customerId == "online")) {
             flowOf(0L)
         } else {
             masterDao.getCustomerCreditBalance(session.companyId, customerId).map { it ?: 0L }
@@ -268,6 +273,11 @@ class BillingViewModel @Inject constructor(
         onError: (Throwable) -> Unit
     ) {
         viewModelScope.launch {
+            val session = sessionStore.activeSession.first()
+            if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
+                onError(Exception("You do not have permission to create sales."))
+                return@launch
+            }
             if (_lines.value.isEmpty()) {
                 onError(Exception("Cannot save empty sale bill"))
                 return@launch
@@ -290,6 +300,15 @@ class BillingViewModel @Inject constructor(
                     if (context != null && appPreferences.autoPrintReceipt.first()) {
                         printBill(context, billNum)
                     }
+
+                    analyticsManager.logEvent(
+                        com.kadaikutty.pos.core.analytics.AnalyticsEvents.EVENT_SALE_COMPLETED,
+                        mapOf(
+                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_CART_SIZE to draft.lines.size,
+                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.lines.sumOf { (it.unitPrice.minorUnits * it.quantity) / (if (it.unitType == "KG" || it.unitType == "LITER") 1000 else 1) },
+                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_PAYMENT_METHOD to paymentMode
+                        )
+                    )
 
                     clearDraft()
                     onSuccess(billNum)
@@ -329,6 +348,11 @@ class BillingViewModel @Inject constructor(
         onError: (Throwable) -> Unit
     ) {
         viewModelScope.launch {
+            val session = sessionStore.activeSession.first()
+            if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
+                onError(Exception("You do not have permission to create sales."))
+                return@launch
+            }
             val selectedLines = _lines.value.filter { it.productId in selectedProductIds }
             if (selectedLines.isEmpty()) {
                 onError(Exception("No items selected for split checkout"))
@@ -347,6 +371,16 @@ class BillingViewModel @Inject constructor(
                 is AppResult.Success -> {
                     val billNum = result.value
                     settlePreviousCredit(sessionStore.activeSession.first(), _selectedCustomerId.value, settlePreviousCreditMinorUnits, billNum)
+                    
+                    analyticsManager.logEvent(
+                        com.kadaikutty.pos.core.analytics.AnalyticsEvents.EVENT_SALE_COMPLETED,
+                        mapOf(
+                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_CART_SIZE to draft.lines.size,
+                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.lines.sumOf { (it.unitPrice.minorUnits * it.quantity) / (if (it.unitType == "KG" || it.unitType == "LITER") 1000 else 1) },
+                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_PAYMENT_METHOD to paymentMode
+                        )
+                    )
+
                     _lines.value = _lines.value.filterNot { it.productId in selectedProductIds }
                     saveDraftToDb()
                     onSuccess(billNum)
@@ -360,6 +394,11 @@ class BillingViewModel @Inject constructor(
 
     fun deleteSale(saleId: String, billNumber: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
+            val session = sessionStore.activeSession.first()
+            if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
+                onError(Exception("You do not have permission to modify sales."))
+                return@launch
+            }
             when (val result = saleRepository.deleteSale(saleId, billNumber)) {
                 is AppResult.Success -> onSuccess()
                 is AppResult.Failure -> onError(Exception(result.error.userMessage))
@@ -407,12 +446,10 @@ class BillingViewModel @Inject constructor(
             val shopAddress = appPreferences.shopAddress.first()
             val shopPhone = appPreferences.shopPhone.first()
             
-            val customerName = if (sale.customerId == null) {
-                "Walk-in Customer"
-            } else if (sale.customerId == "online") {
-                "Online Customer"
-            } else {
-                masterDao.getCustomerById(companyId, sale.customerId)?.name ?: "Walk-in Customer"
+            val customerName = when {
+                sale.customerId == null -> "Walk-in Customer"
+                sale.customerId == "online" -> "Online Customer"
+                else -> masterDao.getCustomerById(companyId, sale.customerId)?.name ?: "Walk-in Customer"
             }
             
             val shopEmail = appPreferences.shopEmail.first()
@@ -470,7 +507,7 @@ class BillingViewModel @Inject constructor(
             val printItems = items.map { item ->
                 val p = productsMap[item.productId]
                 val qtyStr = if (p?.unitType == "KG" || p?.unitType == "LITER") {
-                    String.format("%.3f", item.quantity / 1000f)
+                    String.format(java.util.Locale.US, "%.3f", item.quantity / 1000f)
                 } else {
                     item.quantity.toString()
                 }

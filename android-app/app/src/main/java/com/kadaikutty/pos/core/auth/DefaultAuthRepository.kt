@@ -3,7 +3,6 @@ package com.kadaikutty.pos.core.auth
 import android.app.Activity
 import com.kadaikutty.pos.core.database.BillingDatabase
 import com.kadaikutty.pos.core.security.Permission
-import com.kadaikutty.pos.core.sync.*
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.PhoneAuthCredential
@@ -21,7 +20,7 @@ class DefaultAuthRepository(
     private val sessions: SessionStore,
     private val offlineCredentials: OfflineCredentialStore,
     private val verifier: OfflineCredentialVerifier,
-    private val database: BillingDatabase
+    private val database: BillingDatabase,
 ) : AuthRepository {
 
     private fun normalizePhone(phone: String): String {
@@ -42,8 +41,18 @@ class DefaultAuthRepository(
                 val role = userDoc.getString("role") ?: "ADMIN"
                 val permsList = userDoc.get("permissions") as? List<*>
                 val perms = permsList?.mapNotNull {
-                    try { Permission.valueOf(it.toString()) } catch (e: Exception) { null }
+                    try { Permission.valueOf(it.toString()) } catch (_: Exception) { null }
                 }?.toSet() ?: Permission.entries.toSet()
+
+                if (perms.contains(Permission.ACCOUNT_INACTIVE)) {
+                    password.fill('\u0000')
+                    return LoginResult.Failure("Your account has been deactivated. Contact Admin.")
+                }
+                
+                if (perms.contains(Permission.REQUIRE_PASSWORD_CHANGE)) {
+                    password.fill('\u0000')
+                    return LoginResult.Failure("Password reset required. Please use 'Forgot Password / PIN' to set a new password.")
+                }
 
                 val saltBytes = java.util.Base64.getDecoder().decode(saltStr)
                 val verifierBytes = java.util.Base64.getDecoder().decode(verifierStr)
@@ -83,6 +92,29 @@ class DefaultAuthRepository(
                     )
                     database.userDao().insertUser(userEntity)
 
+                    if ((role == "ADMIN") && companyId.isNotBlank()) {
+                        try {
+                            val licDoc = firestore.collection("licenses").document(companyId).get().await()
+                            if (!licDoc.exists()) {
+                                val businessName = userDoc.getString("business_name") ?: "Unknown Business"
+                                val licenseMap = hashMapOf(
+                                    "companyId" to companyId,
+                                    "businessName" to businessName,
+                                    "ownerName" to displayName,
+                                    "ownerMobile" to cleanPhone,
+                                    "licenseStatus" to "PENDING_APPROVAL",
+                                    "licenseType" to "TRIAL_2_DAYS",
+                                    "yearsGranted" to 0,
+                                    "daysGranted" to 0,
+                                    "activatedAtEpochMs" to 0L,
+                                    "validUntilEpochMs" to 0L,
+                                    "notes" to "Auto-seeded on login for legacy account."
+                                )
+                                firestore.collection("licenses").document(companyId).set(licenseMap, com.google.firebase.firestore.SetOptions.merge()).await()
+                            }
+                        } catch (e: Exception) {}
+                    }
+
                     password.fill('\u0000')
                     LoginResult.Success(session)
                 } else {
@@ -115,8 +147,19 @@ class DefaultAuthRepository(
         val userDao = database.userDao()
         val userEntity = userDao.getUserByUsername(username, cleanPhone) ?: return LoginResult.Failure("Invalid mobile number or password")
 
+        val permissions = userEntity.toPermissionsSet()
+        if (permissions.contains(Permission.ACCOUNT_INACTIVE)) {
+            password.fill('\u0000')
+            return LoginResult.Failure("Your account has been deactivated. Contact Admin.")
+        }
+        
+        if (permissions.contains(Permission.REQUIRE_PASSWORD_CHANGE)) {
+            password.fill('\u0000')
+            return LoginResult.Failure("Password reset required. Please use 'Forgot Password / PIN' to set a new password.")
+        }
+
         val nowMs = System.currentTimeMillis()
-        if (userEntity.offlineValidUntil > 0 && nowMs > userEntity.offlineValidUntil) {
+        if (userEntity.offlineValidUntil in 1 until nowMs) {
             password.fill('\u0000')
             return LoginResult.Failure("Offline login expired. Please connect to the internet to sign in.")
         }
@@ -133,7 +176,6 @@ class DefaultAuthRepository(
         )
 
         val result = if (verifier.matches(offlineCred, password)) {
-            val permissions = userEntity.toPermissionsSet()
             val session = Session(
                 userId = userEntity.id,
                 displayName = userEntity.displayName,
@@ -255,7 +297,7 @@ class DefaultAuthRepository(
             )
             try {
                 firestore.collection("licenses").document(companyId).set(licenseMap, com.google.firebase.firestore.SetOptions.merge()).await()
-            } catch (ignored: Exception) {}
+            } catch (_: Exception) {}
 
             val licenseEntity = LicenseEntity(
                 companyId = companyId,
@@ -333,7 +375,11 @@ class DefaultAuthRepository(
             // 1. Update in Local SQLite Database (Works for both Admin and Staff/Cashier)
             val localUser = database.userDao().getUserByUsername(cleanPhone, cleanPhone)
             if (localUser != null) {
-                database.userDao().updateUser(localUser.copy(salt = saltStr, verifier = verifierStr))
+                val perms = localUser.toPermissionsSet().toMutableSet()
+                perms.remove(Permission.REQUIRE_PASSWORD_CHANGE)
+                val newPermsStr = perms.joinToString(",") { it.name }
+                
+                database.userDao().updateUser(localUser.copy(salt = saltStr, verifier = verifierStr, permissions = newPermsStr))
                 updatedAny = true
 
                 // If Staff, sync to company's staff sub-collection in Firestore
@@ -345,9 +391,10 @@ class DefaultAuthRepository(
                             .document(localUser.id)
                             .update(mapOf(
                                 "salt" to saltStr,
-                                "verifier" to verifierStr
+                                "verifier" to verifierStr,
+                                "permissions" to newPermsStr
                             )).await()
-                    } catch (ignored: Exception) {}
+                    } catch (_: Exception) {}
                 }
             }
 
@@ -356,13 +403,16 @@ class DefaultAuthRepository(
                 val adminDocRef = firestore.collection("users").document(cleanPhone)
                 val adminDoc = adminDocRef.get().await()
                 if (adminDoc.exists()) {
+                    val currentPerms = adminDoc.get("permissions") as? List<*> ?: emptyList<Any>()
+                    val newPerms = currentPerms.filter { it.toString() != "REQUIRE_PASSWORD_CHANGE" }
                     adminDocRef.update(mapOf(
                         "salt" to saltStr,
-                        "verifier" to verifierStr
+                        "verifier" to verifierStr,
+                        "permissions" to newPerms
                     )).await()
                     updatedAny = true
                 }
-            } catch (ignored: Exception) {}
+            } catch (_: Exception) {}
 
             newPassword.fill('\u0000')
 

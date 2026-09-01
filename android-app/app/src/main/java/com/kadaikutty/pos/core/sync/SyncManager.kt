@@ -168,6 +168,33 @@ class SyncManager(
         enqueueItem(companyId, "SupplierCredit", credit.id, operation, payload)
     }
 
+    suspend fun enqueueStockMovement(movement: com.kadaikutty.pos.feature.billing.data.StockMovementEntity, operation: String = "INSERT") {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
+        val payload = toJson(mapOf(
+            "id" to movement.id,
+            "companyId" to companyId,
+            "productId" to movement.productId,
+            "quantityDelta" to movement.quantityDelta,
+            "type" to movement.type,
+            "referenceId" to movement.referenceId,
+            "createdAtEpochMs" to movement.createdAtEpochMs
+        ))
+        enqueueItem(companyId, "StockMovement", movement.id, operation, payload)
+    }
+
+    suspend fun enqueuePartialUpdate(entityType: String, entityId: String, updates: Map<String, Any?>) {
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
+        
+        // Add updated timestamp
+        val finalUpdates = updates.toMutableMap()
+        finalUpdates["updatedAtEpochMs"] = System.currentTimeMillis()
+        
+        val payload = toJson(finalUpdates)
+        enqueueItem(companyId, entityType, entityId, "PARTIAL_UPDATE", payload)
+    }
+
     private suspend fun enqueueItem(
         companyId: String,
         entityType: String,
@@ -183,7 +210,37 @@ class SyncManager(
             val existingPrec = OPERATION_PRECEDENCE[existing.operation] ?: 1
 
             if (incomingPrec >= existingPrec) {
-                database.syncQueueDao().updatePending(existing.id, operation, payloadJson, now)
+                if (operation == "PARTIAL_UPDATE" && existing.operation == "PARTIAL_UPDATE") {
+                    // Merge payloads if both are partial updates
+                    try {
+                        val existingMap = org.json.JSONObject(existing.payload)
+                        val incomingMap = org.json.JSONObject(payloadJson)
+                        val incomingKeys = incomingMap.keys()
+                        while (incomingKeys.hasNext()) {
+                            val key = incomingKeys.next()
+                            existingMap.put(key, incomingMap.get(key))
+                        }
+                        database.syncQueueDao().updatePending(existing.id, operation, existingMap.toString(), now)
+                    } catch (e: Exception) {
+                        database.syncQueueDao().updatePending(existing.id, operation, payloadJson, now)
+                    }
+                } else if (operation == "PARTIAL_UPDATE" && existing.operation == "INSERT") {
+                    // If it's an insert in queue, merge partial updates into the insert payload
+                    try {
+                        val existingMap = org.json.JSONObject(existing.payload)
+                        val incomingMap = org.json.JSONObject(payloadJson)
+                        val incomingKeys = incomingMap.keys()
+                        while (incomingKeys.hasNext()) {
+                            val key = incomingKeys.next()
+                            existingMap.put(key, incomingMap.get(key))
+                        }
+                        database.syncQueueDao().updatePending(existing.id, "INSERT", existingMap.toString(), now)
+                    } catch (e: Exception) {
+                        // ignore
+                    }
+                } else {
+                    database.syncQueueDao().updatePending(existing.id, operation, payloadJson, now)
+                }
             }
             syncScheduler.request()
             return
@@ -230,6 +287,10 @@ class SyncManager(
             val items = database.purchaseDao().getPurchaseItemsList(companyId, purchase.id)
             enqueuePurchase(purchase, items)
         }
+        
+        // Enqueue StockMovements
+        // Ideally we'd have a getStockMovements query, but we can skip bulk enqueue for stock movements
+        // as they are created with sales and purchases. But we could fetch all via MasterDao or similar if needed.
         
         // Trigger the scheduler immediately
         syncScheduler.request()

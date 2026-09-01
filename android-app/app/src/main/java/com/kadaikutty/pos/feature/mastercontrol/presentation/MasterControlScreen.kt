@@ -16,6 +16,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -625,7 +626,7 @@ fun ShopLicenseAdminCard(
                             Icon(Icons.Default.Phone, contentDescription = "Call", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
                         }
                         IconButton(onClick = { onWhatsApp(license.ownerMobile) }, modifier = Modifier.size(32.dp)) {
-                            Icon(Icons.Default.Chat, contentDescription = "WhatsApp", tint = Color(0xFF22C55E), modifier = Modifier.size(18.dp))
+                            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "WhatsApp", tint = Color(0xFF22C55E), modifier = Modifier.size(18.dp))
                         }
                     }
                 }

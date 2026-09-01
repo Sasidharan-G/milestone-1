@@ -38,20 +38,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
     val context = LocalContext.current
     var documentBytes by remember { mutableStateOf<ByteArray?>(null) }
 
-    val pdfLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/pdf")
-    ) { uri ->
-        if (uri != null && documentBytes != null) {
-            try {
-                context.contentResolver.openOutputStream(uri)?.use { output ->
-                    output.write(documentBytes)
-                }
-                android.widget.Toast.makeText(context, "PDF Report exported successfully!", android.widget.Toast.LENGTH_SHORT).show()
-            } catch (e: Exception) {
-                android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
+
 
     val excelLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/csv")
@@ -158,15 +145,9 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                         )
                     }
                     IconButton(onClick = {
-                        try {
-                            documentBytes = viewModel.exportPdf()
-                            val filename = "${selectedType.name.lowercase()}_report.pdf"
-                            pdfLauncher.launch(filename)
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(context, "Export error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
-                        }
+                        viewModel.shareReportPdf()
                     }) {
-                        Icon(Icons.Default.Share, contentDescription = "Export PDF", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.Default.Share, contentDescription = "Share PDF", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                     IconButton(onClick = {
                         try {

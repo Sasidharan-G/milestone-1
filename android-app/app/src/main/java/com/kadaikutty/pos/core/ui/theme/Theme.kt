@@ -75,6 +75,7 @@ fun BillingTheme(
             large = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
             extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
         ),
+        typography = Typography,
         content = content
     )
 }

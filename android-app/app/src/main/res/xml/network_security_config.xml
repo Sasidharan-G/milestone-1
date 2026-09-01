@@ -4,4 +4,7 @@
         <domain includeSubdomains="true">supabase.co</domain>
         <domain includeSubdomains="true">cloudflare-dns.com</domain>
     </domain-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">10.0.2.2</domain>
+    </domain-config>
 </network-security-config>

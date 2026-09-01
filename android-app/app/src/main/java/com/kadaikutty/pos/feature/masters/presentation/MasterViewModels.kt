@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+
 package com.kadaikutty.pos.feature.masters.presentation
 
 import androidx.lifecycle.ViewModel
@@ -87,7 +89,13 @@ class CategoryViewModel @Inject constructor(
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateCategory(updated)
-                syncManager.enqueueCategory(updated, "UPDATE")
+                
+                val updates = mutableMapOf<String, Any?>()
+                if (category.name != newName) updates["name"] = newName
+                if (updates.isNotEmpty()) {
+                    syncManager.enqueuePartialUpdate("Category", category.id, updates)
+                }
+                
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -228,7 +236,19 @@ class ProductViewModel @Inject constructor(
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateProduct(updated)
-                syncManager.enqueueProduct(updated, "UPDATE")
+                
+                val updates = mutableMapOf<String, Any?>()
+                if (product.name != newName) updates["name"] = newName
+                if (product.categoryId != newCategoryId) updates["categoryId"] = newCategoryId
+                if (product.purchasePriceMinorUnits != newPurchasePriceMinorUnits) updates["purchasePriceMinorUnits"] = newPurchasePriceMinorUnits
+                if (product.salePriceMinorUnits != newSalePriceMinorUnits) updates["salePriceMinorUnits"] = newSalePriceMinorUnits
+                if (product.unitType != newUnitType) updates["unitType"] = newUnitType
+                if (product.barcode != newBarcode) updates["barcode"] = newBarcode
+                if (product.minStockLevel != newMinStockLevel) updates["minStockLevel"] = newMinStockLevel
+                
+                if (updates.isNotEmpty()) {
+                    syncManager.enqueuePartialUpdate("Product", product.id, updates)
+                }
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -270,6 +290,7 @@ class ProductViewModel @Inject constructor(
                     createdAtEpochMs = System.currentTimeMillis()
                 )
                 database.purchaseDao().insertStockMovements(listOf(movement))
+                syncManager.enqueueStockMovement(movement)
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -367,7 +388,16 @@ class CustomerViewModel @Inject constructor(
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateCustomer(updated)
-                syncManager.enqueueCustomer(updated, "UPDATE")
+                
+                val updates = mutableMapOf<String, Any?>()
+                if (customer.name != newName) updates["name"] = newName
+                if (customer.phone != newPhone) updates["phone"] = newPhone
+                if (customer.address != newAddress) updates["address"] = newAddress
+                
+                if (updates.isNotEmpty()) {
+                    syncManager.enqueuePartialUpdate("Customer", customer.id, updates)
+                }
+                
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -534,7 +564,16 @@ class SupplierViewModel @Inject constructor(
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateSupplier(updated)
-                syncManager.enqueueSupplier(updated, "UPDATE")
+                
+                val updates = mutableMapOf<String, Any?>()
+                if (supplier.name != newName) updates["name"] = newName
+                if (supplier.phone != newPhone) updates["phone"] = newPhone
+                if (supplier.address != newAddress) updates["address"] = newAddress
+                
+                if (updates.isNotEmpty()) {
+                    syncManager.enqueuePartialUpdate("Supplier", supplier.id, updates)
+                }
+                
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -686,7 +725,15 @@ class ExpenseViewModel @Inject constructor(
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateExpense(updated)
-                syncManager.enqueueExpense(updated, "UPDATE")
+                
+                val updates = mutableMapOf<String, Any?>()
+                if (expense.amountMinorUnits != newAmountMinorUnits) updates["amountMinorUnits"] = newAmountMinorUnits
+                if (expense.description != newDescription) updates["description"] = newDescription
+                
+                if (updates.isNotEmpty()) {
+                    syncManager.enqueuePartialUpdate("Expense", expense.id, updates)
+                }
+                
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)

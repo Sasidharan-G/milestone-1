@@ -102,6 +102,21 @@ class ReportRepositoryImpl(
                     ))
                 }
 
+                if (expenses.isNotEmpty()) {
+                    rows.add(listOf("", "---", "---", "---", "---", "---"))
+                    rows.add(listOf("", "OPERATING EXPENSES BREAKDOWN", "", "", "", ""))
+                    expenses.forEach { exp ->
+                        rows.add(listOf(
+                            "",
+                            "   - ${exp.description}",
+                            "",
+                            "",
+                            "",
+                            "- " + Money(exp.amount).toString()
+                        ))
+                    }
+                }
+
                 val grossProfit = grandTotalRevenue - grandTotalCost
                 val netProfit = grossProfit - Money(totalExpenses)
 
@@ -110,7 +125,7 @@ class ReportRepositoryImpl(
                     rows.add(listOf("", "1. TOTAL SALES REVENUE", "", grandTotalRevenue.toString(), "", ""))
                     rows.add(listOf("", "2. COST OF GOODS SOLD (COGS)", "", "", grandTotalCost.toString(), ""))
                     rows.add(listOf("", "3. GROSS PROFIT (Sales - Cost)", "", "", "", grossProfit.toString()))
-                    rows.add(listOf("", "4. OPERATING EXPENSES", "", "", "", "- " + Money(totalExpenses).toString()))
+                    rows.add(listOf("", "4. TOTAL OPERATING EXPENSES", "", "", "", "- " + Money(totalExpenses).toString()))
                     rows.add(listOf("", "5. NET PROFIT / LOSS", "", "", "", netProfit.toString()))
                 }
 

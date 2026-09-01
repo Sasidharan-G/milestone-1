@@ -233,8 +233,8 @@ class ShareManager(private val context: Context) {
         canvas.drawText("S.No", 40f, y, paint)
         canvas.drawText("Item Description", 80f, y, paint)
         paint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("Qty", 360f, y, paint)
-        canvas.drawText("Rate", 450f, y, paint)
+        canvas.drawText("Qty", 340f, y, paint)
+        canvas.drawText("Rate", 440f, y, paint)
         canvas.drawText("Total", 550f, y, paint)
         
         // Table Header Divider
@@ -269,8 +269,8 @@ class ShareManager(private val context: Context) {
             canvas.drawText(productName, 80f, y, paint)
             
             paint.textAlign = Paint.Align.RIGHT
-            canvas.drawText(qtyStr, 360f, y, paint)
-            canvas.drawText(rateStr, 450f, y, paint)
+            canvas.drawText(qtyStr, 340f, y, paint)
+            canvas.drawText(rateStr, 440f, y, paint)
             canvas.drawText(totalStr, 550f, y, paint)
             
             serial++
@@ -363,11 +363,11 @@ class ShareManager(private val context: Context) {
         paint.textAlign = Paint.Align.CENTER
         paint.isFakeBoldText = true
         paint.textSize = 12f
-        canvas.drawText("Thank You for Shopping! \uD83D\uDE0A", 297.5f, y, paint)
+        canvas.drawText("Thank You for Shopping!", 297.5f, y, paint)
         y += 18f
         paint.textSize = 10f
         paint.isFakeBoldText = false
-        canvas.drawText("Please Visit Again \uD83D\uDECD️", 297.5f, y, paint)
+        canvas.drawText("Please Visit Again", 297.5f, y, paint)
         
         pdfDocument.finishPage(page)
         

@@ -13,7 +13,7 @@ import kotlinx.coroutines.tasks.await
 
 class SampleDataGenerator(
     private val database: BillingDatabase,
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
 ) {
 
     suspend fun insert100DemoRecords(companyId: String): Int = withContext(Dispatchers.IO) {
@@ -217,7 +217,7 @@ class SampleDataGenerator(
             val saleId = newRecordId()
             val billNumber = "DEMO-INV-%04d".format(i)
             val p1 = products[(i * 3) % products.size]
-            val p2 = products[(i * 3 + 1) % products.size]
+            val p2 = products[((i * 3) + 1) % products.size]
             
             val item1 = SaleItemEntity(
                 companyId = companyId,
@@ -285,8 +285,8 @@ class SampleDataGenerator(
             val invNumber = "SUP-INV-%05d".format(1000 + i)
             val supp = suppliers[i % suppliers.size]
             val p1 = products[(i * 4) % products.size]
-            val p2 = products[(i * 4 + 1) % products.size]
-            val p3 = products[(i * 4 + 2) % products.size]
+            val p2 = products[((i * 4) + 1) % products.size]
+            val p3 = products[((i * 4) + 2) % products.size]
 
             val item1 = PurchaseItemEntity(
                 companyId = companyId,
@@ -371,24 +371,27 @@ class SampleDataGenerator(
 
     suspend fun clearAllData(companyId: String, clearCloud: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         try {
-            // 1. Wipe Room Local SQLite Tables
-            database.masterDao().deleteCategoriesByCompany(companyId)
-            database.masterDao().deleteProductsByCompany(companyId)
-            database.masterDao().deleteCustomersByCompany(companyId)
-            database.masterDao().deleteSuppliersByCompany(companyId)
-            database.masterDao().deleteExpensesByCompany(companyId)
-            database.masterDao().deleteCustomerCreditsByCompany(companyId)
-            database.masterDao().deleteSupplierCreditsByCompany(companyId)
-
-            database.saleDao().deleteSalesByCompany(companyId)
+            // 1. Clear transactions (child tables first to avoid foreign key constraints)
+            database.draftCartDao().clearCart(companyId)
             database.saleDao().deleteSaleItemsByCompany(companyId)
             database.saleDao().deleteStockMovementsByCompany(companyId)
-
-            database.purchaseDao().deletePurchasesByCompany(companyId)
+            database.saleDao().deleteSalesByCompany(companyId)
+            
             database.purchaseDao().deletePurchaseItemsByCompany(companyId)
-            database.draftCartDao().clearCart(companyId)
+            database.purchaseDao().deletePurchasesByCompany(companyId)
 
-            // Clear sync queues
+            // 2. Clear credits and expenses
+            database.masterDao().deleteCustomerCreditsByCompany(companyId)
+            database.masterDao().deleteSupplierCreditsByCompany(companyId)
+            database.masterDao().deleteExpensesByCompany(companyId)
+
+            // 3. Clear master data (Products must be before Categories because of FK restriction)
+            database.masterDao().deleteProductsByCompany(companyId)
+            database.masterDao().deleteCategoriesByCompany(companyId)
+            database.masterDao().deleteCustomersByCompany(companyId)
+            database.masterDao().deleteSuppliersByCompany(companyId)
+
+            // 4. Clear sync queues
             database.syncQueueDao().clearByCompany(companyId)
 
             // 2. Optionally wipe Cloud Firestore data safely if requested
@@ -400,7 +403,7 @@ class SampleDataGenerator(
                         for (doc in snapshot.documents) {
                             doc.reference.delete().await()
                         }
-                    } catch (ignored: Exception) {}
+                    } catch (_: Exception) {}
                 }
             }
 

@@ -27,7 +27,7 @@ data class LoginUiState(
     val showResetOtpDialog: Boolean = false,
     val resetOtp: String = "",
     val newPasswordString: String = "",
-    val resetVerificationId: String? = null
+    val resetVerificationId: String? = null,
 )
 @HiltViewModel class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
@@ -47,7 +47,7 @@ data class LoginUiState(
                 val doc = firestore.collection("master_admin").document("config").get().await()
                 val cloudPin = doc.getString("masterPin")
                 if (!cloudPin.isNullOrBlank()) {
-                    onResult(pin == cloudPin || pin == "9840")
+                    onResult(pin == cloudPin)
                 } else {
                     // Seed initial master config in Firestore
                     firestore.collection("master_admin").document("config").set(mapOf(
@@ -55,10 +55,10 @@ data class LoginUiState(
                         "masterMobile" to "9840000000",
                         "updatedAt" to System.currentTimeMillis()
                     ), SetOptions.merge()).await()
-                    onResult(pin == "9840" || pin == "1234" || pin == "984011")
+                    onResult(pin == "9840")
                 }
-            } catch (e: Exception) {
-                onResult(pin == "9840" || pin == "1234" || pin == "984011")
+            } catch (_: Exception) {
+                onResult(pin == "9840")
             }
         }
     }
@@ -83,12 +83,11 @@ data class LoginUiState(
                     onCodeSent = { vId ->
                         mutableState.update { it.copy(loading = false) }
                         onCodeSent(vId, phoneWithCode)
-                    },
-                    onVerificationFailed = { err ->
-                        mutableState.update { it.copy(loading = false, error = err) }
-                        onError(err)
                     }
-                )
+                ) { err ->
+                    mutableState.update { it.copy(loading = false, error = err) }
+                    onError(err)
+                }
             } catch (e: Exception) {
                 mutableState.update { it.copy(loading = false, error = e.message) }
                 onError(e.message ?: "Failed to send Master SMS OTP")
@@ -200,8 +199,7 @@ data class LoginUiState(
     fun handleGoogleSignInSuccess(onResult: (Boolean, String?) -> Unit) {
         viewModelScope.launch {
             try {
-                val res = authRepository.handleGoogleSignInSuccess()
-                when (res) {
+                when (val res = authRepository.handleGoogleSignInSuccess()) {
                     is com.kadaikutty.pos.core.auth.GoogleSignInResult.Success -> {
                         mutableState.update { it.copy(loading = false, complete = true) }
                         onResult(true, null)

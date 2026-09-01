@@ -6,14 +6,12 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -21,7 +19,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
@@ -60,24 +57,22 @@ fun BillingScreen(viewModel: BillingViewModel) {
     var quantityText by remember { mutableStateOf("1") }
     var priceText by remember { mutableStateOf("") }
 
-    var expandedProduct by remember { mutableStateOf(false) }
-    var expandedCustomer by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf("") }
-    var showCameraScanner by remember { mutableStateOf(false) }
+    var showCameraScanner by remember { mutableStateOf(value = false) }
     
-    var showPaymentDialog by remember { mutableStateOf(false) }
+    var showPaymentDialog by remember { mutableStateOf(value = false) }
     var discountInput by remember { mutableStateOf("") }
-    var includePreviousDueInCheckout by remember { mutableStateOf(false) }
+    var includePreviousDueInCheckout by remember { mutableStateOf(value = false) }
     
-    var showSplitCartDialog by remember { mutableStateOf(false) }
+    var showSplitCartDialog by remember { mutableStateOf(value = false) }
     var splitCartSelectedItems by remember { mutableStateOf(setOf<String>()) }
     var checkoutMode by remember { mutableStateOf("ALL") } // "ALL" or "SPLIT_CART"
     var editingLineQuantity by remember { mutableStateOf<SaleLine?>(null) }
     
     val customerCreditDue = uiState.selectedCustomerCreditBalance
-    var showAddCustomerDialog by remember { mutableStateOf(false) }
-    var showProductSearchDialog by remember { mutableStateOf(false) }
-    var showCustomerSearchDialog by remember { mutableStateOf(false) }
+    var showAddCustomerDialog by remember { mutableStateOf(value = false) }
+    var showProductSearchDialog by remember { mutableStateOf(value = false) }
+    var showCustomerSearchDialog by remember { mutableStateOf(value = false) }
 
     SearchableCustomerSelectorDialog(
         showDialog = showCustomerSearchDialog,
@@ -88,8 +83,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
         onAddNewCustomer = {
             showAddCustomerDialog = true
         },
-        onDismiss = { showCustomerSearchDialog = false }
-    )
+    ) { showCustomerSearchDialog = false }
 
     SearchableProductSelectorDialog(
         showDialog = showProductSearchDialog,
@@ -98,8 +92,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
         onProductSelected = { prod ->
             selectedProductId = prod.id
         },
-        onDismiss = { showProductSearchDialog = false }
-    )
+    ) { showProductSearchDialog = false }
 
     AddCustomerDialog(
         showDialog = showAddCustomerDialog,
@@ -114,10 +107,9 @@ fun BillingScreen(viewModel: BillingViewModel) {
                     showAddCustomerDialog = false
                     android.widget.Toast.makeText(context, "Customer added & selected!", android.widget.Toast.LENGTH_SHORT).show()
                 },
-                onError = {
-                    android.widget.Toast.makeText(context, "Error: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
-                }
-            )
+            ) {
+                android.widget.Toast.makeText(context, "Error: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
         }
     )
 
@@ -161,11 +153,10 @@ fun BillingScreen(viewModel: BillingViewModel) {
         val prod = products.find { it.id == selectedProductId }
         if (prod != null) {
             priceText = String.format(Locale.US, "%.2f", prod.salePriceMinorUnits / 100.0)
-            quantityText = if (prod.unitType == "KG" || prod.unitType == "LITER") "1.000" else "1"
+            quantityText = if ((prod.unitType == "KG") || (prod.unitType == "LITER")) "1.000" else "1"
         }
     }
 
-    val billTotal = lines.fold(Money.Zero) { sum, line -> sum + line.lineTotal }
     val activeLines = if (checkoutMode == "SPLIT_CART") lines.filter { splitCartSelectedItems.contains(it.productId) } else lines
     val activeBillSubtotal = activeLines.fold(Money.Zero) { sum, line -> sum + line.lineTotal }
     val globalDiscountMinorUnits = (discountInput.toDoubleOrNull() ?: 0.0).let { (it * 100).toLong() }
@@ -338,15 +329,15 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         // Minus Button
                         FilledTonalIconButton(
                             onClick = {
-                                val isDecimal = selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER"
-                                if (isDecimal) {
+                                val isDecimal = (selectedProduct?.unitType == "KG") || (selectedProduct?.unitType == "LITER")
+                                quantityText = if (isDecimal) {
                                     val current = quantityText.toDoubleOrNull() ?: 1.0
                                     val next = maxOf(0.1, current - 1.0)
-                                    quantityText = String.format(Locale.US, "%.3f", next)
+                                    String.format(Locale.US, "%.3f", next)
                                 } else {
                                     val current = quantityText.toLongOrNull() ?: 1L
                                     val next = maxOf(1L, current - 1L)
-                                    quantityText = next.toString()
+                                    next.toString()
                                 }
                             },
                             modifier = Modifier.size(44.dp).padding(top = 6.dp),
@@ -373,15 +364,15 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         // Plus Button
                         FilledTonalIconButton(
                             onClick = {
-                                val isDecimal = selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER"
-                                if (isDecimal) {
+                                val isDecimal = (selectedProduct?.unitType == "KG") || (selectedProduct?.unitType == "LITER")
+                                quantityText = if (isDecimal) {
                                     val current = quantityText.toDoubleOrNull() ?: 0.0
                                     val next = current + 1.0
-                                    quantityText = String.format(Locale.US, "%.3f", next)
+                                    String.format(Locale.US, "%.3f", next)
                                 } else {
                                     val current = quantityText.toLongOrNull() ?: 0L
                                     val next = current + 1L
-                                    quantityText = next.toString()
+                                    next.toString()
                                 }
                             },
                             modifier = Modifier.size(44.dp).padding(top = 6.dp),
@@ -404,7 +395,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         // Add Button
                         Button(
                             onClick = {
-                                val isDecimalUnit = selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER"
+                                val isDecimalUnit = (selectedProduct?.unitType == "KG") || (selectedProduct?.unitType == "LITER")
                                 val parsedQty = if (isDecimalUnit) {
                                     val qty = quantityText.toDoubleOrNull()
                                     if (qty != null && qty > 0) (qty * 1000).toLong() else null
@@ -419,8 +410,8 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                 } else if (parsedQty == null || parsedQty <= 0) {
                                     message = "Quantity must be > 0"
                                 } else if (parsedQty > currentStockUnits) {
-                                    val isDecimal = selectedProduct.unitType == "KG" || selectedProduct.unitType == "LITER"
-                                    val availStr = if (isDecimal) String.format(Locale.US, "%.3f", currentStockUnits / 1000.0) else "$currentStockUnits"
+                                    val isDecimal = (selectedProduct.unitType == "KG") || (selectedProduct.unitType == "LITER")
+                                    val availStr = if (isDecimal) String.format(Locale.US, "%.3f", currentStockUnits / 1000.0) else currentStockUnits.toString()
                                     message = "Cannot add: Only $availStr available in stock!"
                                 } else if (priceDouble == null || priceDouble <= 0.0) {
                                     message = "Unit price must be > 0"
@@ -499,7 +490,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                                 }
                                             },
                                             modifier = Modifier.size(32.dp),
-                                            shape = androidx.compose.foundation.shape.CircleShape
+                                            shape = CircleShape
                                         ) {
                                             Text("-", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                                         }
@@ -510,13 +501,13 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                                 .clickable { editingLineQuantity = line },
                                             shape = MaterialTheme.shapes.extraSmall,
                                             color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f),
-                                            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+                                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
                                         ) {
-                                            val qtyLabel = if (line.unitType == "KG") {
-                                                String.format(Locale.US, "%.3f Kg", line.quantity / 1000.0)
-                                            } else if (line.unitType == "LITER") {
-                                                String.format(Locale.US, "%.3f L", line.quantity / 1000.0)
-                                            } else "${line.quantity} Pcs"
+                                            val qtyLabel = when (line.unitType) {
+                                                "KG" -> String.format(Locale.US, "%.3f Kg", line.quantity / 1000.0)
+                                                "LITER" -> String.format(Locale.US, "%.3f L", line.quantity / 1000.0)
+                                                else -> "${line.quantity} Pcs"
+                                            }
 
                                             Text(
                                                 text = qtyLabel,
@@ -532,7 +523,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                                 viewModel.updateQuantity(line.productId, line.quantity + step)
                                             },
                                             modifier = Modifier.size(32.dp),
-                                            shape = androidx.compose.foundation.shape.CircleShape
+                                            shape = CircleShape
                                         ) {
                                             Text("+", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                         }
@@ -622,9 +613,9 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         onDismiss = { showSplitCartDialog = false },
                         onSelectionChange = { productId, isChecked ->
                             if (isChecked) {
-                                splitCartSelectedItems = splitCartSelectedItems + productId
+                                splitCartSelectedItems += productId
                             } else {
-                                splitCartSelectedItems = splitCartSelectedItems - productId
+                                splitCartSelectedItems -= productId
                             }
                         },
                         onProceedToPay = {
@@ -634,12 +625,8 @@ fun BillingScreen(viewModel: BillingViewModel) {
                         }
                     )
 
-                    val finalPayableTotal = if (includePreviousDueInCheckout && customerCreditDue > 0L) {
-                        Money(activeBillTotal.minorUnits + customerCreditDue)
-                    } else {
-                        activeBillTotal
-                    }
-                    val settleDueAmount = if (includePreviousDueInCheckout && customerCreditDue > 0L) customerCreditDue else 0L
+                    val finalPayableTotal = activeBillTotal
+                    val settleDueAmount = 0L
 
                     PaymentCheckoutDialog(
                         showDialog = showPaymentDialog,
@@ -728,7 +715,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
         }
 
         var deletingSale by remember { mutableStateOf<SaleEntity?>(null) }
-        var activeMobileTab by remember { mutableStateOf(0) }
+        var activeMobileTab by remember { mutableIntStateOf(0) }
 
         if (deletingSale != null) {
             val s = deletingSale!!
@@ -840,11 +827,10 @@ fun BillingScreen(viewModel: BillingViewModel) {
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            val layoutMode = LocalLayoutMode.current
-            val isPortraitMobile = when (layoutMode) {
+            val isPortraitMobile = when (LocalLayoutMode.current) {
                 "Mobile" -> true
                 "Tablet" -> false
-                else -> maxWidth < 700.dp && maxHeight > maxWidth
+                else -> this.maxWidth < 700.dp && this.maxHeight > this.maxWidth
             }
             
             if (isPortraitMobile) {

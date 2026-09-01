@@ -6,10 +6,15 @@ data class PurchaseLine(
     val productId: String, 
     val quantity: Long, 
     val unitValue: Money,
+    val unitType: String = "PIECE",
     val supplierId: String? = null
 ) { 
     init { require(quantity > 0L) }
-    val total: Money get() = unitValue * quantity 
+    val total: Money get() = if (unitType == "KG" || unitType == "LITER") {
+        Money((unitValue.minorUnits * quantity) / 1000)
+    } else {
+        Money((unitValue.minorUnits * quantity))
+    }
 }
 
 data class PurchaseDraft(

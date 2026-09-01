@@ -14,6 +14,10 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     val isOnboardingCompleted: Flow<Boolean> = dataStore.data.map { it[onboardingCompleted] ?: false }
     suspend fun markOnboardingCompleted() { dataStore.edit { it[onboardingCompleted] = true } }
 
+    private val devicePrefixKey = stringPreferencesKey("device_prefix")
+    val devicePrefix: Flow<String?> = dataStore.data.map { it[devicePrefixKey] }
+    suspend fun saveDevicePrefix(prefix: String) { dataStore.edit { it[devicePrefixKey] = prefix } }
+
     private val printerTypeKey = stringPreferencesKey("printer_type")
     val printerType: Flow<String?> = dataStore.data.map { it[printerTypeKey] }
 

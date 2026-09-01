@@ -16,7 +16,8 @@ import kotlinx.coroutines.flow.first
 class PurchaseRepositoryImpl(
     private val purchaseDao: PurchaseDao,
     private val syncManager: SyncManager,
-    private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore
+    private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
+    private val appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences
 ) : PurchaseRepository {
     override suspend fun save(draft: PurchaseDraft): AppResult<String> {
         return try {
@@ -29,13 +30,23 @@ class PurchaseRepositoryImpl(
             val existingOrders = purchaseDao.getAllOrderNumbers(companyId)
             var maxSeq = 0
             for (o in existingOrders) {
-                val cleanDigits = o?.filter { it.isDigit() }?.toIntOrNull()
-                if (cleanDigits != null && cleanDigits in 1..99999 && cleanDigits > maxSeq) {
+                // Split by '-' and get the last part which is the number (e.g. XYZ-01)
+                val cleanDigits = o?.substringAfterLast("-")?.filter { it.isDigit() }?.toIntOrNull()
+                if (cleanDigits != null && cleanDigits > maxSeq) {
                     maxSeq = cleanDigits
                 }
             }
             val nextSeq = maxSeq + 1
-            val orderNumber = String.format(java.util.Locale.US, "%02d", nextSeq)
+
+            // Get or generate device prefix
+            var prefix = appPreferences.devicePrefix.first()
+            if (prefix == null) {
+                val chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                prefix = (1..3).map { chars.random() }.joinToString("")
+                appPreferences.saveDevicePrefix(prefix)
+            }
+            
+            val orderNumber = String.format(java.util.Locale.US, "%s-%04d", prefix, nextSeq)
 
             val purchase = PurchaseEntity(
                 id = purchaseId,
@@ -96,6 +107,9 @@ class PurchaseRepositoryImpl(
                 syncManager.enqueueSupplierCredit(supplierCredit, "INSERT")
             }
             syncManager.enqueuePurchase(purchase, items)
+            movements.forEach { movement ->
+                syncManager.enqueueStockMovement(movement)
+            }
             AppResult.Success(purchaseId)
         } catch (e: Exception) {
             AppResult.Failure(AppError.Unexpected(e.message ?: "Unexpected error"))

@@ -63,6 +63,9 @@ import kotlinx.coroutines.flow.Flow
     @Query("DELETE FROM stock_movements WHERE companyId = :companyId AND referenceId = :saleId")
     suspend fun deleteSaleStockMovements(companyId: String, saleId: String)
 
+    @Query("DELETE FROM stock_movements WHERE companyId = :companyId AND id = :movementId")
+    suspend fun deleteStockMovementById(companyId: String, movementId: String)
+
     @Query("DELETE FROM customer_credits WHERE companyId = :companyId AND reason LIKE :reasonPattern")
     suspend fun deleteCustomerCreditsByReason(companyId: String, reasonPattern: String)
 

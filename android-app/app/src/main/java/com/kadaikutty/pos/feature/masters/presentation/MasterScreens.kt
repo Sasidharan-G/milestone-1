@@ -15,6 +15,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.MenuBook
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -31,13 +33,10 @@ import java.util.Date
 import java.util.Locale
 import com.kadaikutty.pos.feature.masters.data.CustomerEntity
 import com.kadaikutty.pos.feature.masters.data.SupplierEntity
-import com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity
-import com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity
 import com.kadaikutty.pos.feature.masters.data.CategoryEntity
 import com.kadaikutty.pos.feature.masters.data.ProductEntity
 import com.kadaikutty.pos.feature.masters.data.ExpenseEntity
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.ExperimentalFoundationApi
 
 @Composable
@@ -46,7 +45,7 @@ fun MasterGridCard(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     isSelected: Boolean,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
 ) {
     val containerColor = if (isSelected) {
         MaterialTheme.colorScheme.primary
@@ -66,11 +65,11 @@ fun MasterGridCard(
             .border(
                 width = 1.dp,
                 color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(12.dp)
+                shape = RoundedCornerShape(12.dp),
             ),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 1.dp),
     ) {
         Row(
             modifier = Modifier
@@ -105,9 +104,11 @@ fun MasterScreens(
     productVm: ProductViewModel,
     customerVm: CustomerViewModel,
     supplierVm: SupplierViewModel,
-    expenseVm: ExpenseViewModel
+    expenseVm: ExpenseViewModel,
+    settingsVm: com.kadaikutty.pos.feature.settings.presentation.SettingsViewModel
 ) {
-    var activeTab by remember { mutableStateOf(0) }
+    var activeTab by remember { mutableIntStateOf(0) }
+    val userSession by settingsVm.activeSession.collectAsState()
 
     Scaffold(
         topBar = {
@@ -124,14 +125,17 @@ fun MasterScreens(
                 .padding(paddingValues)
         ) {
             // 📊 2x3 Matrix Grid Header for the 6 Master Data Attributes with Unique Semantic Icons
-            val masterTabs = listOf(
-                Triple(0, "Categories", Icons.Default.Category),
-                Triple(1, "Products", Icons.Default.Inventory2),
-                Triple(2, "Customers", Icons.Default.Groups),
-                Triple(3, "Suppliers", Icons.Default.LocalShipping),
-                Triple(4, "Expenses", Icons.Default.ReceiptLong),
-                Triple(5, "Ledger", Icons.Default.MenuBook)
-            )
+            val masterTabs = buildList {
+                add(Triple(0, "Categories", Icons.Default.Category))
+                add(Triple(1, "Products", Icons.Default.Inventory2))
+                add(Triple(2, "Customers", Icons.Default.Groups))
+                add(Triple(3, "Suppliers", Icons.Default.LocalShipping))
+                add(Triple(4, "Expenses", Icons.AutoMirrored.Filled.ReceiptLong))
+                add(Triple(5, "Ledger", Icons.AutoMirrored.Filled.MenuBook))
+                if (userSession?.permissions?.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE) == true) {
+                    add(Triple(6, "Staff", Icons.Default.ManageAccounts))
+                }
+            }
 
             Column(
                 modifier = Modifier
@@ -139,34 +143,24 @@ fun MasterScreens(
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                // Row 1: Categories, Products, Customers
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    masterTabs.take(3).forEach { (index, title, icon) ->
-                        MasterGridCard(
-                            title = title,
-                            icon = icon,
-                            isSelected = activeTab == index,
-                            onClick = { activeTab = index },
-                            modifier = Modifier.weight(1f)
-                        )
-                    }
-                }
-                // Row 2: Suppliers, Expenses, Credits & Ledger
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    masterTabs.drop(3).forEach { (index, title, icon) ->
-                        MasterGridCard(
-                            title = title,
-                            icon = icon,
-                            isSelected = activeTab == index,
-                            onClick = { activeTab = index },
-                            modifier = Modifier.weight(1f)
-                        )
+                val chunkedTabs = masterTabs.chunked(3)
+                chunkedTabs.forEach { rowTabs ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        rowTabs.forEach { (index, title, icon) ->
+                            MasterGridCard(
+                                title = title,
+                                icon = icon,
+                                isSelected = activeTab == index,
+                                onClick = { activeTab = index },
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+                        repeat(3 - rowTabs.size) {
+                            Spacer(modifier = Modifier.weight(1f))
+                        }
                     }
                 }
             }
@@ -179,6 +173,7 @@ fun MasterScreens(
                     3 -> SupplierTabScreen(supplierVm)
                     4 -> ExpenseTabScreen(expenseVm)
                     5 -> CreditLedgerTabScreen(customerVm, supplierVm)
+                    6 -> StaffTabScreen(settingsVm)
                 }
             }
         }
@@ -199,9 +194,8 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
     if (editingCategory != null) {
         CategoryEditDialog(
             category = editingCategory!!,
-            viewModel = viewModel,
-            onDismiss = { editingCategory = null }
-        )
+            viewModel = viewModel
+        ) { editingCategory = null }
     }
 
     if (deletingCategory != null) {
@@ -211,22 +205,23 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
             onConfirm = {
                 val cat = deletingCategory!!
                 deletingCategory = null
-                viewModel.deleteCategory(cat, onSuccess = {
-                    android.widget.Toast.makeText(context, "Category deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
-                }, onError = {
+                viewModel.deleteCategory(
+                    category = cat,
+                    onSuccess = {
+                        android.widget.Toast.makeText(context, "Category deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
+                    }
+                ) {
                     android.widget.Toast.makeText(context, "Cannot delete category: It might be referenced by products.", android.widget.Toast.LENGTH_LONG).show()
-                })
+                }
             },
-            onDismiss = { deletingCategory = null }
-        )
+        ) { deletingCategory = null }
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val layoutMode = LocalLayoutMode.current
-        val isMobile = when (layoutMode) {
+        val isMobile = when (LocalLayoutMode.current) {
             "Mobile" -> true
             "Tablet" -> false
-            else -> maxWidth < 600.dp
+            else -> this.maxWidth < 600.dp
         }
         
         if (isMobile) {
@@ -254,16 +249,19 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                             Button(
                                 onClick = {
                                     if (name.isNotBlank()) {
-                                        viewModel.addCategory(name, onSuccess = {
-                                            name = ""
-                                            message = "Category added successfully"
-                                        }, onError = {
+                                        viewModel.addCategory(
+                                            name = name,
+                                            onSuccess = {
+                                                name = ""
+                                                message = "Category added successfully"
+                                            }
+                                        ) {
                                             message = "Error: ${it.message}"
-                                        })
+                                        }
                                     }
                                 },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
                             ) {
                                 Icon(Icons.Default.Add, contentDescription = null)
                                 Spacer(Modifier.width(8.dp))
@@ -436,13 +434,13 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var purchasePrice by remember { mutableStateOf("") }
     var salePrice by remember { mutableStateOf("") }
     var unitType by remember { mutableStateOf("PIECE") }
-    var unitTypeExpanded by remember { mutableStateOf(false) }
+    var unitTypeExpanded by remember { mutableStateOf(value = false) }
     var barcode by remember { mutableStateOf("") }
     var minStockLevel by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
-    var expanded by remember { mutableStateOf(false) }
-    var showBarcodeScanner by remember { mutableStateOf(false) }
+    var expanded by remember { mutableStateOf(value = false) }
+    var showBarcodeScanner by remember { mutableStateOf(value = false) }
 
     if (showBarcodeScanner) {
         CameraBarcodeScannerDialog(
@@ -503,11 +501,10 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val layoutMode = LocalLayoutMode.current
-        val isMobile = when (layoutMode) {
+        val isMobile = when (LocalLayoutMode.current) {
             "Mobile" -> true
             "Tablet" -> false
-            else -> maxWidth < 600.dp
+            else -> this.maxWidth < 600.dp
         }
         
         if (isMobile) {
@@ -547,7 +544,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
                                 )
                                 ExposedDropdownMenu(
                                     expanded = expanded,
@@ -627,39 +624,27 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             ) {
                                 OutlinedTextField(
                                     readOnly = true,
-                                    value = if (unitType == "KG") "Kg / Grams" else if (unitType == "LITER") "Liters" else "Pieces",
+                                    value = unitType,
                                     onValueChange = {},
                                     label = { Text("Unit Type") },
                                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitTypeExpanded) },
                                     colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                                     shape = RoundedCornerShape(12.dp),
-                                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                                    modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
                                 )
                                 ExposedDropdownMenu(
                                     expanded = unitTypeExpanded,
                                     onDismissRequest = { unitTypeExpanded = false }
                                 ) {
-                                    DropdownMenuItem(
-                                        text = { Text("Pieces") },
-                                        onClick = {
-                                            unitType = "PIECE"
-                                            unitTypeExpanded = false
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Kg / Grams") },
-                                        onClick = {
-                                            unitType = "KG"
-                                            unitTypeExpanded = false
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Liters") },
-                                        onClick = {
-                                            unitType = "LITER"
-                                            unitTypeExpanded = false
-                                        }
-                                    )
+                                    listOf("PIECE", "KG", "LITER", "BOX", "PACK").forEach { type ->
+                                        DropdownMenuItem(
+                                            text = { Text(type) },
+                                            onClick = {
+                                                unitType = type
+                                                unitTypeExpanded = false
+                                            }
+                                        )
+                                    }
                                 }
                             }
 
@@ -794,7 +779,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
+                                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
                             )
                             ExposedDropdownMenu(
                                 expanded = expanded,
@@ -858,39 +843,27 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         ) {
                             OutlinedTextField(
                                 readOnly = true,
-                                value = if (unitType == "KG") "Kg / Grams" else if (unitType == "LITER") "Liters" else "Pieces",
+                                value = unitType,
                                 onValueChange = {},
                                 label = { Text("Unit Type") },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitTypeExpanded) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
                                 shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.menuAnchor().fillMaxWidth()
+                                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true).fillMaxWidth()
                             )
                             ExposedDropdownMenu(
                                 expanded = unitTypeExpanded,
                                 onDismissRequest = { unitTypeExpanded = false }
                             ) {
-                                DropdownMenuItem(
-                                    text = { Text("Pieces") },
-                                    onClick = {
-                                        unitType = "PIECE"
-                                        unitTypeExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Kg / Grams") },
-                                    onClick = {
-                                        unitType = "KG"
-                                        unitTypeExpanded = false
-                                    }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Liters") },
-                                    onClick = {
-                                        unitType = "LITER"
-                                        unitTypeExpanded = false
-                                    }
-                                )
+                                listOf("PIECE", "KG", "LITER", "BOX", "PACK").forEach { type ->
+                                    DropdownMenuItem(
+                                        text = { Text(type) },
+                                        onClick = {
+                                            unitType = type
+                                            unitTypeExpanded = false
+                                        }
+                                    )
+                                }
                             }
                         }
 
@@ -1051,11 +1024,10 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val layoutMode = LocalLayoutMode.current
-        val isMobile = when (layoutMode) {
+        val isMobile = when (LocalLayoutMode.current) {
             "Mobile" -> true
             "Tablet" -> false
-            else -> maxWidth < 600.dp
+            else -> this.maxWidth < 600.dp
         }
         
         if (isMobile) {
@@ -1171,15 +1143,15 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                     items(customers) { customer ->
                         val balanceFlow = remember(customer.id) { viewModel.getCustomerBalance(customer.id) }
                         val balance by balanceFlow.collectAsState(initial = 0L)
-                        val bal = balance ?: 0L
-                        val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
+                        val bal = balance
+                        val isOverLimit = (customer.creditLimitMinorUnits > 0L) && (bal > customer.creditLimitMinorUnits)
 
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                             shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         ) {
                             Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 10.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                                 Column(modifier = Modifier.weight(1f).clickable { selectedCustomerForCredit = customer }) {
@@ -1334,8 +1306,8 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             items(customers) { customer ->
                                 val balanceFlow = remember(customer.id) { viewModel.getCustomerBalance(customer.id) }
                                 val balance by balanceFlow.collectAsState(initial = 0L)
-                                val bal = balance ?: 0L
-                                val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
+                                val bal = balance
+                                val isOverLimit = (customer.creditLimitMinorUnits > 0L) && (bal > customer.creditLimitMinorUnits)
 
                                 Card(
                                     modifier = Modifier
@@ -1441,11 +1413,10 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val layoutMode = LocalLayoutMode.current
-        val isMobile = when (layoutMode) {
+        val isMobile = when (LocalLayoutMode.current) {
             "Mobile" -> true
             "Tablet" -> false
-            else -> maxWidth < 600.dp
+            else -> this.maxWidth < 600.dp
         }
         
         if (isMobile) {
@@ -1550,12 +1521,12 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                     items(suppliers) { supplier ->
                         val balanceFlow = remember(supplier.id) { viewModel.getSupplierBalance(supplier.id) }
                         val balance by balanceFlow.collectAsState(initial = 0L)
-                        val bal = balance ?: 0L
+                        val bal = balance
                         
                         val creditsFlow = remember(supplier.id) { viewModel.getSupplierCredits(supplier.id) }
-                        val credits by creditsFlow.collectAsState(initial = emptyList<SupplierCreditEntity>())
+                        val credits by creditsFlow.collectAsState(initial = emptyList())
                         
-                        val isOverdue = bal > 0L && credits.any { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L && it.dueDateEpochMs < System.currentTimeMillis() }
+                        val isOverdue = (bal > 0L) && credits.any { (it.amountMinorUnits > 0L) && (it.dueDateEpochMs > 0L) && (it.dueDateEpochMs < System.currentTimeMillis()) }
 
                         Card(
                             modifier = Modifier
@@ -1709,7 +1680,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                 val bal = balance ?: 0L
                                 
                                 val creditsFlow = remember(supplier.id) { viewModel.getSupplierCredits(supplier.id) }
-                                val credits by creditsFlow.collectAsState(initial = emptyList<SupplierCreditEntity>())
+                        val credits by creditsFlow.collectAsState(initial = emptyList())
                                 
                                 val isOverdue = bal > 0L && credits.any { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L && it.dueDateEpochMs < System.currentTimeMillis() }
 
@@ -1806,11 +1777,10 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
     }
 
     BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
-        val layoutMode = LocalLayoutMode.current
-        val isMobile = when (layoutMode) {
+        val isMobile = when (LocalLayoutMode.current) {
             "Mobile" -> true
             "Tablet" -> false
-            else -> maxWidth < 600.dp
+            else -> this.maxWidth < 600.dp
         }
         
         if (isMobile) {
@@ -2086,14 +2056,14 @@ fun CustomerCreditDetailDialog(
 ) {
     val ledger by viewModel.getCustomerLedger(customer.id).collectAsState(initial = emptyList())
     val bal = ledger.firstOrNull()?.runningBalance ?: 0L
-    val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
+    val isOverLimit = (customer.creditLimitMinorUnits > 0L) && (bal > customer.creditLimitMinorUnits)
 
     var amountText by remember { mutableStateOf("") }
     var reasonText by remember { mutableStateOf("") }
     var limitText by remember { mutableStateOf("") }
     
-    var showAddCredit by remember { mutableStateOf(false) }
-    var showReceivePayment by remember { mutableStateOf(false) }
+    var showAddCredit by remember { mutableStateOf(value = false) }
+    var showReceivePayment by remember { mutableStateOf(value = false) }
     var showSetLimit by remember { mutableStateOf(false) }
     
     var auditReportText by remember { mutableStateOf<String?>(null) }
@@ -2382,15 +2352,15 @@ fun SupplierCreditDetailDialog(
     val bal = ledger.firstOrNull()?.runningBalance ?: 0L
     // Note: Due dates are stored in Purchase tables if applicable, but for overdue we check credits list.
     // For simplicity, overdue check remains based on raw credits if we still want it, but let's fetch credits just for this.
-    val credits by viewModel.getSupplierCredits(supplier.id).collectAsState(initial = emptyList<com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity>())
+    val credits by viewModel.getSupplierCredits(supplier.id).collectAsState(initial = emptyList())
     val isOverdue = bal > 0L && credits.any { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L && it.dueDateEpochMs < System.currentTimeMillis() }
 
     var amountText by remember { mutableStateOf("") }
     var termsText by remember { mutableStateOf("Net 30") }
     var repaymentDaysText by remember { mutableStateOf("30") }
     
-    var showAddCredit by remember { mutableStateOf(false) }
-    var showMakePayment by remember { mutableStateOf(false) }
+    var showAddCredit by remember { mutableStateOf(value = false) }
+    var showMakePayment by remember { mutableStateOf(value = false) }
     
     var auditReportText by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf("") }
@@ -2649,9 +2619,9 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
     val totalRec by totalRecFlow.collectAsState(initial = 0L)
     val totalPay by totalPayFlow.collectAsState(initial = 0L)
     
-    var viewMode by remember { mutableStateOf(0) }
+    var viewMode by remember { mutableIntStateOf(0) }
     var search by remember { mutableStateOf("") }
-    var statusFilter by remember { mutableStateOf(0) }
+    var statusFilter by remember { mutableIntStateOf(0) }
     
     var selectedCustomerForCredit by remember { mutableStateOf<CustomerEntity?>(null) }
     var selectedSupplierForCredit by remember { mutableStateOf<SupplierEntity?>(null) }
@@ -2767,8 +2737,8 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
             items(filteredCustomers) { customer ->
                 val balanceFlow = remember(customer.id) { customerVm.getCustomerBalance(customer.id) }
                 val balance by balanceFlow.collectAsState(initial = 0L)
-                val bal = balance ?: 0L
-                val isOverLimit = customer.creditLimitMinorUnits > 0L && bal > customer.creditLimitMinorUnits
+                val bal = balance
+                val isOverLimit = (customer.creditLimitMinorUnits > 0L) && (bal > customer.creditLimitMinorUnits)
                 
                 val passesFilter = when(statusFilter) {
                     1 -> bal != 0L
@@ -2823,11 +2793,11 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
             items(filteredSuppliers) { supplier ->
                 val balanceFlow = remember(supplier.id) { supplierVm.getSupplierBalance(supplier.id) }
                 val balance by balanceFlow.collectAsState(initial = 0L)
-                val bal = balance ?: 0L
+                val bal = balance
                 
                 val creditsFlow = remember(supplier.id) { supplierVm.getSupplierCredits(supplier.id) }
-                val credits by creditsFlow.collectAsState(initial = emptyList<SupplierCreditEntity>())
-                val isOverdue = bal > 0L && credits.any { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L && it.dueDateEpochMs < System.currentTimeMillis() }
+                val credits by creditsFlow.collectAsState(initial = emptyList())
+                val isOverdue = (bal > 0L) && credits.any { (it.amountMinorUnits > 0L) && (it.dueDateEpochMs > 0L) && (it.dueDateEpochMs < System.currentTimeMillis()) }
                 
                 val passesFilter = when(statusFilter) {
                     1 -> bal != 0L
@@ -2847,7 +2817,7 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
                         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(supplier.name, fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                                val nextDue = credits.filter { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L }.minByOrNull { it.dueDateEpochMs }
+                                val nextDue = credits.asSequence().filter { it.amountMinorUnits > 0L && it.dueDateEpochMs > 0L }.minByOrNull { it.dueDateEpochMs }
                                 if (nextDue != null && bal > 0L) {
                                     val df = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
                                     Text("Next Repayment Due: ${df.format(Date(nextDue.dueDateEpochMs))}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f))
@@ -2973,8 +2943,8 @@ fun ProductEditDialog(
 ) {
     var name by remember { mutableStateOf(product.name) }
     var selectedCategoryId by remember { mutableStateOf(product.categoryId) }
-    var purchasePrice by remember { mutableStateOf(Money(product.purchasePriceMinorUnits).toString()) }
-    var salePrice by remember { mutableStateOf(Money(product.salePriceMinorUnits).toString()) }
+    var purchasePrice by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", product.purchasePriceMinorUnits / 100.0)) }
+    var salePrice by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", product.salePriceMinorUnits / 100.0)) }
     var unitType by remember { mutableStateOf(product.unitType) }
     var barcode by remember { mutableStateOf(product.barcode ?: "") }
     var minStockLevel by remember { mutableStateOf(product.minStockLevel.toString()) }
@@ -3024,7 +2994,7 @@ fun ProductEditDialog(
                         readOnly = true,
                         label = { Text("Category") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
                         shape = RoundedCornerShape(12.dp)
                     )
                     ExposedDropdownMenu(
@@ -3093,14 +3063,14 @@ fun ProductEditDialog(
                         readOnly = true,
                         label = { Text("Unit Type") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(),
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
                         shape = RoundedCornerShape(12.dp)
                     )
                     ExposedDropdownMenu(
                         expanded = unitExpanded,
                         onDismissRequest = { unitExpanded = false }
                     ) {
-                        listOf("PIECE", "KG").forEach { type ->
+                        listOf("PIECE", "KG", "LITER", "BOX", "PACK").forEach { type ->
                             DropdownMenuItem(
                                 text = { Text(type) },
                                 onClick = {
@@ -3320,7 +3290,7 @@ fun ExpenseEditDialog(
     viewModel: ExpenseViewModel,
     onDismiss: () -> Unit
 ) {
-    var amount by remember { mutableStateOf(Money(expense.amountMinorUnits).toString()) }
+    var amount by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", expense.amountMinorUnits / 100.0)) }
     var description by remember { mutableStateOf(expense.description) }
     var error by remember { mutableStateOf("") }
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -3506,5 +3476,162 @@ fun StockAdjustmentDialog(
             }
         }
     )
+}
+
+
+@Composable
+fun StaffTabScreen(viewModel: com.kadaikutty.pos.feature.settings.presentation.SettingsViewModel) {
+    val users by viewModel.usersList.collectAsState()
+    val session by viewModel.activeSession.collectAsState()
+    
+    var showAddDialog by remember { mutableStateOf(false) }
+    var showEditDialog by remember { mutableStateOf(false) }
+    var selectedUser by remember { mutableStateOf<com.kadaikutty.pos.core.auth.UserEntity?>(null) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    
+    if (session?.permissions?.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE) != true) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text("Access Denied. You do not have permission to manage staff.", color = MaterialTheme.colorScheme.error)
+        }
+        return
+    }
+    
+    if (showAddDialog) {
+        com.kadaikutty.pos.feature.settings.presentation.AddUserDialog(
+            onDismiss = { showAddDialog = false },
+            onCreate = { phone, name, pass, role, perms ->
+                viewModel.createUser(phone, name, pass, role, perms) { success, msg ->
+                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                    if (success) showAddDialog = false
+                }
+            }
+        )
+    }
+
+    if (showEditDialog && selectedUser != null) {
+        com.kadaikutty.pos.feature.settings.presentation.EditUserDialog(
+            user = selectedUser!!,
+            onDismiss = { showEditDialog = false },
+            onSave = { name, role, pass, perms ->
+                viewModel.updateUserCredentials(selectedUser!!.id, name, role, pass, perms) { success, msg ->
+                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                    if (success) showEditDialog = false
+                }
+            },
+            onDelete = {
+                viewModel.deleteUser(selectedUser!!.id) { success, msg ->
+                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                    if (success) showEditDialog = false
+                }
+            }
+        )
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        if (users.isEmpty()) {
+            Column(
+                modifier = Modifier.fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(60.dp))
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("No staff users created yet", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("Click the + button to add staff and cashiers.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        } else {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 80.dp, top = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(users) { user ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .border(
+                                width = 1.dp,
+                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .clickable {
+                                selectedUser = user
+                                showEditDialog = true
+                            },
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(14.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                            ) {
+                                Surface(
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = when (user.role.uppercase()) {
+                                        "STORE_MANAGER" -> Color(0xFFF5F3FF)
+                                        "ADMIN" -> Color(0xFFFEF3C7)
+                                        else -> Color(0xFFEFF6FF)
+                                    },
+                                    modifier = Modifier.size(44.dp)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Default.Person,
+                                            contentDescription = null,
+                                            tint = when (user.role.uppercase()) {
+                                                "STORE_MANAGER" -> Color(0xFF7C3AED)
+                                                "ADMIN" -> Color(0xFFD97706)
+                                                else -> Color(0xFF2563EB)
+                                            },
+                                            modifier = Modifier.size(24.dp)
+                                        )
+                                    }
+                                }
+                                Column {
+                                    Text(
+                                        text = user.displayName.ifBlank { "User ${user.username}" },
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 15.sp,
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    Text(
+                                        text = "+91 ${user.username}",
+                                        fontSize = 12.sp,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                            Surface(
+                                shape = RoundedCornerShape(20.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                            ) {
+                                Text(
+                                    text = user.role.replace("_", " "),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        
+        FloatingActionButton(
+            onClick = { showAddDialog = true },
+            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
+            containerColor = MaterialTheme.colorScheme.primary
+        ) {
+            Icon(Icons.Default.Add, contentDescription = "Add Staff", tint = MaterialTheme.colorScheme.onPrimary)
+        }
+    }
 }
 

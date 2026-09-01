@@ -42,7 +42,7 @@ android {
 
     splits {
         abi {
-            isEnable = true
+            isEnable = false
             reset()
             include("armeabi-v7a", "arm64-v8a", "x86", "x86_64")
             isUniversalApk = true
@@ -109,6 +109,8 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.play.services.auth)
     debugImplementation(libs.okhttp3.logging.interceptor)
+    implementation(libs.retrofit.core)
+    implementation(libs.retrofit.kotlinx.serialization)
     implementation(libs.sentry.android)
     testImplementation(libs.junit)
     testImplementation(libs.mockito.core)
@@ -120,10 +122,10 @@ dependencies {
     implementation(libs.firebase.auth)
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.storage)
+    implementation("com.google.firebase:firebase-analytics")
     implementation(libs.kotlinx.serialization.json)
 
-    // Razorpay
-    implementation(libs.razorpay.checkout)
+
 
     // Coil
     implementation(libs.coil.compose)
@@ -142,6 +144,11 @@ dependencies {
     implementation(libs.mlkit.barcode.scanning)
     implementation(libs.guava)
     implementation(libs.zxing.android.embedded)
+
+    // WebSockets (Phase 2 Sync)
+    implementation("io.socket:socket.io-client:2.1.1") {
+        exclude(group = "org.json", module = "json")
+    }
 
     // Android Test dependencies
     androidTestImplementation(libs.androidx.test.ext.junit)

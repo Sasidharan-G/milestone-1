@@ -42,6 +42,7 @@ data class ParsedInvoiceItem(
     val unitPrice: Double
 )
 
+@OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 @HiltViewModel
 class PurchaseViewModel @Inject constructor(
     private val database: BillingDatabase,
@@ -103,7 +104,7 @@ class PurchaseViewModel @Inject constructor(
         _selectedSupplierId.value = supplierId
     }
 
-    fun addLine(productId: String, quantity: Long, unitCost: Money, supplierId: String? = null) {
+    fun addLine(productId: String, quantity: Long, unitCost: Money, unitType: String = "PIECE", supplierId: String? = null) {
         val targetSupplierId = supplierId ?: _selectedSupplierId.value
         val current = _lines.value.toMutableList()
         val index = current.indexOfFirst { it.productId == productId && it.supplierId == targetSupplierId }
@@ -111,7 +112,7 @@ class PurchaseViewModel @Inject constructor(
             val line = current[index]
             current[index] = line.copy(quantity = line.quantity + quantity)
         } else {
-            current.add(PurchaseLine(productId, quantity, unitCost, targetSupplierId))
+            current.add(PurchaseLine(productId, quantity, unitCost, unitType, targetSupplierId))
         }
         _lines.value = current
     }
