@@ -305,3 +305,32 @@ val migration19To20 = object : Migration(19, 20) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_companyId_name` ON `products` (`companyId`, `name`)")
     }
 }
+
+val migration20To21 = object : Migration(20, 21) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        try {
+            db.execSQL("ALTER TABLE `draft_cart_items` ADD COLUMN `parkId` TEXT NOT NULL DEFAULT 'active'")
+            db.execSQL("ALTER TABLE `draft_cart_items` ADD COLUMN `parkLabel` TEXT NOT NULL DEFAULT ''")
+            db.execSQL("ALTER TABLE `draft_cart_items` ADD COLUMN `parkedAtEpochMs` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_draft_cart_items_parkId` ON `draft_cart_items` (`parkId`)")
+        } catch (_: Exception) {}
+
+        db.execSQL("""
+            CREATE TABLE IF NOT EXISTS `audit_logs` (
+                `id` TEXT NOT NULL,
+                `companyId` TEXT NOT NULL,
+                `action` TEXT NOT NULL,
+                `billNumber` TEXT NOT NULL,
+                `amountMinorUnits` INTEGER NOT NULL,
+                `reason` TEXT NOT NULL,
+                `performedByUserId` TEXT NOT NULL,
+                `performedByUserName` TEXT NOT NULL,
+                `timestampEpochMs` INTEGER NOT NULL,
+                PRIMARY KEY(`id`)
+            )
+        """.trimIndent())
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_audit_logs_companyId` ON `audit_logs` (`companyId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_audit_logs_timestampEpochMs` ON `audit_logs` (`timestampEpochMs`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_audit_logs_action` ON `audit_logs` (`action`)")
+    }
+}

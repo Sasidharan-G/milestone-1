@@ -247,7 +247,7 @@ fun SearchableCustomerSelectorDialog(
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(filteredCustomers) { customer ->
+                        items(filteredCustomers, key = { it.id }) { customer ->
                             Card(
                                 onClick = {
                                     onCustomerSelected(customer)

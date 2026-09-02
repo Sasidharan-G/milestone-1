@@ -17,6 +17,7 @@ import android.Manifest
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
@@ -28,19 +29,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Build
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.AccountBox
-import androidx.compose.material.icons.filled.AccountCircle
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
@@ -88,6 +78,7 @@ fun SettingsScreen(
     val isRestoreRunning by viewModel.isRestoreRunning.collectAsState()
     val requireRestart by viewModel.requireRestart.collectAsState()
     val biometricAuthPending by viewModel.biometricAuthPending.collectAsState()
+    val activeSession by viewModel.activeSession.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var selectedType by remember { mutableStateOf("Bluetooth") }
@@ -459,6 +450,14 @@ fun SettingsScreen(
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Dark Mode")
                             }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = currentThemeMode == "Amoled", onClick = {
+                                    currentThemeMode = "Amoled"
+                                    viewModel.saveThemeMode("Amoled")
+                                })
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Text("AMOLED High-Contrast Dark (Pure Black #000000)")
+                            }
                         }
                     }
                 }
@@ -641,6 +640,261 @@ fun SettingsScreen(
                 }
             }
 
+            val thermalReceiptPreviewCard: @Composable (Modifier) -> Unit = { modifier ->
+                val currentShopName by viewModel.shopName.collectAsState()
+                val currentGstNumber by viewModel.gstNumber.collectAsState()
+                val currentShopAddress by viewModel.shopAddress.collectAsState()
+                val currentShopPhone by viewModel.shopPhone.collectAsState()
+                val currentShopLogoPath by viewModel.shopLogoPath.collectAsState()
+                val paperWidth by viewModel.printerPaperWidth.collectAsState()
+                var previewPaperSize by remember { mutableStateOf(paperWidth) }
+
+                val logoBitmap = remember(currentShopLogoPath) {
+                    decodeSampledBitmapFromFile(currentShopLogoPath, 512, 512)
+                }
+
+                Card(
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text(
+                                    "🧾 Live Thermal Receipt Preview",
+                                    fontSize = 18.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    "Real-time mockup of printed customer receipt",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.outline
+                                )
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                FilterChip(
+                                    selected = previewPaperSize == 32,
+                                    onClick = { previewPaperSize = 32 },
+                                    label = { Text("58mm", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                )
+                                FilterChip(
+                                    selected = previewPaperSize == 48,
+                                    onClick = { previewPaperSize = 48 },
+                                    label = { Text("80mm", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                )
+                            }
+                        }
+
+                        // The Realistic Receipt Mockup Container
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFFF3F4F6), RoundedCornerShape(12.dp))
+                                .padding(vertical = 14.dp, horizontal = 8.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Surface(
+                                modifier = Modifier
+                                    .width(if (previewPaperSize == 32) 280.dp else 340.dp)
+                                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(8.dp)),
+                                shape = RoundedCornerShape(8.dp),
+                                color = Color.White,
+                                shadowElevation = 4.dp
+                            ) {
+                                Column(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    // Shop Logo
+                                    if (logoBitmap != null) {
+                                        Image(
+                                            bitmap = logoBitmap.asImageBitmap(),
+                                            contentDescription = "Receipt Logo",
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .padding(bottom = 4.dp)
+                                        )
+                                    }
+
+                                    // Store Name
+                                    Text(
+                                        text = currentShopName.ifBlank { "KADAIKUTTY STORE" }.uppercase(),
+                                        fontWeight = FontWeight.Black,
+                                        fontSize = 15.sp,
+                                        color = Color.Black,
+                                        textAlign = TextAlign.Center,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+
+                                    // Address & Phone
+                                    if (currentShopAddress.isNotBlank()) {
+                                        Text(
+                                            text = currentShopAddress,
+                                            fontSize = 11.sp,
+                                            color = Color.DarkGray,
+                                            textAlign = TextAlign.Center,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                        )
+                                    }
+                                    if (currentShopPhone.isNotBlank()) {
+                                        Text(
+                                            text = "Ph: $currentShopPhone",
+                                            fontSize = 11.sp,
+                                            color = Color.DarkGray,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                        )
+                                    }
+                                    if (currentGstNumber.isNotBlank()) {
+                                        Text(
+                                            text = "GSTIN: $currentGstNumber",
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = Color.Black,
+                                            fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                        )
+                                    }
+
+                                    Text(
+                                        text = if (previewPaperSize == 32) "--------------------------------" else "------------------------------------------------",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+
+                                    // Meta details
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Bill: #INV-1024", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                        Text("02/09/26 02:30 PM", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Cashier: Staff", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                        Text("Customer: Cash", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                    }
+
+                                    Text(
+                                        text = if (previewPaperSize == 32) "--------------------------------" else "------------------------------------------------",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+
+                                    // Items Header
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("ITEM", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(1.5f))
+                                        Text("QTY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
+                                        Text("RATE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                        Text("TOTAL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                    }
+
+                                    // Sample Item 1
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Aashirvaad Atta 5kg", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(1.5f), maxLines = 1)
+                                        Text("1", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
+                                        Text("265.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                        Text("265.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                    }
+
+                                    // Sample Item 2
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("Sunflower Oil 1L", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(1.5f), maxLines = 1)
+                                        Text("2", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
+                                        Text("135.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                        Text("270.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                    }
+
+                                    Text(
+                                        text = if (previewPaperSize == 32) "--------------------------------" else "------------------------------------------------",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+
+                                    // Totals
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("TOTAL ITEMS: 2 (Qty: 3)", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                        Text("₹535.00", fontSize = 12.sp, fontWeight = FontWeight.Black, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                    }
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween
+                                    ) {
+                                        Text("PAYMENT MODE", fontSize = 10.sp, color = Color.DarkGray, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                        Text("UPI / GPAY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
+                                    }
+
+                                    Text(
+                                        text = if (previewPaperSize == 32) "--------------------------------" else "------------------------------------------------",
+                                        fontSize = 10.sp,
+                                        color = Color.Gray,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+
+                                    // Tamil & English Footer
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = "நன்றி மீண்டும் வருக!",
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp,
+                                        color = Color.Black,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    Text(
+                                        text = "Thank you! Visit again",
+                                        fontSize = 10.sp,
+                                        color = Color.DarkGray,
+                                        textAlign = TextAlign.Center,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+                                    Text(
+                                        text = "*** KadaiKutty POS ***",
+                                        fontSize = 9.sp,
+                                        color = Color.Gray,
+                                        textAlign = TextAlign.Center,
+                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             val userManagementCard: @Composable (Modifier) -> Unit = { modifier ->
                 val users by viewModel.usersList.collectAsState()
 
@@ -677,10 +931,14 @@ fun SettingsScreen(
                             }
                         }
 
+                        val staffMembers = remember(users, activeSession) {
+                            users.filter { it.role.uppercase() != "ADMIN" && it.id != activeSession?.userId }
+                        }
+
                         Column(
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            if (users.isEmpty()) {
+                            if (staffMembers.isEmpty()) {
                                 Surface(
                                     color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
                                     shape = RoundedCornerShape(12.dp),
@@ -697,7 +955,7 @@ fun SettingsScreen(
                                     }
                                 }
                             } else {
-                                users.forEach { user ->
+                                staffMembers.forEach { user ->
                                     Card(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -775,6 +1033,35 @@ fun SettingsScreen(
                                                                 },
                                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                             )
+                                                        }
+
+                                                        if (user.role.uppercase() != "ADMIN") {
+                                                            val isPending = user.toPermissionsSet().contains(com.kadaikutty.pos.core.security.Permission.PENDING_MASTER_APPROVAL)
+                                                            val isInactive = user.toPermissionsSet().contains(com.kadaikutty.pos.core.security.Permission.ACCOUNT_INACTIVE)
+                                                            Surface(
+                                                                shape = RoundedCornerShape(4.dp),
+                                                                color = when {
+                                                                    isPending -> Color(0xFFFFFBEB)
+                                                                    isInactive -> Color(0xFFFEE2E2)
+                                                                    else -> Color(0xFFDCFCE7)
+                                                                }
+                                                            ) {
+                                                                Text(
+                                                                    text = when {
+                                                                        isPending -> "⏳ Pending Master"
+                                                                        isInactive -> "🔴 Deactivated"
+                                                                        else -> "✅ Active"
+                                                                    },
+                                                                    fontSize = 9.sp,
+                                                                    fontWeight = FontWeight.Bold,
+                                                                    color = when {
+                                                                        isPending -> Color(0xFFD97706)
+                                                                        isInactive -> Color(0xFFDC2626)
+                                                                        else -> Color(0xFF15803D)
+                                                                    },
+                                                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                                )
+                                                            }
                                                         }
                                                     }
                                                     Spacer(modifier = Modifier.height(2.dp))
@@ -1138,17 +1425,8 @@ fun SettingsScreen(
                     inputShopEmail.isEmpty() || android.util.Patterns.EMAIL_ADDRESS.matcher(inputShopEmail).matches()
                 }
 
-                val logoFile = File(inputShopLogoPath)
                 val bitmap = remember(inputShopLogoPath) {
-                    if (logoFile.exists()) {
-                        try {
-                            BitmapFactory.decodeFile(logoFile.absolutePath)
-                        } catch (e: Exception) {
-                            null
-                        }
-                    } else {
-                        null
-                    }
+                    decodeSampledBitmapFromFile(inputShopLogoPath, 512, 512)
                 }
 
                 Card(
@@ -1468,9 +1746,13 @@ fun SettingsScreen(
                     when (activeCategory) {
                         SettingsCategory.SHOP_PROFILE -> {
                             shopDetailsCard(Modifier.fillMaxWidth())
+                            Spacer(modifier = Modifier.height(16.dp))
+                            thermalReceiptPreviewCard(Modifier.fillMaxWidth())
                         }
                         SettingsCategory.PRINTER -> {
                             printerPreferencesCard(Modifier.fillMaxWidth())
+                            Spacer(modifier = Modifier.height(16.dp))
+                            thermalReceiptPreviewCard(Modifier.fillMaxWidth())
                             Spacer(modifier = Modifier.height(16.dp))
                             printerDiagnosticsCard(Modifier.fillMaxWidth())
                         }
@@ -1620,7 +1902,11 @@ fun AddUserDialog(
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(onClick = { showPassword = !showPassword }) {
-                            Text(if (showPassword) "HIDE" else "SHOW", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Icon(
+                                imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (showPassword) "Hide password" else "Show password",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                         }
                     },
                     visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
@@ -1879,7 +2165,11 @@ fun EditUserDialog(
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(onClick = { showPassword = !showPassword }) {
-                            Text(if (showPassword) "HIDE" else "SHOW", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Icon(
+                                imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (showPassword) "Hide password" else "Show password",
+                                tint = MaterialTheme.colorScheme.primary
+                            )
                         }
                     },
                     visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
@@ -1988,4 +2278,29 @@ fun EditUserDialog(
             }
         }
     )
+}
+
+fun decodeSampledBitmapFromFile(path: String, reqWidth: Int = 512, reqHeight: Int = 512): android.graphics.Bitmap? {
+    if (path.isBlank()) return null
+    val file = File(path)
+    if (!file.exists()) return null
+    return try {
+        val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(file.absolutePath, options)
+        var inSampleSize = 1
+        if (options.outHeight > reqHeight || options.outWidth > reqWidth) {
+            val halfHeight = options.outHeight / 2
+            val halfWidth = options.outWidth / 2
+            while ((halfHeight / inSampleSize) >= reqHeight && (halfWidth / inSampleSize) >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        val decodeOptions = BitmapFactory.Options().apply {
+            this.inSampleSize = inSampleSize
+            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+        }
+        BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
+    } catch (_: Exception) {
+        null
+    }
 }

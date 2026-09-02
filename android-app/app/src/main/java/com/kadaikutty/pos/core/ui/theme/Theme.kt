@@ -60,12 +60,43 @@ private val DarkColors = darkColorScheme(
     outlineVariant = Color(0xFF475569)
 )
 
+private val AmoledColors = darkColorScheme(
+    primary = Color(0xFF38BDF8), // Vivid Cyan
+    onPrimary = Color(0xFF000000),
+    primaryContainer = Color(0xFF0369A1),
+    onPrimaryContainer = Color(0xFFE0F2FE),
+    secondary = Color(0xFF34D399), // Neon Emerald
+    onSecondary = Color(0xFF000000),
+    secondaryContainer = Color(0xFF065F46),
+    onSecondaryContainer = Color(0xFFA7F3D0),
+    tertiary = Color(0xFFFBBF24), // Vivid Amber
+    onTertiary = Color(0xFF000000),
+    tertiaryContainer = Color(0xFF78350F),
+    onTertiaryContainer = Color(0xFFFEF3C7),
+    error = Color(0xFFF87171),
+    errorContainer = Color(0xFF7F1D1D),
+    onErrorContainer = Color(0xFFFECACA),
+    background = Color(0xFF000000), // Pure OLED Black Canvas
+    onBackground = Color(0xFFFFFFFF),
+    surface = Color(0xFF000000),
+    onSurface = Color(0xFFFFFFFF),
+    surfaceVariant = Color(0xFF18181B),
+    onSurfaceVariant = Color(0xFFE4E4E7),
+    outline = Color(0xFF52525B),
+    outlineVariant = Color(0xFF3F3F46)
+)
+
 @Composable
 fun BillingTheme(
+    themeMode: String = "System",
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit
 ) {
-    val colors = if (darkTheme) DarkColors else LightColors
+    val colors = when {
+        themeMode == "Amoled" -> AmoledColors
+        themeMode == "Dark" || (themeMode == "System" && darkTheme) -> DarkColors
+        else -> LightColors
+    }
     MaterialTheme(
         colorScheme = colors,
         shapes = androidx.compose.material3.Shapes(

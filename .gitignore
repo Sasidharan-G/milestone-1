@@ -25,3 +25,4 @@ __pycache__/
 *.db-shm
 logcat.txt
 *_dump.xml
+*serviceAccountKey*.json

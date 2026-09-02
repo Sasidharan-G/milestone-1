@@ -23,17 +23,14 @@ class SaleRepositoryImpl(
             val saleId = newRecordId()
             val epochMs = System.currentTimeMillis()
             
-            // Generate clean sequential bill numbers starting from 01, 02, 03...
-            val existingBills = saleDao.getAllBillNumbers(companyId)
-            var maxSeq = 0
-            for (b in existingBills) {
-                // Split by '-' and get the last part which is the number (e.g. XYZ-01)
-                val cleanDigits = b.substringAfterLast("-").filter { it.isDigit() }.toIntOrNull()
-                if (cleanDigits != null && cleanDigits > maxSeq) {
-                    maxSeq = cleanDigits
-                }
+            // Generate clean sequential bill numbers starting from 0001
+            val latestBill = saleDao.getLatestBillNumber(companyId)
+            val nextSeq = if (latestBill != null) {
+                val cleanDigits = latestBill.substringAfterLast("-").filter { it.isDigit() }.toIntOrNull() ?: 0
+                cleanDigits + 1
+            } else {
+                1
             }
-            val nextSeq = maxSeq + 1
             
             // Get or generate device prefix
             var prefix = appPreferences.devicePrefix.first()

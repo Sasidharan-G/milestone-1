@@ -19,6 +19,10 @@ import com.kadaikutty.pos.feature.billing.domain.SaleRepository
 import com.kadaikutty.pos.core.database.BillingDatabase
 import com.kadaikutty.pos.core.auth.SessionStore
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
 import androidx.room.InvalidationTracker
 import com.kadaikutty.pos.core.sharing.ShareManager
 
@@ -66,6 +70,14 @@ class ReportsViewModel @Inject constructor(
 
     private val _expensesSum = MutableStateFlow(0L)
     val expensesSum: StateFlow<Long> = _expensesSum.asStateFlow()
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val auditLogs: StateFlow<List<com.kadaikutty.pos.feature.billing.data.AuditLogEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            if (companyId.isBlank()) flowOf(emptyList())
+            else database.auditLogDao().getAuditLogs(companyId)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val tableObserver = object : InvalidationTracker.Observer(
         "sales", "sale_items", "purchases", "purchase_items", "expenses", 
@@ -189,10 +201,29 @@ class ReportsViewModel @Inject constructor(
         )
     }
 
-    fun deleteSale(saleId: String, billNumber: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+    fun deleteSale(saleId: String, billNumber: String, reason: String = "Cancelled in Reports", onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
+            val session = sessionStore.activeSession.first()
+            val sale = if (session != null) database.saleDao().getSaleById(session.companyId, saleId) else null
+            val amount = sale?.totalMinorUnits ?: 0L
+
             when (val result = saleRepository.deleteSale(saleId, billNumber)) {
                 is com.kadaikutty.pos.core.common.AppResult.Success -> {
+                    if (session != null) {
+                        database.auditLogDao().insertAuditLog(
+                            com.kadaikutty.pos.feature.billing.data.AuditLogEntity(
+                                id = com.kadaikutty.pos.core.common.newRecordId(),
+                                companyId = session.companyId,
+                                action = "BILL_CANCEL",
+                                billNumber = billNumber,
+                                amountMinorUnits = amount,
+                                reason = reason.ifBlank { "Bill deleted from Reports" },
+                                performedByUserId = session.userId,
+                                performedByUserName = session.displayName,
+                                timestampEpochMs = System.currentTimeMillis()
+                            )
+                        )
+                    }
                     loadReport()
                     onSuccess()
                 }

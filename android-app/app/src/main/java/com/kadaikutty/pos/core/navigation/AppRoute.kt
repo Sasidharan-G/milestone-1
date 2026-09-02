@@ -9,7 +9,6 @@ sealed class AppRoute(val path: String) {
     data object Purchases : AppRoute("purchases")
     data object Reports : AppRoute("reports")
     data object Settings : AppRoute("settings")
-    data object SetNewPassword : AppRoute("set_new_password")
     data object MasterControl : AppRoute("master_control")
     data object SyncDiagnostics : AppRoute("sync_diagnostics")
 }

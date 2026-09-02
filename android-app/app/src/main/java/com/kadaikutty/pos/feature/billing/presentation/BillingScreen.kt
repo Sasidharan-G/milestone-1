@@ -23,6 +23,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.sp
 import com.kadaikutty.pos.feature.billing.domain.SaleLine
 import com.kadaikutty.pos.core.common.Money
 import com.kadaikutty.pos.feature.billing.data.SaleEntity
@@ -39,6 +41,7 @@ import com.kadaikutty.pos.feature.billing.presentation.components.PaymentCheckou
 import com.kadaikutty.pos.feature.billing.presentation.components.SplitCartDialog
 import com.kadaikutty.pos.feature.billing.presentation.components.SearchableProductSelectorDialog
 import com.kadaikutty.pos.feature.billing.presentation.components.SearchableCustomerSelectorDialog
+import com.kadaikutty.pos.feature.billing.presentation.components.HeldCartsDialog
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,6 +76,9 @@ fun BillingScreen(viewModel: BillingViewModel) {
     var showAddCustomerDialog by remember { mutableStateOf(value = false) }
     var showProductSearchDialog by remember { mutableStateOf(value = false) }
     var showCustomerSearchDialog by remember { mutableStateOf(value = false) }
+    var showHeldCartsDialog by remember { mutableStateOf(value = false) }
+    val heldCarts by viewModel.heldCartsSummary.collectAsState()
+    val heldCartsCount by viewModel.heldCartsCount.collectAsState()
 
     SearchableCustomerSelectorDialog(
         showDialog = showCustomerSearchDialog,
@@ -405,14 +411,8 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                 
                                 if (selectedProductId.isBlank() || selectedProduct == null) {
                                     message = "Please select a product"
-                                } else if (currentStockUnits <= 0) {
-                                    message = "Validation Error: ${selectedProduct.name} is Out of Stock (0 available)"
                                 } else if (parsedQty == null || parsedQty <= 0) {
                                     message = "Quantity must be > 0"
-                                } else if (parsedQty > currentStockUnits) {
-                                    val isDecimal = (selectedProduct.unitType == "KG") || (selectedProduct.unitType == "LITER")
-                                    val availStr = if (isDecimal) String.format(Locale.US, "%.3f", currentStockUnits / 1000.0) else currentStockUnits.toString()
-                                    message = "Cannot add: Only $availStr available in stock!"
                                 } else if (priceDouble == null || priceDouble <= 0.0) {
                                     message = "Unit price must be > 0"
                                 } else {
@@ -436,7 +436,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
 
                     // Draft Items list (Takes remaining space!)
                     LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        items(lines) { line ->
+                        items(lines, key = { it.productId }) { line ->
                             Card(
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -578,16 +578,43 @@ fun BillingScreen(viewModel: BillingViewModel) {
                     }
 
                     // Action Buttons
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        if (heldCartsCount > 0) {
+                            OutlinedButton(
+                                onClick = { showHeldCartsDialog = true },
+                                modifier = Modifier.weight(1f),
+                                shape = MaterialTheme.shapes.medium,
+                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFD97706)),
+                                border = BorderStroke(1.dp, Color(0xFFD97706)),
+                                contentPadding = PaddingValues(vertical = 10.dp, horizontal = 4.dp)
+                            ) {
+                                Text("📑 Held ($heldCartsCount)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            }
+                        }
+
+                        OutlinedButton(
+                            onClick = {
+                                if (lines.isEmpty()) message = "Cannot hold empty bill" else {
+                                    viewModel.holdCurrentCart()
+                                    message = "Bill placed on hold!"
+                                }
+                            },
+                            modifier = Modifier.weight(0.9f),
+                            shape = MaterialTheme.shapes.medium,
+                            contentPadding = PaddingValues(vertical = 10.dp, horizontal = 4.dp)
+                        ) {
+                            Text("⏸️ Hold", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                        }
+
                         OutlinedButton(
                             onClick = {
                                 if (lines.isEmpty()) message = "Cannot split empty bill" else showSplitCartDialog = true
                             },
-                            modifier = Modifier.weight(1f),
+                            modifier = Modifier.weight(0.9f),
                             shape = MaterialTheme.shapes.medium,
-                            contentPadding = PaddingValues(vertical = 12.dp)
+                            contentPadding = PaddingValues(vertical = 10.dp, horizontal = 4.dp)
                         ) {
-                            Text("Split", fontWeight = FontWeight.Bold)
+                            Text("Split", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
                         
                         Button(
@@ -597,14 +624,28 @@ fun BillingScreen(viewModel: BillingViewModel) {
                                     showPaymentDialog = true
                                 }
                             },
-                            modifier = Modifier.weight(1.5f),
+                            modifier = Modifier.weight(1.4f),
                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
                             shape = MaterialTheme.shapes.medium,
-                            contentPadding = PaddingValues(vertical = 12.dp)
+                            contentPadding = PaddingValues(vertical = 10.dp, horizontal = 4.dp)
                         ) {
-                            Text("Checkout All", fontWeight = FontWeight.Bold)
+                            Text("Pay All", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                         }
                     }
+
+                    HeldCartsDialog(
+                        showDialog = showHeldCartsDialog,
+                        heldCarts = heldCarts,
+                        onResumeCart = { parkId ->
+                            viewModel.resumeHeldCart(parkId)
+                            message = "Held bill resumed!"
+                        },
+                        onDiscardCart = { parkId ->
+                            viewModel.discardHeldCart(parkId)
+                            message = "Held bill discarded"
+                        },
+                        onDismiss = { showHeldCartsDialog = false }
+                    )
 
                     SplitCartDialog(
                         showDialog = showSplitCartDialog,
@@ -750,7 +791,7 @@ fun BillingScreen(viewModel: BillingViewModel) {
                 Text("Sales History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(sales) { sale ->
+                    items(sales, key = { it.id }) { sale ->
                         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(sale.createdAtEpochMs))
                         val customerName = customers.find { it.id == sale.customerId }?.name ?: "Walk-in"
                         Card(

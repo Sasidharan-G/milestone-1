@@ -10,7 +10,25 @@ class BillingApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         net.sqlcipher.database.SQLiteDatabase.loadLibs(this)
+        initFirebaseAppCheck()
         initSentry()
+    }
+
+    private fun initFirebaseAppCheck() {
+        try {
+            val firebaseAppCheck = com.google.firebase.appcheck.FirebaseAppCheck.getInstance()
+            if (BuildConfig.DEBUG) {
+                firebaseAppCheck.installAppCheckProviderFactory(
+                    com.google.firebase.appcheck.debug.DebugAppCheckProviderFactory.getInstance()
+                )
+            } else {
+                firebaseAppCheck.installAppCheckProviderFactory(
+                    com.google.firebase.appcheck.playintegrity.PlayIntegrityAppCheckProviderFactory.getInstance()
+                )
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
     }
 
     private fun initSentry() {

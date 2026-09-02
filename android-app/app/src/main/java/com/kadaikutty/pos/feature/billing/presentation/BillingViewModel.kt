@@ -52,6 +52,7 @@ class BillingViewModel @Inject constructor(
     private val saleDao = database.saleDao()
     private val purchaseDao = database.purchaseDao()
     private val draftCartDao = database.draftCartDao()
+    private val auditLogDao = database.auditLogDao()
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val stockBalances = sessionStore.activeSession
@@ -61,6 +62,70 @@ class BillingViewModel @Inject constructor(
                 list.associateBy { it.productId }
             }.map { map -> map.mapValues { it.value.currentStock } }
         }
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val heldCartsSummary: StateFlow<List<com.kadaikutty.pos.feature.billing.data.HeldCartSummary>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            if (companyId.isBlank()) flowOf(emptyList()) else draftCartDao.getHeldCartsSummary(companyId)
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), emptyList())
+
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val heldCartsCount: StateFlow<Int> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            if (companyId.isBlank()) flowOf(0) else draftCartDao.getHeldCartsCount(companyId)
+        }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), 0)
+
+    fun holdCurrentCart(label: String = "") {
+        viewModelScope.launch {
+            val companyId = sessionStore.activeSession.first()?.companyId ?: return@launch
+            if (_lines.value.isEmpty()) return@launch
+            val parkId = "held_" + System.currentTimeMillis()
+            val cleanLabel = if (label.isNotBlank()) label else "Hold #${parkId.takeLast(4)}"
+            val now = System.currentTimeMillis()
+
+            val entities = _lines.value.map { line ->
+                com.kadaikutty.pos.feature.billing.data.DraftCartItemEntity(
+                    id = newRecordId(),
+                    companyId = companyId,
+                    productId = line.productId,
+                    productName = line.productName,
+                    quantity = line.quantity,
+                    unitPriceMinorUnits = line.unitPrice.minorUnits,
+                    unitType = line.unitType,
+                    parkId = parkId,
+                    parkLabel = cleanLabel,
+                    parkedAtEpochMs = now
+                )
+            }
+            draftCartDao.insertItems(entities)
+            _lines.value = emptyList()
+            _selectedCustomerId.value = null
+            draftCartDao.clearCart(companyId)
+        }
+    }
+
+    fun resumeHeldCart(parkId: String) {
+        viewModelScope.launch {
+            val companyId = sessionStore.activeSession.first()?.companyId ?: return@launch
+            val items = draftCartDao.getItemsByParkId(companyId, parkId)
+            if (items.isNotEmpty()) {
+                _lines.value = items.map {
+                    SaleLine(it.productId, it.productName, it.quantity, Money(it.unitPriceMinorUnits), it.unitType)
+                }
+                draftCartDao.clearCartByParkId(companyId, parkId)
+                saveDraftToDb()
+            }
+        }
+    }
+
+    fun discardHeldCart(parkId: String) {
+        viewModelScope.launch {
+            val companyId = sessionStore.activeSession.first()?.companyId ?: return@launch
+            draftCartDao.clearCartByParkId(companyId, parkId)
+        }
+    }
 
     init {
         viewModelScope.launch {
@@ -77,8 +142,14 @@ class BillingViewModel @Inject constructor(
         }
     }
 
-    private fun saveDraftToDb() {
-        viewModelScope.launch {
+    private var saveDraftJob: kotlinx.coroutines.Job? = null
+
+    private fun saveDraftToDb(immediate: Boolean = false) {
+        saveDraftJob?.cancel()
+        saveDraftJob = viewModelScope.launch {
+            if (!immediate) {
+                kotlinx.coroutines.delay(200)
+            }
             val companyId = sessionStore.activeSession.first()?.companyId ?: return@launch
             draftCartDao.clearCart(companyId)
             if (_lines.value.isNotEmpty()) {
@@ -392,15 +463,32 @@ class BillingViewModel @Inject constructor(
         }
     }
 
-    fun deleteSale(saleId: String, billNumber: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+    fun deleteSale(saleId: String, billNumber: String, reason: String = "Cancelled by cashier", onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             val session = sessionStore.activeSession.first()
             if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
                 onError(Exception("You do not have permission to modify sales."))
                 return@launch
             }
+            val sale = saleDao.getSaleById(session.companyId, saleId)
+            val amount = sale?.totalMinorUnits ?: 0L
             when (val result = saleRepository.deleteSale(saleId, billNumber)) {
-                is AppResult.Success -> onSuccess()
+                is AppResult.Success -> {
+                    auditLogDao.insertAuditLog(
+                        com.kadaikutty.pos.feature.billing.data.AuditLogEntity(
+                            id = newRecordId(),
+                            companyId = session.companyId,
+                            action = "BILL_CANCEL",
+                            billNumber = billNumber,
+                            amountMinorUnits = amount,
+                            reason = reason.ifBlank { "Bill deleted from POS" },
+                            performedByUserId = session.userId,
+                            performedByUserName = session.displayName,
+                            timestampEpochMs = System.currentTimeMillis()
+                        )
+                    )
+                    onSuccess()
+                }
                 is AppResult.Failure -> onError(Exception(result.error.userMessage))
             }
         }

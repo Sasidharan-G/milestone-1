@@ -1,5 +1,7 @@
 package com.kadaikutty.pos.feature.masters.presentation
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import com.kadaikutty.pos.core.ui.CameraBarcodeScannerDialog
 import com.kadaikutty.pos.core.ui.LocalLayoutMode
 import androidx.compose.foundation.background
@@ -301,7 +303,7 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                         }
                     }
                 } else {
-                    items(categories) { category ->
+                    items(categories, key = { it.id }) { category ->
                         Card(
                             modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                             shape = RoundedCornerShape(12.dp),
@@ -459,6 +461,96 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var adjustingStockProduct by remember { mutableStateOf<ProductEntity?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
+    var isImporting by remember { mutableStateOf(false) }
+    var importProgressText by remember { mutableStateOf("") }
+    var importSummary by remember { mutableStateOf<ProductImportSummary?>(null) }
+
+    val csvPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            isImporting = true
+            importProgressText = "Reading & streaming CSV..."
+            viewModel.importProductsFromCsv(
+                uri = uri,
+                context = context,
+                onProgress = { current, _ ->
+                    importProgressText = "Processed $current products..."
+                },
+                onComplete = { summary ->
+                    isImporting = false
+                    importSummary = summary
+                }
+            )
+        }
+    }
+
+    val templateExportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/csv")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportSampleProductTemplate(uri, context) { success, err ->
+                if (success) {
+                    android.widget.Toast.makeText(context, "Sample CSV template downloaded successfully!", android.widget.Toast.LENGTH_LONG).show()
+                } else {
+                    android.widget.Toast.makeText(context, err ?: "Failed to download template", android.widget.Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    if (isImporting) {
+        AlertDialog(
+            onDismissRequest = {},
+            title = { Text("Importing Products...", fontWeight = FontWeight.Bold) },
+            text = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
+                    modifier = Modifier.padding(8.dp)
+                ) {
+                    CircularProgressIndicator(modifier = Modifier.size(36.dp))
+                    Text(importProgressText.ifBlank { "Streaming rows into database..." }, fontSize = 14.sp)
+                }
+            },
+            confirmButton = {}
+        )
+    }
+
+    if (importSummary != null) {
+        val s = importSummary!!
+        AlertDialog(
+            onDismissRequest = { importSummary = null },
+            title = {
+                Text(
+                    text = if (s.errorMessage == null) "🎉 Bulk Import Completed" else "❌ Import Error",
+                    fontWeight = FontWeight.Bold
+                )
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (s.errorMessage != null) {
+                        Text(s.errorMessage, color = MaterialTheme.colorScheme.error)
+                    } else {
+                        Text("Total Lines Read: ${s.totalRead}", fontWeight = FontWeight.SemiBold)
+                        Text("✅ Successfully Added: ${s.importedCount} items", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                        if (s.updatedCount > 0) {
+                            Text("🔄 Existing Products Updated: ${s.updatedCount} items", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold)
+                        }
+                        if (s.skippedCount > 0) {
+                            Text("⚠️ Skipped / Empty Lines: ${s.skippedCount}", color = Color(0xFFF59E0B))
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(onClick = { importSummary = null }) {
+                    Text("Done")
+                }
+            }
+        )
+    }
+
     LaunchedEffect(categories) {
         if (selectedCategoryId.isBlank() && categories.isNotEmpty()) {
             selectedCategoryId = categories.first().id
@@ -514,6 +606,47 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item { LowStockAlertsBanner(lowStockProducts) }
+                
+                // 📁 Bulk Import / Template Export Card
+                item {
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = { csvPickerLauncher.launch(arrayOf("*/*")) },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1.2f)
+                            ) {
+                                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("📁 Import CSV / Excel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { templateExportLauncher.launch("sample_products_template.csv") },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(4.dp))
+                                Text("📥 Template", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+                }
+
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
@@ -713,7 +846,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         }
                     }
                 } else {
-                    items(products) { product ->
+                    items(products, key = { it.id }) { product ->
                         val catName = categories.find { it.id == product.categoryId }?.name ?: "Unknown Category"
                         val curStock = stockBalances[product.id] ?: 0L
                         val purText = Money(product.purchasePriceMinorUnits).toString()
@@ -750,6 +883,45 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
             Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(modifier = Modifier.weight(1.2f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     LowStockAlertsBanner(lowStockProducts)
+                    
+                    // 📁 Bulk Import / Template Export Card (Tablet Layout)
+                    Card(
+                        shape = RoundedCornerShape(14.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp).fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Button(
+                                onClick = { csvPickerLauncher.launch(arrayOf("*/*")) },
+                                shape = RoundedCornerShape(10.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1.2f)
+                            ) {
+                                Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text("📁 Import CSV / Excel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            }
+
+                            OutlinedButton(
+                                onClick = { templateExportLauncher.launch("sample_products_template.csv") },
+                                shape = RoundedCornerShape(10.dp),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.primary),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 8.dp),
+                                modifier = Modifier.weight(1f)
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(4.dp))
+                                Text("📥 Template", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+                    }
+
                     Card(
                         modifier = Modifier.fillMaxWidth().fillMaxHeight(),
                         shape = RoundedCornerShape(20.dp),
@@ -1140,7 +1312,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         }
                     }
                 } else {
-                    items(customers) { customer ->
+                    items(customers, key = { it.id }) { customer ->
                         val balanceFlow = remember(customer.id) { viewModel.getCustomerBalance(customer.id) }
                         val balance by balanceFlow.collectAsState(initial = 0L)
                         val bal = balance
@@ -1518,7 +1690,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                         }
                     }
                 } else {
-                    items(suppliers) { supplier ->
+                    items(suppliers, key = { it.id }) { supplier ->
                         val balanceFlow = remember(supplier.id) { viewModel.getSupplierBalance(supplier.id) }
                         val balance by balanceFlow.collectAsState(initial = 0L)
                         val bal = balance
@@ -1862,7 +2034,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                         }
                     }
                 } else {
-                    items(expenses) { expense ->
+                    items(expenses, key = { it.id }) { expense ->
                         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
                         val dateStr = dateFormat.format(Date(expense.createdAtEpochMs))
                         Card(

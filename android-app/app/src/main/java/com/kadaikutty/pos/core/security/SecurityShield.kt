@@ -73,9 +73,8 @@ object SecurityShield {
         
         val isVpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
         val hasProxy = System.getProperty("http.proxyHost") != null || 
-                       System.getProperty("https.proxyHost") != null ||
-                       android.net.Proxy.getDefaultHost() != null
-                       
+                       System.getProperty("https.proxyHost") != null
+                        
         return isVpn || hasProxy
     }
 

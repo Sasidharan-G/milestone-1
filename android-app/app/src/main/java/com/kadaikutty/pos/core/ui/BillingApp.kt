@@ -50,8 +50,6 @@ import com.kadaikutty.pos.feature.auth.LoginScreen
 import com.kadaikutty.pos.feature.auth.LoginViewModel
 import com.kadaikutty.pos.feature.auth.RegisterScreen
 import com.kadaikutty.pos.feature.auth.RegisterViewModel
-import com.kadaikutty.pos.feature.auth.SetNewPasswordScreen
-import com.kadaikutty.pos.feature.auth.SetNewPasswordViewModel
 import androidx.compose.animation.core.*
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
@@ -87,6 +85,7 @@ fun BillingApp() {
     }
 
     val isLoggedIn by settingsViewModel.isLoggedIn.collectAsState()
+    val activeSession by settingsViewModel.activeSession.collectAsState()
 
     val currentLicense by settingsViewModel.currentLicense.collectAsState()
     val isClockTampered by settingsViewModel.isClockTampered.collectAsState()
@@ -98,17 +97,7 @@ fun BillingApp() {
         }
     }
 
-    // Auth Revocation Listener
-    LaunchedEffect(Unit) {
-        val auth = FirebaseAuth.getInstance()
-        val listener = FirebaseAuth.AuthStateListener { firebaseAuth ->
-            if (firebaseAuth.currentUser == null && settingsViewModel.isLoggedIn.value == true) {
-                // Token revoked or user deleted remotely. Force local logout.
-                settingsViewModel.logout { }
-            }
-        }
-        auth.addAuthStateListener(listener)
-    }
+
 
     if (isLoggedIn == null) {
         Box(
@@ -123,7 +112,7 @@ fun BillingApp() {
     }
 
     CompositionLocalProvider(LocalLayoutMode provides layoutMode) {
-        BillingTheme(darkTheme = useDarkTheme) {
+        BillingTheme(themeMode = themeMode, darkTheme = useDarkTheme) {
             val startDest = if (isLoggedIn == true) AppRoute.Home.path else AppRoute.Login.path
             Box(modifier = Modifier.fillMaxSize()) {
                 NavHost(
@@ -161,17 +150,6 @@ fun BillingApp() {
                     ) {
                         navController.navigate(AppRoute.Home.path) {
                             popUpTo(AppRoute.Login.path) { inclusive = true }
-                        }
-                    }
-                }
-
-                composable(AppRoute.SetNewPassword.path) {
-                    val vm: SetNewPasswordViewModel = hiltViewModel()
-                    SetNewPasswordScreen(
-                        viewModel = vm
-                    ) {
-                        navController.navigate(AppRoute.Login.path) {
-                            popUpTo(0) { inclusive = true }
                         }
                     }
                 }
@@ -388,15 +366,12 @@ fun BillingApp() {
             }
 
             // 🔒 Strict Offline/Online Expiry Lock Screen
-            val isLicenseLocked = (isLoggedIn == true) && ((currentLicense?.isExpired == true) || isClockTampered)
+            val isLicenseLocked = (isLoggedIn == true) && (activeSession?.role != "SUPER_ADMIN") && ((currentLicense?.isExpired == true) || isClockTampered)
             if (isLicenseLocked) {
                 com.kadaikutty.pos.feature.subscription.LicenseExpiredLockScreen(
                     license = currentLicense,
                     shopName = shopName,
                     onRefreshStatus = { settingsViewModel.refreshLicenseStatus() },
-                    onOpenMasterControl = {
-                        navController.navigate(AppRoute.MasterControl.path)
-                    },
                     onLogout = {
                         settingsViewModel.logout {
                             navController.navigate(AppRoute.Login.path) {

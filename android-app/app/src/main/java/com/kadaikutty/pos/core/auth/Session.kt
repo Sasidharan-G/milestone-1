@@ -21,7 +21,10 @@ interface AuthRepository {
     suspend fun loginOffline(username: String, password: CharArray): LoginResult
     suspend fun logout()
     
-    // Registration Flow
+    // Direct Instant Registration
+    suspend fun registerMerchant(mobileNumber: String, password: CharArray, ownerName: String, businessName: String): RegisterResult
+
+    // Registration Flow (OTP)
     fun sendRegistrationOtp(mobileNumber: String, activity: android.app.Activity, onCodeSent: (String) -> Unit, onVerificationFailed: (String) -> Unit)
     suspend fun verifyRegistrationOtpAndRegister(verificationId: String, otp: String, mobileNumber: String, password: CharArray, ownerName: String, businessName: String): RegisterResult
 

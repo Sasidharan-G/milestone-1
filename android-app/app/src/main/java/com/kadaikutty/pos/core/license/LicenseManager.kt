@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -44,20 +45,25 @@ class LicenseManager @Inject constructor(
         scope.launch {
             // Check Monotonic Clock integrity
             validateMonotonicClock()
-
-            // Observe local Room SQLite license changes
-            database.licenseDao().getActiveLicenseFlow().collect { license ->
-                _currentLicense.value = license
-            }
         }
 
-        // Start real-time Firestore sync whenever active session is ready
+        // Start real-time Firestore sync & local flow whenever active session is ready
         scope.launch {
             sessionStore.activeSession.collect { session ->
-                if (session != null && session.companyId.isNotBlank()) {
-                    startRealtimeLicenseSync(session.companyId)
+                if (session != null) {
+                    val targetCompanyId = session.companyId
+                    val mobile = session.userId
+                    startRealtimeLicenseSync(targetCompanyId, mobile)
+                    if (targetCompanyId.isNotBlank()) {
+                        database.licenseDao().getLicenseFlow(targetCompanyId).collect { license ->
+                            if (license != null) {
+                                _currentLicense.value = license
+                            }
+                        }
+                    }
                 } else {
                     stopRealtimeLicenseSync()
+                    _currentLicense.value = null
                 }
             }
         }
@@ -92,38 +98,67 @@ class LicenseManager @Inject constructor(
         validateMonotonicClock()
     }
 
+    private fun parseSnapshotToLicense(snapshot: com.google.firebase.firestore.DocumentSnapshot, fallbackCompanyId: String): LicenseEntity {
+        val docCompanyId = snapshot.getString("companyId") ?: snapshot.id
+        return LicenseEntity(
+            companyId = if (docCompanyId.isNotBlank()) docCompanyId else fallbackCompanyId,
+            businessName = snapshot.getString("businessName") ?: "My Shop",
+            ownerName = snapshot.getString("ownerName") ?: "",
+            ownerMobile = snapshot.getString("ownerMobile") ?: "",
+            licenseStatus = snapshot.getString("licenseStatus") ?: "ACTIVE_PAID",
+            licenseType = snapshot.getString("licenseType") ?: "TRIAL_2_DAYS",
+            yearsGranted = snapshot.getLong("yearsGranted")?.toInt() ?: 0,
+            daysGranted = snapshot.getLong("daysGranted")?.toInt() ?: 0,
+            activatedAtEpochMs = snapshot.getLong("activatedAtEpochMs") ?: 0L,
+            validUntilEpochMs = snapshot.getLong("validUntilEpochMs") ?: 0L,
+            lastVerifiedAtEpochMs = System.currentTimeMillis(),
+            highestSeenClockEpochMs = System.currentTimeMillis(),
+            renewalCount = snapshot.getLong("renewalCount")?.toInt() ?: 0,
+            notes = snapshot.getString("notes") ?: ""
+        )
+    }
+
     /**
      * Starts listening to Firestore license document for immediate remote grant/cut-off.
      */
-    fun startRealtimeLicenseSync(companyId: String) {
+    fun startRealtimeLicenseSync(companyId: String, ownerMobile: String? = null) {
         firestoreListener?.remove()
-        firestoreListener = firestore.collection("licenses").document(companyId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) {
-                    return@addSnapshotListener
-                }
-                if (snapshot != null && snapshot.exists()) {
-                    val entity = LicenseEntity(
-                        companyId = companyId,
-                        businessName = snapshot.getString("businessName") ?: "",
-                        ownerName = snapshot.getString("ownerName") ?: "",
-                        ownerMobile = snapshot.getString("ownerMobile") ?: "",
-                        licenseStatus = snapshot.getString("licenseStatus") ?: "PENDING_APPROVAL",
-                        licenseType = snapshot.getString("licenseType") ?: "TRIAL_2_DAYS",
-                        yearsGranted = snapshot.getLong("yearsGranted")?.toInt() ?: 0,
-                        daysGranted = snapshot.getLong("daysGranted")?.toInt() ?: 0,
-                        activatedAtEpochMs = snapshot.getLong("activatedAtEpochMs") ?: 0L,
-                        validUntilEpochMs = snapshot.getLong("validUntilEpochMs") ?: 0L,
-                        lastVerifiedAtEpochMs = System.currentTimeMillis(),
-                        highestSeenClockEpochMs = System.currentTimeMillis(),
-                        renewalCount = snapshot.getLong("renewalCount")?.toInt() ?: 0,
-                        notes = snapshot.getString("notes") ?: ""
-                    )
-                    scope.launch {
-                        database.licenseDao().saveLicense(entity)
+
+        if (companyId.isNotBlank()) {
+            firestoreListener = firestore.collection("licenses").document(companyId)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) return@addSnapshotListener
+                    if (snapshot != null && snapshot.exists()) {
+                        val entity = parseSnapshotToLicense(snapshot, companyId)
+                        scope.launch {
+                            database.licenseDao().saveLicense(entity)
+                            _currentLicense.value = entity
+                        }
                     }
                 }
-            }
+        }
+
+        // Secondary real-time check by owner mobile to handle multi-license / re-registration
+        scope.launch {
+            try {
+                val cleanMobile = ownerMobile?.filter { it.isDigit() }?.takeLast(10)
+                if (!cleanMobile.isNullOrBlank()) {
+                    var docList = firestore.collection("licenses").whereEqualTo("ownerMobile", cleanMobile).get().await().documents
+                    if (docList.isEmpty()) {
+                        docList = firestore.collection("licenses").whereEqualTo("ownerMobile", "+91$cleanMobile").get().await().documents
+                    }
+                    val activeDoc = docList.maxByOrNull { it.getLong("validUntilEpochMs") ?: 0L }
+                    if (activeDoc != null && activeDoc.exists()) {
+                        val activeEntity = parseSnapshotToLicense(activeDoc, companyId)
+                        database.licenseDao().saveLicense(activeEntity)
+                        if (companyId.isNotBlank() && activeEntity.companyId != companyId) {
+                            database.licenseDao().saveLicense(activeEntity.copy(companyId = companyId))
+                        }
+                        _currentLicense.value = activeEntity
+                    }
+                }
+            } catch (_: Exception) {}
+        }
     }
 
     fun stopRealtimeLicenseSync() {

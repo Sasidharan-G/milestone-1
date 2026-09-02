@@ -210,7 +210,7 @@ fun SearchableProductSelectorDialog(
                             .fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        items(filteredProducts) { product ->
+                        items(filteredProducts, key = { it.id }) { product ->
                             val pStock = stockMap[product.id] ?: 0L
                             val isDecimal = product.unitType == "KG" || product.unitType == "LITER"
                             val pStockStr = if (isDecimal) {
@@ -262,16 +262,30 @@ fun SearchableProductSelectorDialog(
                                             color = Color(0xFF059669)
                                         )
 
+                                        val isLowStock = !isOutOfStock && ((isDecimal && pStock <= 5000L) || (!isDecimal && pStock <= 5L))
+
                                         Surface(
-                                            color = if (isOutOfStock) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.surfaceVariant,
+                                            color = when {
+                                                isOutOfStock -> MaterialTheme.colorScheme.errorContainer
+                                                isLowStock -> Color(0xFFFEF3C7)
+                                                else -> MaterialTheme.colorScheme.surfaceVariant
+                                            },
                                             shape = RoundedCornerShape(6.dp)
                                         ) {
                                             Text(
-                                                text = if (isOutOfStock) "Out of Stock" else "Stock: $pStockStr",
+                                                text = when {
+                                                    isOutOfStock -> "Out of Stock"
+                                                    isLowStock -> "⚠️ Low Stock: $pStockStr"
+                                                    else -> "Stock: $pStockStr"
+                                                },
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
                                                 fontSize = 11.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                                color = if (isOutOfStock) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                                                fontWeight = FontWeight.Bold,
+                                                color = when {
+                                                    isOutOfStock -> MaterialTheme.colorScheme.onErrorContainer
+                                                    isLowStock -> Color(0xFFB45309)
+                                                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                                                }
                                             )
                                         }
                                     }

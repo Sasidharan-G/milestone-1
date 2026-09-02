@@ -151,7 +151,8 @@ class ShareManager(private val context: Context) {
             try {
                 val logoFile = File(shopLogoPath)
                 if (logoFile.exists()) {
-                    val bitmap = BitmapFactory.decodeFile(logoFile.absolutePath)
+                    val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+                    val bitmap = BitmapFactory.decodeFile(logoFile.absolutePath, opts)
                     if (bitmap != null) {
                         val maxDim = 80f
                         val scale = Math.min(maxDim / bitmap.width, maxDim / bitmap.height)

@@ -122,7 +122,29 @@ data class LoginUiState(
         }
     }
 
-    fun login() { val current = state.value; if (current.mobileNumber.isBlank() || current.password.isBlank()) { mutableState.update { it.copy(error = "Mobile Number and password are required") }; return }; viewModelScope.launch { mutableState.update { it.copy(loading = true, error = null) }; val password = current.password.toCharArray(); val result = when (current.mode) { LoginMode.Online -> authRepository.loginOnline(current.mobileNumber, password); LoginMode.Offline -> authRepository.loginOffline(current.mobileNumber, password) }; password.fill('\u0000'); mutableState.update { when (result) { is LoginResult.Success -> it.copy(loading = false, complete = true, isSuperMaster = (result.session.role == "SUPER_ADMIN"), password = ""); is LoginResult.Failure -> it.copy(loading = false, error = result.message, password = "") } } } }
+    fun login() {
+        val current = state.value
+        val cleanPhone = current.mobileNumber.trim()
+        if (cleanPhone.isBlank() || current.password.isBlank()) {
+            mutableState.update { it.copy(error = "Mobile Number and password are required") }
+            return
+        }
+        viewModelScope.launch {
+            mutableState.update { it.copy(loading = true, error = null) }
+            val password = current.password.toCharArray()
+            val result = when (current.mode) {
+                LoginMode.Online -> authRepository.loginOnline(cleanPhone, password)
+                LoginMode.Offline -> authRepository.loginOffline(cleanPhone, password)
+            }
+            password.fill('\u0000')
+            mutableState.update {
+                when (result) {
+                    is LoginResult.Success -> it.copy(loading = false, complete = true, isSuperMaster = (result.session.role == "SUPER_ADMIN"), password = "")
+                    is LoginResult.Failure -> it.copy(loading = false, error = result.message, password = "")
+                }
+            }
+        }
+    }
 
     fun requestPasswordResetOtp(
         mobileNumber: String,

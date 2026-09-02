@@ -9,10 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +19,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
@@ -72,24 +70,31 @@ class RegisterViewModel @Inject constructor(
             _state.update { it.copy(error = "All fields are required") }
             return
         }
-        if (current.passwordString != current.confirmPasswordString) {
-            _state.update { it.copy(error = "Passwords do not match") }
+        val cleanPhone = current.mobileNumber.trim().replace(" ", "").replace("-", "")
+        if (cleanPhone.length < 10 || !cleanPhone.all { it.isDigit() || it == '+' }) {
+            _state.update { it.copy(error = "Please provide a valid 10-digit mobile number") }
             return
         }
         if (current.passwordString.length < 6) {
             _state.update { it.copy(error = "Password must be at least 6 characters") }
             return
         }
-        val cleanPhone = current.mobileNumber.trim().replace(" ", "").replace("-", "")
-        if (cleanPhone.length < 10 || !cleanPhone.all { it.isDigit() || it == '+' }) {
-            _state.update { it.copy(error = "Please provide a valid 10-digit mobile number") }
+        if (current.passwordString != current.confirmPasswordString) {
+            _state.update { it.copy(error = "Passwords do not match") }
             return
         }
-        
-        val phoneWithCode = if (cleanPhone.startsWith("+")) cleanPhone else "+91$cleanPhone"
 
+        val phoneWithCode = if (cleanPhone.startsWith("+")) cleanPhone else "+91$cleanPhone"
         _state.update { it.copy(loading = true, error = null) }
-        
+
+        // Watchdog timeout to prevent infinite spinner if reCAPTCHA or SMS hangs
+        viewModelScope.launch {
+            kotlinx.coroutines.delay(20000L)
+            if (_state.value.loading && !_state.value.showOtpDialog) {
+                _state.update { it.copy(loading = false, error = "SMS OTP timed out. You can tap 'Instant Register' below to submit directly to Master Admin.") }
+            }
+        }
+
         authRepository.sendRegistrationOtp(
             mobileNumber = phoneWithCode,
             activity = activity,
@@ -97,9 +102,55 @@ class RegisterViewModel @Inject constructor(
                 _state.update { it.copy(loading = false, showOtpDialog = true, verificationId = verificationId) }
             },
             onVerificationFailed = { error ->
-                _state.update { it.copy(loading = false, error = error) }
+                _state.update { it.copy(loading = false, error = "$error. You can use 'Instant Register' below.") }
             }
         )
+    }
+
+    fun registerDirectly(onSuccess: (String) -> Unit) {
+        val current = state.value
+        if (current.mobileNumber.isBlank() || current.ownerName.isBlank() || current.businessName.isBlank() || current.passwordString.isBlank() || current.confirmPasswordString.isBlank()) {
+            _state.update { it.copy(error = "All fields are required") }
+            return
+        }
+        val cleanPhone = current.mobileNumber.trim().replace(" ", "").replace("-", "")
+        if (cleanPhone.length < 10 || !cleanPhone.all { it.isDigit() || it == '+' }) {
+            _state.update { it.copy(error = "Please provide a valid 10-digit mobile number") }
+            return
+        }
+        if (current.passwordString.length < 6) {
+            _state.update { it.copy(error = "Password must be at least 6 characters") }
+            return
+        }
+        if (current.passwordString != current.confirmPasswordString) {
+            _state.update { it.copy(error = "Passwords do not match") }
+            return
+        }
+
+        val phoneWithCode = if (cleanPhone.startsWith("+")) cleanPhone else "+91$cleanPhone"
+        viewModelScope.launch {
+            _state.update { it.copy(loading = true, error = null) }
+            val passChars = current.passwordString.toCharArray()
+            val result = authRepository.registerMerchant(
+                mobileNumber = phoneWithCode,
+                password = passChars,
+                ownerName = current.ownerName.trim(),
+                businessName = current.businessName.trim()
+            )
+            passChars.fill('\u0000')
+
+            _state.update {
+                when (result) {
+                    is RegisterResult.Success -> {
+                        onSuccess(result.companyId)
+                        it.copy(loading = false, complete = true, passwordString = "", confirmPasswordString = "")
+                    }
+                    is RegisterResult.Failure -> {
+                        it.copy(loading = false, error = result.message)
+                    }
+                }
+            }
+        }
     }
 
     fun verifyOtpAndCompleteRegistration(onSuccess: (String) -> Unit) {
@@ -113,7 +164,6 @@ class RegisterViewModel @Inject constructor(
         viewModelScope.launch {
             _state.update { it.copy(loading = true, error = null) }
             val passChars = current.passwordString.toCharArray()
-            
             val cleanPhone = current.mobileNumber.trim().replace(" ", "").replace("-", "")
             val phoneWithCode = if (cleanPhone.startsWith("+")) cleanPhone else "+91$cleanPhone"
 
@@ -122,11 +172,11 @@ class RegisterViewModel @Inject constructor(
                 otp = current.otp,
                 mobileNumber = phoneWithCode,
                 password = passChars,
-                ownerName = current.ownerName,
-                businessName = current.businessName
+                ownerName = current.ownerName.trim(),
+                businessName = current.businessName.trim()
             )
             passChars.fill('\u0000')
-            
+
             _state.update {
                 when (result) {
                     is RegisterResult.Success -> {
@@ -150,7 +200,17 @@ fun RegisterScreen(
 ) {
     val state by viewModel.state.collectAsState()
     val scrollState = rememberScrollState()
-    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = remember(context) {
+        var ctx: android.content.Context? = context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is android.app.Activity) return@remember ctx
+            ctx = ctx.baseContext
+        }
+        null
+    }
+    var passwordVisible by remember { mutableStateOf(false) }
+    var confirmPasswordVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.complete) {
         if (state.complete) {
@@ -294,7 +354,16 @@ fun RegisterScreen(
                     onValueChange = { viewModel.updatePassword(it) },
                     label = { Text("Password", color = Color(0xFF94A3B8)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                    visualTransformation = PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                tint = Color(0xFF94A3B8)
+                            )
+                        }
+                    },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -315,7 +384,16 @@ fun RegisterScreen(
                     onValueChange = { viewModel.updateConfirmPassword(it) },
                     label = { Text("Confirm Password", color = Color(0xFF94A3B8)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                    visualTransformation = PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                            Icon(
+                                imageVector = if (confirmPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password",
+                                tint = Color(0xFF94A3B8)
+                            )
+                        }
+                    },
+                    visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -332,13 +410,31 @@ fun RegisterScreen(
                 )
 
                 if (!state.error.isNullOrBlank()) {
-                    Text(
-                        text = state.error ?: "",
-                        color = Color(0xFFFF6B6B),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        modifier = Modifier.align(Alignment.Start)
-                    )
+                    Surface(
+                        color = Color(0xFF450A0A),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = Color(0xFFF87171),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = state.error ?: "",
+                                color = Color(0xFFFCA5A5),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
 
                 Button(
@@ -349,7 +445,7 @@ fun RegisterScreen(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(50.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color(0xFF1E88E5),
@@ -363,7 +459,10 @@ fun RegisterScreen(
                             color = Color.White
                         )
                     } else {
-                        Text("Send OTP & Register", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White)
+                            Text("Send OTP & Register", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
                     }
                 }
 
@@ -378,7 +477,7 @@ fun RegisterScreen(
                 )
             }
         }
-        
+
         if (state.showOtpDialog) {
             androidx.compose.ui.window.Dialog(
                 onDismissRequest = { viewModel.dismissOtpDialog() }

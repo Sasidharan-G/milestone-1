@@ -27,6 +27,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kadaikutty.pos.core.license.LicenseEntity
@@ -46,6 +48,8 @@ fun MasterControlScreen(
     var selectedShopForLicense by remember { mutableStateOf<LicenseEntity?>(null) }
     var selectedShopForRevoke by remember { mutableStateOf<LicenseEntity?>(null) }
     var showTrialConfirmDialog by remember { mutableStateOf<LicenseEntity?>(null) }
+    var selectedShopForDelete by remember { mutableStateOf<LicenseEntity?>(null) }
+    var selectedStaffForDelete by remember { mutableStateOf<StaffApprovalRequest?>(null) }
     var showMasterProfileDialog by remember { mutableStateOf(false) }
 
     val masterMobile by viewModel.masterMobile.collectAsState()
@@ -53,6 +57,7 @@ fun MasterControlScreen(
 
     var editMobileInput by remember(masterMobile) { mutableStateOf(masterMobile) }
     var editPinInput by remember(masterPin) { mutableStateOf(masterPin) }
+    var editPinVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.successMessage, state.errorMessage) {
         if (state.successMessage != null) {
@@ -107,6 +112,9 @@ fun MasterControlScreen(
                     }
                 },
                 actions = {
+                    IconButton(onClick = { viewModel.refresh() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Refresh & Reconcile Cloud", tint = Color(0xFF38BDF8))
+                    }
                     IconButton(onClick = { 
                         editMobileInput = masterMobile
                         editPinInput = masterPin
@@ -125,176 +133,318 @@ fun MasterControlScreen(
                 .background(Color(0xFF0B0F17))
                 .padding(paddingValues)
         ) {
-            // 1. Top 4-KPI Overview Bar
+            // 1. Top Tab Switcher (Store Licenses vs Staff Approvals)
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
+                    .padding(horizontal = 16.dp, vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                // Pending
-                MasterKpiPill(
-                    title = "Pending",
-                    count = state.pendingCount,
-                    accentColor = Color(0xFFEF4444),
-                    modifier = Modifier.weight(1f),
-                    isSelected = state.selectedFilter == "PENDING",
-                    onClick = { viewModel.updateFilter(if (state.selectedFilter == "PENDING") "ALL" else "PENDING") }
-                )
-                // Trial (2 Days)
-                MasterKpiPill(
-                    title = "2d Trials",
-                    count = state.activeTrialCount,
-                    accentColor = Color(0xFFF59E0B),
-                    modifier = Modifier.weight(1f),
-                    isSelected = state.selectedFilter == "TRIAL",
-                    onClick = { viewModel.updateFilter(if (state.selectedFilter == "TRIAL") "ALL" else "TRIAL") }
-                )
-                // Active Paid (365d+)
-                MasterKpiPill(
-                    title = "1yr Paid",
-                    count = state.activePaidCount,
-                    accentColor = Color(0xFF10B981),
-                    modifier = Modifier.weight(1f),
-                    isSelected = state.selectedFilter == "ACTIVE",
-                    onClick = { viewModel.updateFilter(if (state.selectedFilter == "ACTIVE") "ALL" else "ACTIVE") }
-                )
-                // Expired / Cut
-                MasterKpiPill(
-                    title = "Expired",
-                    count = state.expiredCount,
-                    accentColor = Color(0xFF64748B),
-                    modifier = Modifier.weight(1f),
-                    isSelected = state.selectedFilter == "REVOKED",
-                    onClick = { viewModel.updateFilter(if (state.selectedFilter == "REVOKED") "ALL" else "REVOKED") }
-                )
+                Surface(
+                    onClick = { viewModel.setTab("LICENSES") },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (state.currentTab == "LICENSES") Color(0xFF2563EB) else Color(0xFF162238),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (state.currentTab == "LICENSES") Color(0xFF38BDF8) else Color(0xFF334155)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Storefront, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Store Licenses (${state.licenses.size})", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                    }
+                }
+
+                Surface(
+                    onClick = { viewModel.setTab("STAFF") },
+                    shape = RoundedCornerShape(12.dp),
+                    color = if (state.currentTab == "STAFF") Color(0xFF7C3AED) else Color(0xFF162238),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, if (state.currentTab == "STAFF") Color(0xFFA78BFA) else Color(0xFF334155)),
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(vertical = 10.dp),
+                        horizontalArrangement = Arrangement.Center,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Staff Approvals", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
+                        if (state.pendingStaffCount > 0) {
+                            Spacer(Modifier.width(6.dp))
+                            Surface(
+                                shape = CircleShape,
+                                color = Color(0xFFEF4444)
+                            ) {
+                                Text(
+                                    text = "${state.pendingStaffCount}",
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    color = Color.White,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
+                }
             }
 
-            // 2. Pending Approval Alert Banner (If Any)
-            if (state.pendingCount > 0 && state.selectedFilter != "PENDING") {
-                Surface(
-                    color = Color(0xFF3B0711),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE11D48)),
-                    shape = RoundedCornerShape(12.dp),
+            if (state.currentTab == "LICENSES") {
+                // 1. Top 4-KPI Overview Bar
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    MasterKpiPill(
+                        title = "Pending",
+                        count = state.pendingCount,
+                        accentColor = Color(0xFFEF4444),
+                        modifier = Modifier.weight(1f),
+                        isSelected = state.selectedFilter == "PENDING",
+                        onClick = { viewModel.updateFilter(if (state.selectedFilter == "PENDING") "ALL" else "PENDING") }
+                    )
+                    MasterKpiPill(
+                        title = "2d Trials",
+                        count = state.activeTrialCount,
+                        accentColor = Color(0xFFF59E0B),
+                        modifier = Modifier.weight(1f),
+                        isSelected = state.selectedFilter == "TRIAL",
+                        onClick = { viewModel.updateFilter(if (state.selectedFilter == "TRIAL") "ALL" else "TRIAL") }
+                    )
+                    MasterKpiPill(
+                        title = "1yr Paid",
+                        count = state.activePaidCount,
+                        accentColor = Color(0xFF10B981),
+                        modifier = Modifier.weight(1f),
+                        isSelected = state.selectedFilter == "ACTIVE",
+                        onClick = { viewModel.updateFilter(if (state.selectedFilter == "ACTIVE") "ALL" else "ACTIVE") }
+                    )
+                    MasterKpiPill(
+                        title = "Expired",
+                        count = state.expiredCount,
+                        accentColor = Color(0xFF64748B),
+                        modifier = Modifier.weight(1f),
+                        isSelected = state.selectedFilter == "REVOKED",
+                        onClick = { viewModel.updateFilter(if (state.selectedFilter == "REVOKED") "ALL" else "REVOKED") }
+                    )
+                }
+
+                // 2. Pending Approval Alert Banner (If Any)
+                if (state.pendingCount > 0 && state.selectedFilter != "PENDING") {
+                    Surface(
+                        color = Color(0xFF3B0711),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFE11D48)),
+                        shape = RoundedCornerShape(12.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp)
+                            .clickable { viewModel.updateFilter("PENDING") }
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = Color(0xFFFB7185))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("🔔 ${state.pendingCount} New Shops Waiting For Approval!", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                                Text("Click here to grant 2-Day Free Trial or 365-Day Full License.", fontSize = 11.sp, color = Color(0xFFFDA4AF))
+                            }
+                            Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.White)
+                        }
+                    }
+                }
+
+                // 3. Search Bar
+                OutlinedTextField(
+                    value = state.searchQuery,
+                    onValueChange = { viewModel.updateSearchQuery(it) },
+                    placeholder = { Text("Search by Shop Name, Owner, Mobile (+91)...", color = Color(0xFF64748B), fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    trailingIcon = {
+                        if (state.searchQuery.isNotBlank()) {
+                            IconButton(onClick = { viewModel.updateSearchQuery("") }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF94A3B8))
+                            }
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF162238),
+                        unfocusedContainerColor = Color(0xFF162238),
+                        focusedBorderColor = Color(0xFF38BDF8),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    ),
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp, vertical = 4.dp)
-                        .clickable { viewModel.updateFilter("PENDING") }
+                )
+
+                // 4. Filter Chips
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = Color(0xFFFB7185))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("🔔 ${state.pendingCount} New Shops Waiting For Approval!", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
-                            Text("Click here to grant 2-Day Free Trial or 365-Day Full License.", fontSize = 11.sp, color = Color(0xFFFDA4AF))
-                        }
-                        Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.White)
-                    }
-                }
-            }
-
-            // 3. Search Bar
-            OutlinedTextField(
-                value = state.searchQuery,
-                onValueChange = { viewModel.updateSearchQuery(it) },
-                placeholder = { Text("Search by Shop Name, Owner, Mobile (+91)...", color = Color(0xFF64748B), fontSize = 13.sp) },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                trailingIcon = {
-                    if (state.searchQuery.isNotBlank()) {
-                        IconButton(onClick = { viewModel.updateSearchQuery("") }) {
-                            Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF94A3B8))
-                        }
-                    }
-                },
-                singleLine = true,
-                shape = RoundedCornerShape(14.dp),
-                colors = OutlinedTextFieldDefaults.colors(
-                    focusedTextColor = Color.White,
-                    unfocusedTextColor = Color.White,
-                    focusedContainerColor = Color(0xFF162238),
-                    unfocusedContainerColor = Color(0xFF162238),
-                    focusedBorderColor = Color(0xFF38BDF8),
-                    unfocusedBorderColor = Color(0xFF334155)
-                ),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 6.dp)
-            )
-
-            // 4. Filter Chips
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                listOf(
-                    Pair("ALL", "All Shops (${state.licenses.size})"),
-                    Pair("PENDING", "🔔 Pending (${state.pendingCount})"),
-                    Pair("TRIAL", "🟡 2-Day Trial (${state.activeTrialCount})"),
-                    Pair("ACTIVE", "🟢 1-Year Paid (${state.activePaidCount})"),
-                    Pair("REVOKED", "🔴 Expired/Cut (${state.expiredCount})")
-                ).forEach { (key, label) ->
-                    FilterChip(
-                        selected = state.selectedFilter == key,
-                        onClick = { viewModel.updateFilter(key) },
-                        label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                        shape = RoundedCornerShape(16.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = Color(0xFF2563EB),
-                            selectedLabelColor = Color.White,
-                            containerColor = Color(0xFF162238),
-                            labelColor = Color(0xFF94A3B8)
+                    listOf(
+                        Pair("ALL", "All Shops (${state.licenses.size})"),
+                        Pair("PENDING", "🔔 Pending (${state.pendingCount})"),
+                        Pair("TRIAL", "🟡 2-Day Trial (${state.activeTrialCount})"),
+                        Pair("ACTIVE", "🟢 1-Year Paid (${state.activePaidCount})"),
+                        Pair("REVOKED", "🔴 Expired/Cut (${state.expiredCount})")
+                    ).forEach { (key, label) ->
+                        FilterChip(
+                            selected = state.selectedFilter == key,
+                            onClick = { viewModel.updateFilter(key) },
+                            label = { Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                            shape = RoundedCornerShape(16.dp),
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = Color(0xFF2563EB),
+                                selectedLabelColor = Color.White,
+                                containerColor = Color(0xFF162238),
+                                labelColor = Color(0xFF94A3B8)
+                            )
                         )
-                    )
+                    }
                 }
-            }
 
-            // 5. Shops List
-            if (filteredList.isEmpty()) {
-                Box(
-                    modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                // 5. Shops List
+                if (filteredList.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
                     ) {
-                        Icon(Icons.Default.Storefront, contentDescription = null, tint = Color(0xFF475569), modifier = Modifier.size(48.dp))
-                        Text("No businesses match this filter", color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.Storefront, contentDescription = null, tint = Color(0xFF475569), modifier = Modifier.size(48.dp))
+                            Text("No businesses match this filter", color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(filteredList, key = { it.companyId }) { license ->
+                            ShopLicenseAdminCard(
+                                license = license,
+                                onGrantTrial = { showTrialConfirmDialog = license },
+                                onGrantYearly = { selectedShopForLicense = license },
+                                onRevoke = { selectedShopForRevoke = license },
+                                onDeleteShop = { selectedShopForDelete = license },
+                                onCallPhone = { phone ->
+                                    try {
+                                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {}
+                                },
+                                onWhatsApp = { phone ->
+                                    try {
+                                        val clean = phone.filter { it.isDigit() }
+                                        val url = "https://api.whatsapp.com/send?phone=+91$clean&text=Hello%20${Uri.encode(license.businessName)},%20regarding%20your%20KadaiKutty%20POS%20License:"
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {}
+                                }
+                            )
+                        }
                     }
                 }
             } else {
-                LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(filteredList, key = { it.companyId }) { license ->
-                        ShopLicenseAdminCard(
-                            license = license,
-                            onGrantTrial = { showTrialConfirmDialog = license },
-                            onGrantYearly = { selectedShopForLicense = license },
-                            onRevoke = { selectedShopForRevoke = license },
-                            onCallPhone = { phone ->
-                                try {
-                                    val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {}
-                            },
-                            onWhatsApp = { phone ->
-                                try {
-                                    val clean = phone.filter { it.isDigit() }
-                                    val url = "https://api.whatsapp.com/send?phone=+91$clean&text=Hello%20${Uri.encode(license.businessName)},%20regarding%20your%20KadaiKutty%20POS%20License:"
-                                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {}
+                // 👥 STAFF APPROVAL TAB CONTENT
+                val filteredStaff = remember(state.staffRequests, state.searchQuery) {
+                    state.staffRequests.filter { staff ->
+                        val matchesQuery = state.searchQuery.isBlank() ||
+                                staff.displayName.contains(state.searchQuery, ignoreCase = true) ||
+                                staff.username.contains(state.searchQuery, ignoreCase = true) ||
+                                staff.businessName.contains(state.searchQuery, ignoreCase = true)
+                        matchesQuery
+                    }
+                }
+
+                // Search Bar for Staff
+                OutlinedTextField(
+                    value = state.searchQuery,
+                    onValueChange = { viewModel.updateSearchQuery(it) },
+                    placeholder = { Text("Search Staff by Name, Mobile, Shop...", color = Color(0xFF64748B), fontSize = 13.sp) },
+                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    trailingIcon = {
+                        if (state.searchQuery.isNotBlank()) {
+                            IconButton(onClick = { viewModel.updateSearchQuery("") }) {
+                                Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color(0xFF94A3B8))
                             }
-                        )
+                        }
+                    },
+                    singleLine = true,
+                    shape = RoundedCornerShape(14.dp),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        focusedContainerColor = Color(0xFF162238),
+                        unfocusedContainerColor = Color(0xFF162238),
+                        focusedBorderColor = Color(0xFFA78BFA),
+                        unfocusedBorderColor = Color(0xFF334155)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 6.dp)
+                )
+
+                if (filteredStaff.isEmpty()) {
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF475569), modifier = Modifier.size(48.dp))
+                            Text("No staff approval requests found", color = Color(0xFF94A3B8), fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        }
+                    }
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(filteredStaff, key = { "${it.companyId}_${it.id}" }) { staffReq ->
+                            StaffApprovalAdminCard(
+                                request = staffReq,
+                                onApprove = { viewModel.approveStaff(staffReq) },
+                                onReject = { viewModel.rejectStaff(staffReq) },
+                                onRevoke = { viewModel.revokeStaff(staffReq) },
+                                onDelete = { selectedStaffForDelete = staffReq },
+                                onCallPhone = { phone ->
+                                    try {
+                                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$phone"))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {}
+                                },
+                                onWhatsApp = { phone ->
+                                    try {
+                                        val clean = phone.filter { it.isDigit() }
+                                        val url = "https://api.whatsapp.com/send?phone=+91$clean&text=Hello%20${Uri.encode(staffReq.displayName)},%20regarding%20your%20KadaiKutty%20Staff%20Account%20at%20${Uri.encode(staffReq.businessName)}:"
+                                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                                        context.startActivity(intent)
+                                    } catch (e: Exception) {}
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -469,6 +619,74 @@ fun MasterControlScreen(
         )
     }
 
+    // Modal 3.5: Delete Shop Permanently Dialog
+    if (selectedShopForDelete != null) {
+        val shop = selectedShopForDelete!!
+        AlertDialog(
+            onDismissRequest = { selectedShopForDelete = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🗑️", fontSize = 18.sp)
+                    Text("Delete Shop Permanently?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Are you sure you want to completely wipe ${shop.businessName} (+91 ${shop.ownerMobile}) from Firebase licenses and companies?", fontSize = 13.sp)
+                    Text("This record will be permanently deleted immediately.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteShopRecord(shop.companyId, shop.ownerMobile, shop.businessName)
+                        selectedShopForDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete Record", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedShopForDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+
+    // Modal 3B: Staff Delete Confirmation Dialog
+    if (selectedStaffForDelete != null) {
+        val staff = selectedStaffForDelete!!
+        AlertDialog(
+            onDismissRequest = { selectedStaffForDelete = null },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("🗑️", fontSize = 18.sp)
+                    Text("Delete Staff Permanently?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("Are you sure you want to completely wipe staff '${staff.displayName}' (+91 ${staff.username}) belonging to '${staff.businessName}' from Firebase Cloud?", fontSize = 13.sp)
+                    Text("This staff user and their login credentials will be permanently erased from Cloud database immediately.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.deleteStaffPermanently(staff)
+                        selectedStaffForDelete = null
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete Staff", fontWeight = FontWeight.Bold, color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { selectedStaffForDelete = null }) { Text("Cancel") }
+            }
+        )
+    }
+
     // Modal 4: Master Admin Profile & Security Settings Dialog
     if (showMasterProfileDialog) {
         AlertDialog(
@@ -500,6 +718,15 @@ fun MasterControlScreen(
                         label = { Text("Master Secret PIN (4-6 Digits)") },
                         placeholder = { Text("e.g. 9840") },
                         leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        trailingIcon = {
+                            IconButton(onClick = { editPinVisible = !editPinVisible }) {
+                                Icon(
+                                    imageVector = if (editPinVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (editPinVisible) "Hide PIN" else "Show PIN"
+                                )
+                            }
+                        },
+                        visualTransformation = if (editPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                         singleLine = true,
                         modifier = Modifier.fillMaxWidth()
@@ -562,6 +789,7 @@ fun ShopLicenseAdminCard(
     onGrantTrial: () -> Unit,
     onGrantYearly: () -> Unit,
     onRevoke: () -> Unit,
+    onDeleteShop: () -> Unit,
     onCallPhone: (String) -> Unit,
     onWhatsApp: (String) -> Unit
 ) {
@@ -619,8 +847,8 @@ fun ShopLicenseAdminCard(
                     )
                 }
 
-                // Phone / WhatsApp Contact Buttons
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                // Phone / WhatsApp / Delete Buttons
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                     if (license.ownerMobile.isNotBlank()) {
                         IconButton(onClick = { onCallPhone(license.ownerMobile) }, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.Default.Phone, contentDescription = "Call", tint = Color(0xFF38BDF8), modifier = Modifier.size(18.dp))
@@ -628,6 +856,9 @@ fun ShopLicenseAdminCard(
                         IconButton(onClick = { onWhatsApp(license.ownerMobile) }, modifier = Modifier.size(32.dp)) {
                             Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "WhatsApp", tint = Color(0xFF22C55E), modifier = Modifier.size(18.dp))
                         }
+                    }
+                    IconButton(onClick = onDeleteShop, modifier = Modifier.size(32.dp)) {
+                        Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Record", tint = Color(0xFFEF4444), modifier = Modifier.size(18.dp))
                     }
                 }
             }
@@ -690,7 +921,7 @@ fun ShopLicenseAdminCard(
                     onClick = onGrantTrial,
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD97706)),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                     modifier = Modifier.weight(1f)
                 ) {
                     Text("⚡ 2d Trial", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
@@ -701,10 +932,10 @@ fun ShopLicenseAdminCard(
                     onClick = onGrantYearly,
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669)),
-                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                    modifier = Modifier.weight(1.3f)
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(1.2f)
                 ) {
-                    Text("💎 Grant 1-Yr", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("💎 1-Yr", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
 
                 // Cut / Revoke Button
@@ -712,10 +943,236 @@ fun ShopLicenseAdminCard(
                     onClick = onRevoke,
                     shape = RoundedCornerShape(10.dp),
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(0.8f)
+                ) {
+                    Text("🚫 Cut", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                }
+
+                // Wipe / Delete Record from Cloud Button
+                OutlinedButton(
+                    onClick = onDeleteShop,
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444)),
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                    modifier = Modifier.weight(0.9f)
+                ) {
+                    Text("🗑️ Delete", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun StaffApprovalAdminCard(
+    request: StaffApprovalRequest,
+    onApprove: () -> Unit,
+    onReject: () -> Unit,
+    onRevoke: () -> Unit,
+    onDelete: () -> Unit,
+    onCallPhone: (String) -> Unit,
+    onWhatsApp: (String) -> Unit
+) {
+    val isPending = request.status.equals("PENDING_APPROVAL", ignoreCase = true)
+    val isActive = request.status.equals("ACTIVE", ignoreCase = true)
+    val isRejected = request.status.equals("REJECTED", ignoreCase = true)
+    val isInactive = request.status.equals("INACTIVE", ignoreCase = true)
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color(0xFF111C2E)),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            when {
+                isPending -> Color(0xFFD97706)
+                isActive -> Color(0xFF10B981).copy(alpha = 0.5f)
+                isRejected -> Color(0xFFEF4444)
+                else -> Color(0xFF475569)
+            }
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            // 1. Header: Staff Name & Role & Status Tag
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        shape = CircleShape,
+                        color = Color(0xFF7C3AED).copy(alpha = 0.2f),
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFFA78BFA), modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    Column {
+                        Text(request.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color.White)
+                        Text("🏪 ${request.businessName}", fontSize = 12.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.Medium)
+                    }
+                }
+
+                // Status Tag
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = when {
+                        isPending -> Color(0xFF451A03)
+                        isActive -> Color(0xFF064E3B)
+                        isRejected -> Color(0xFF450A0A)
+                        else -> Color(0xFF1E293B)
+                    },
+                    border = androidx.compose.foundation.BorderStroke(
+                        1.dp,
+                        when {
+                            isPending -> Color(0xFFD97706)
+                            isActive -> Color(0xFF10B981)
+                            isRejected -> Color(0xFFEF4444)
+                            else -> Color(0xFF64748B)
+                        }
+                    )
+                ) {
+                    Text(
+                        text = when {
+                            isPending -> "⏳ PENDING APPROVAL"
+                            isActive -> "✅ ACTIVE & APPROVED"
+                            isRejected -> "❌ REJECTED"
+                            else -> "🔴 DEACTIVATED"
+                        },
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = when {
+                            isPending -> Color(0xFFFBBF24)
+                            isActive -> Color(0xFF34D399)
+                            isRejected -> Color(0xFFF87171)
+                            else -> Color(0xFF94A3B8)
+                        },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            // 2. Info Row: Phone & Role & Delete Icon
+            Surface(
+                shape = RoundedCornerShape(10.dp),
+                color = Color(0xFF162238),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
+                        Text("+91 ${request.username}", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                    }
+
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = Color(0xFF1E293B)
+                    ) {
+                        Text(
+                            text = "ROLE: ${request.role.uppercase()}",
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFFA78BFA),
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(
+                            onClick = { onCallPhone(request.username) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.Phone, contentDescription = "Call", tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                        }
+                        IconButton(
+                            onClick = { onWhatsApp(request.username) },
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = "WhatsApp", tint = Color(0xFF22C55E), modifier = Modifier.size(16.dp))
+                        }
+                        IconButton(
+                            onClick = onDelete,
+                            modifier = Modifier.size(28.dp)
+                        ) {
+                            Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Staff", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
+                        }
+                    }
+                }
+            }
+
+            // 3. Action Buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (!isActive) {
+                    Button(
+                        onClick = onApprove,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF059669)),
+                        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1.2f)
+                    ) {
+                        Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Approve", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+
+                if (isPending) {
+                    OutlinedButton(
+                        onClick = onReject,
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(0.9f)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFF59E0B))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Reject", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
+                    }
+                }
+
+                if (isActive) {
+                    Button(
+                        onClick = onRevoke,
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFDC2626)),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Icon(Icons.Default.Block, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
+                        Spacer(Modifier.width(4.dp))
+                        Text("Revoke", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onDelete,
+                    shape = RoundedCornerShape(10.dp),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444)),
                     contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
                     modifier = Modifier.weight(0.9f)
                 ) {
-                    Text("🚫 Cut", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Icon(Icons.Default.DeleteOutline, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFEF4444))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Delete", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
                 }
             }
         }

@@ -13,6 +13,7 @@ hilt-navigation-compose = "1.2.0"
 room = "2.6.1"
 work-runtime-ktx = "2.10.0"
 datastore = "1.1.2"
+compose-test = "1.7.6"
 play-services-auth = "21.3.0"
 okhttp3 = "4.12.0"
 retrofit = "2.9.0"
@@ -24,7 +25,7 @@ coroutines = "1.9.0"
 generativeai = "0.9.0"
 firebase-bom = "33.7.0"
 kotlinx-serialization-json = "1.7.3"
-razorpay = "1.6.40"
+
 coil = "2.6.0"
 biometric = "1.2.0-alpha05"
 rootbeer = "0.1.2"
@@ -56,6 +57,7 @@ androidx-navigation-compose = { module = "androidx.navigation:navigation-compose
 
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
 hilt-compiler = { module = "com.google.dagger:hilt-compiler", version.ref = "hilt" }
+hilt-android-testing = { module = "com.google.dagger:hilt-android-testing", version.ref = "hilt" }
 androidx-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version.ref = "hilt-navigation-compose" }
 
 room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
@@ -88,9 +90,11 @@ firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "fir
 firebase-auth = { module = "com.google.firebase:firebase-auth" }
 firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
 firebase-storage = { module = "com.google.firebase:firebase-storage" }
+firebase-appcheck-playintegrity = { module = "com.google.firebase:firebase-appcheck-playintegrity" }
+firebase-appcheck-debug = { module = "com.google.firebase:firebase-appcheck-debug" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization-json" }
 
-razorpay-checkout = { module = "com.razorpay:checkout", version.ref = "razorpay" }
+
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 coil-svg = { module = "io.coil-kt:coil-svg", version.ref = "coil" }
 
@@ -106,6 +110,9 @@ camerax-view = { module = "androidx.camera:camera-view", version.ref = "camerax"
 mlkit-barcode-scanning = { module = "com.google.mlkit:barcode-scanning", version.ref = "mlkit-barcode" }
 guava = { module = "com.google.guava:guava", version.ref = "guava" }
 zxing-android-embedded = { module = "com.journeyapps:zxing-android-embedded", version.ref = "zxing" }
+
+compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4", version.ref = "compose-test" }
+compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "compose-test" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

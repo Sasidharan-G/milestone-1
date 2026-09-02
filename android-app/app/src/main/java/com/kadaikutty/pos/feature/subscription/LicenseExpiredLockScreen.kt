@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -29,7 +30,6 @@ fun LicenseExpiredLockScreen(
     license: LicenseEntity?,
     shopName: String,
     onRefreshStatus: () -> Unit,
-    onOpenMasterControl: () -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -150,7 +150,7 @@ fun LicenseExpiredLockScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(Icons.Default.Chat, contentDescription = null, tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.Chat, contentDescription = null, tint = Color.White)
                     Text("WhatsApp Master Admin", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                 }
             }
@@ -168,74 +168,18 @@ fun LicenseExpiredLockScreen(
                 }
             }
 
-            // Super Master Secret Access Button
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
+            // Logout Button
+            Button(
+                onClick = onLogout,
+                modifier = Modifier.fillMaxWidth().height(46.dp),
+                shape = RoundedCornerShape(14.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155))
             ) {
-                TextButton(onClick = onLogout) {
-                    Text("Switch User / Logout", color = Color(0xFF94A3B8), fontSize = 12.sp)
-                }
-
-                TextButton(onClick = { showMasterPinDialog = true }) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Icon(Icons.Default.Security, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(14.dp))
-                        Text("Master Control", color = Color(0xFFF59E0B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White)
+                    Text("Switch User / Logout", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
-    }
-
-    // Master Secret PIN Dialog
-    if (showMasterPinDialog) {
-        AlertDialog(
-            onDismissRequest = {
-                showMasterPinDialog = false
-                enteredPin = ""
-                pinError = false
-            },
-            title = { Text("🛡️ Master Admin Authentication", fontWeight = FontWeight.Bold) },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Enter Master Super Admin PIN to open Control Panel:")
-                    OutlinedTextField(
-                        value = enteredPin,
-                        onValueChange = {
-                            enteredPin = it.filter { ch -> ch.isDigit() }.take(6)
-                            pinError = false
-                        },
-                        label = { Text("Master PIN") },
-                        isError = pinError,
-                        supportingText = if (pinError) { { Text("Invalid Master PIN", color = MaterialTheme.colorScheme.error) } } else null,
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        // Master Secret PIN: 9840 or 1234
-                        if (enteredPin == "9840" || enteredPin == "1234" || enteredPin == "984011") {
-                            showMasterPinDialog = false
-                            enteredPin = ""
-                            onOpenMasterControl()
-                        } else {
-                            pinError = true
-                        }
-                    }
-                ) {
-                    Text("Authenticate", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = {
-                    showMasterPinDialog = false
-                    enteredPin = ""
-                }) { Text("Cancel") }
-            }
-        )
     }
 }

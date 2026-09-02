@@ -48,6 +48,9 @@ import kotlinx.coroutines.flow.Flow
     @Query("SELECT * FROM sale_items WHERE companyId = :companyId AND saleId = :saleId")
     suspend fun getSaleItemsList(companyId: String, saleId: String): List<SaleItemEntity>
 
+    @Query("SELECT billNumber FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC LIMIT 1")
+    suspend fun getLatestBillNumber(companyId: String): String?
+
     @Query("SELECT billNumber FROM sales WHERE companyId = :companyId")
     suspend fun getAllBillNumbers(companyId: String): List<String>
 

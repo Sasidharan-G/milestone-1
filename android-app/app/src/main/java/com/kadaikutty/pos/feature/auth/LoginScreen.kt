@@ -10,10 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Phone
-import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
@@ -25,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kadaikutty.pos.core.auth.LoginMode
@@ -40,9 +38,19 @@ fun LoginScreen(
 ) {
     val state by viewModel.state.collectAsState()
     var message by remember { mutableStateOf("") }
-    val activity = androidx.compose.ui.platform.LocalContext.current as? android.app.Activity
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val activity = remember(context) {
+        var ctx: android.content.Context? = context
+        while (ctx is android.content.ContextWrapper) {
+            if (ctx is android.app.Activity) return@remember ctx
+            ctx = ctx.baseContext
+        }
+        null
+    }
+    var passwordVisible by remember { mutableStateOf(false) }
     var showMasterPinDialog by remember { mutableStateOf(false) }
     var enteredMasterPin by remember { mutableStateOf("") }
+    var masterPinVisible by remember { mutableStateOf(false) }
     var masterPinError by remember { mutableStateOf(false) }
     var isCheckingMasterPin by remember { mutableStateOf(false) }
 
@@ -50,8 +58,10 @@ fun LoginScreen(
     var masterResetVerificationId by remember { mutableStateOf<String?>(null) }
     var masterResetOtp by remember { mutableStateOf("") }
     var masterNewPin by remember { mutableStateOf("") }
+    var masterNewPinVisible by remember { mutableStateOf(false) }
     var masterResetTargetPhone by remember { mutableStateOf("") }
     var masterResetLoading by remember { mutableStateOf(false) }
+    var forgotPasswordVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(state.complete) {
         if (state.complete) {
@@ -159,7 +169,16 @@ fun LoginScreen(
                     onValueChange = { viewModel.updatePassword(it) },
                     label = { Text(stringResource(com.kadaikutty.pos.R.string.password), color = Color(0xFF94A3B8)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                    visualTransformation = PasswordVisualTransformation(),
+                    trailingIcon = {
+                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                            Icon(
+                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                tint = Color(0xFF94A3B8)
+                            )
+                        }
+                    },
+                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     shape = RoundedCornerShape(12.dp),
                     colors = OutlinedTextFieldDefaults.colors(
@@ -220,12 +239,31 @@ fun LoginScreen(
                 }
 
                 if (!state.error.isNullOrBlank()) {
-                    Text(
-                        text = state.error ?: "",
-                        color = Color(0xFFFF6B6B),
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium
-                    )
+                    Surface(
+                        color = Color(0xFF450A0A),
+                        shape = RoundedCornerShape(10.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Icon(
+                                Icons.Default.Lock,
+                                contentDescription = null,
+                                tint = Color(0xFFF87171),
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                text = state.error ?: "",
+                                color = Color(0xFFFCA5A5),
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
                 }
 
                 Button(
@@ -325,7 +363,15 @@ fun LoginScreen(
                             isError = masterPinError,
                             supportingText = if (masterPinError) { { Text("Incorrect Master PIN. Check your cloud PIN or use SMS OTP.", color = MaterialTheme.colorScheme.error) } } else null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                            visualTransformation = PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { masterPinVisible = !masterPinVisible }) {
+                                    Icon(
+                                        imageVector = if (masterPinVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (masterPinVisible) "Hide PIN" else "Show PIN"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (masterPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -428,7 +474,15 @@ fun LoginScreen(
                             label = { Text("New Master PIN (4-6 Digits)") },
                             placeholder = { Text("Enter new secret PIN") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                            visualTransformation = PasswordVisualTransformation(),
+                            trailingIcon = {
+                                IconButton(onClick = { masterNewPinVisible = !masterNewPinVisible }) {
+                                    Icon(
+                                        imageVector = if (masterNewPinVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (masterNewPinVisible) "Hide PIN" else "Show PIN"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (masterNewPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
                             singleLine = true,
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -465,6 +519,7 @@ fun LoginScreen(
                 dismissButton = {
                     TextButton(onClick = {
                         showMasterOtpResetDialog = false
+                        masterResetOtp = ""
                         masterResetOtp = ""
                         masterNewPin = ""
                         masterResetVerificationId = null
@@ -544,7 +599,16 @@ fun LoginScreen(
                                 onValueChange = { viewModel.updateNewPassword(it) },
                                 label = { Text("New Password / 4-6 Digit PIN", color = Color(0xFF94A3B8)) },
                                 placeholder = { Text("Enter new password or PIN", color = Color(0xFF64748B)) },
-                                visualTransformation = PasswordVisualTransformation(),
+                                trailingIcon = {
+                                    IconButton(onClick = { forgotPasswordVisible = !forgotPasswordVisible }) {
+                                        Icon(
+                                            imageVector = if (forgotPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                            contentDescription = if (forgotPasswordVisible) "Hide password" else "Show password",
+                                            tint = Color(0xFF94A3B8)
+                                        )
+                                    }
+                                },
+                                visualTransformation = if (forgotPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),

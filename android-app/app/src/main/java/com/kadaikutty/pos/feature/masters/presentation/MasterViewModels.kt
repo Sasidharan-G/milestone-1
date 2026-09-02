@@ -309,7 +309,399 @@ class ProductViewModel @Inject constructor(
             }
         }
     }
+
+    fun exportSampleProductTemplate(
+        uri: android.net.Uri,
+        context: android.content.Context,
+        onComplete: (Boolean, String?) -> Unit
+    ) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            try {
+                context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                    outputStream.bufferedWriter(java.nio.charset.StandardCharsets.UTF_8).use { writer ->
+                        writer.write("Product Name,Barcode,Category,Unit,Purchase Price,Selling Price,Min Stock\n")
+                        writer.write("Aashirvaad Superior MP Atta 5kg,8901725131456,Grocery,KG,220.00,265.00,10\n")
+                        writer.write("Fortune Sunlite Sunflower Oil 1L,8906007280145,Oil & Ghee,LITER,110.00,135.00,15\n")
+                        writer.write("Tata Salt Iodized 1kg,8904043901005,Grocery,PACK,20.00,28.00,25\n")
+                        writer.write("Surf Excel Easy Wash Detergent 1kg,8901030384813,Household,PACK,125.00,150.00,10\n")
+                        writer.write("Britannia Good Day Butter Cookies 100g,8901063012431,Snacks,PIECE,18.00,25.00,30\n")
+                    }
+                }
+                onComplete(true, null)
+            } catch (e: Exception) {
+                onComplete(false, e.message ?: "Failed to export template")
+            }
+        }
+    }
+
+    fun importProductsFromCsv(
+        uri: android.net.Uri,
+        context: android.content.Context,
+        onProgress: (current: Int, totalEstimate: Int) -> Unit,
+        onComplete: (ProductImportSummary) -> Unit
+    ) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val session = sessionStore.activeSession.first()
+            if (session == null) {
+                onComplete(ProductImportSummary(0, 0, 0, 0, "No active session found."))
+                return@launch
+            }
+            val companyId = session.companyId
+
+            try {
+                // Pre-cache existing categories
+                val categoryMap = mutableMapOf<String, String>()
+                dao.categories(companyId, "").first().forEach {
+                    categoryMap[it.name.trim().lowercase()] = it.id
+                }
+
+                // Ensure "General" category exists
+                var generalCatId = categoryMap["general"]
+                if (generalCatId == null) {
+                    val generalCat = CategoryEntity(
+                        id = newRecordId(),
+                        companyId = companyId,
+                        name = "General",
+                        createdAtEpochMs = System.currentTimeMillis(),
+                        updatedAtEpochMs = System.currentTimeMillis(),
+                        syncStatus = SyncStatus.LOCAL_ONLY
+                    )
+                    dao.insertCategory(generalCat)
+                    syncManager.enqueueCategory(generalCat, "INSERT")
+                    categoryMap["general"] = generalCat.id
+                    generalCatId = generalCat.id
+                }
+
+                // Pre-cache existing products by Barcode and by Name
+                val existingBarcodeMap = mutableMapOf<String, ProductEntity>()
+                val existingNameMap = mutableMapOf<String, ProductEntity>()
+                dao.getAllProducts(companyId).forEach {
+                    if (!it.barcode.isNullOrBlank()) {
+                        existingBarcodeMap[it.barcode.trim()] = it
+                    }
+                    existingNameMap[it.name.trim().lowercase()] = it
+                }
+
+                var totalRead = 0
+                var importedCount = 0
+                var updatedCount = 0
+                var skippedCount = 0
+
+                val productBatch = mutableListOf<ProductEntity>()
+                val newCategoriesBatch = mutableListOf<CategoryEntity>()
+
+                val fileBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: byteArrayOf()
+                val isXlsx = fileBytes.size >= 4 && fileBytes[0] == 0x50.toByte() && fileBytes[1] == 0x4B.toByte()
+
+                val rawRows: List<List<String>> = if (isXlsx) {
+                    parseXlsxRows(fileBytes)
+                } else {
+                    val rows = mutableListOf<List<String>>()
+                    val reader = java.io.BufferedReader(java.io.InputStreamReader(java.io.ByteArrayInputStream(fileBytes), java.nio.charset.StandardCharsets.UTF_8))
+                    var line: String? = reader.readLine()
+                    while (line != null) {
+                        val curLine = line
+                        line = reader.readLine()
+                        if (curLine.isNotBlank()) {
+                            rows.add(parseCsvLine(curLine))
+                        }
+                    }
+                    rows
+                }
+
+                var isFirstLine = true
+                for (tokens in rawRows) {
+                    if (tokens.isEmpty()) continue
+
+                    if (isFirstLine) {
+                        isFirstLine = false
+                        val firstCell = tokens[0].trim()
+                        if (firstCell.contains("Product Name", ignoreCase = true) || (tokens.size > 1 && tokens[1].contains("Barcode", ignoreCase = true))) {
+                            continue
+                        }
+                    }
+
+                    if (tokens[0].isBlank()) {
+                        skippedCount++
+                        continue
+                    }
+
+                    totalRead++
+
+                    try {
+                        val rawName = tokens[0].trim()
+                        val rawBarcode = tokens.getOrNull(1)?.trim()?.ifBlank { null }
+                        val rawCategory = tokens.getOrNull(2)?.trim()?.ifBlank { "General" } ?: "General"
+                        val rawUnit = tokens.getOrNull(3)?.trim()?.uppercase()?.ifBlank { "PIECE" } ?: "PIECE"
+                        val rawPurchase = tokens.getOrNull(4)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
+                        val rawSale = tokens.getOrNull(5)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
+                        val rawMinStock = tokens.getOrNull(6)?.trim()?.toDoubleOrNull() ?: 0.0
+
+                        val catKey = rawCategory.lowercase()
+                        var targetCatId = categoryMap[catKey]
+                        if (targetCatId == null) {
+                            val newCat = CategoryEntity(
+                                id = newRecordId(),
+                                companyId = companyId,
+                                name = rawCategory,
+                                createdAtEpochMs = System.currentTimeMillis(),
+                                updatedAtEpochMs = System.currentTimeMillis(),
+                                syncStatus = SyncStatus.LOCAL_ONLY
+                            )
+                            dao.insertCategory(newCat)
+                            syncManager.enqueueCategory(newCat, "INSERT")
+                            categoryMap[catKey] = newCat.id
+                            targetCatId = newCat.id
+                        }
+
+                        val purchasePricePaise = (rawPurchase * 100).toLong()
+                        val salePricePaise = (rawSale * 100).toLong()
+
+                        // Check if existing product by Barcode or by Name
+                        val existingProduct = (if (rawBarcode != null) existingBarcodeMap[rawBarcode] else null) ?: existingNameMap[rawName.lowercase()]
+
+                        if (existingProduct != null) {
+                            val updatedProduct = existingProduct.copy(
+                                name = rawName,
+                                categoryId = targetCatId ?: generalCatId,
+                                purchasePriceMinorUnits = if (purchasePricePaise > 0) purchasePricePaise else existingProduct.purchasePriceMinorUnits,
+                                salePriceMinorUnits = if (salePricePaise > 0) salePricePaise else existingProduct.salePriceMinorUnits,
+                                unitType = rawUnit,
+                                barcode = rawBarcode ?: existingProduct.barcode,
+                                minStockLevel = if (rawMinStock > 0) rawMinStock else existingProduct.minStockLevel,
+                                updatedAtEpochMs = System.currentTimeMillis()
+                            )
+                            productBatch.add(updatedProduct)
+                            updatedCount++
+                        } else {
+                            val newProduct = ProductEntity(
+                                id = newRecordId(),
+                                companyId = companyId,
+                                name = rawName,
+                                categoryId = targetCatId ?: generalCatId,
+                                purchasePriceMinorUnits = purchasePricePaise,
+                                salePriceMinorUnits = salePricePaise,
+                                unitType = rawUnit,
+                                barcode = rawBarcode,
+                                minStockLevel = rawMinStock,
+                                createdAtEpochMs = System.currentTimeMillis(),
+                                updatedAtEpochMs = System.currentTimeMillis(),
+                                syncStatus = SyncStatus.LOCAL_ONLY
+                            )
+                            productBatch.add(newProduct)
+                            if (rawBarcode != null) existingBarcodeMap[rawBarcode] = newProduct
+                            existingNameMap[rawName.lowercase()] = newProduct
+                            importedCount++
+                        }
+
+                        // Flush in batches of 500 to keep memory small and DB fast
+                        if (productBatch.size >= 500) {
+                            dao.insertProducts(productBatch)
+                            productBatch.forEach { p ->
+                                syncManager.enqueueProduct(p, "INSERT")
+                            }
+                            productBatch.clear()
+                            onProgress(totalRead, totalRead)
+                        }
+                    } catch (rowErr: Exception) {
+                        skippedCount++
+                    }
+                }
+
+                // Flush remaining batch
+                if (productBatch.isNotEmpty()) {
+                    dao.insertProducts(productBatch)
+                    productBatch.forEach { p ->
+                        syncManager.enqueueProduct(p, "INSERT")
+                    }
+                    productBatch.clear()
+                }
+
+                onComplete(
+                    ProductImportSummary(
+                        totalRead = totalRead,
+                        importedCount = importedCount,
+                        updatedCount = updatedCount,
+                        skippedCount = skippedCount,
+                        errorMessage = null
+                    )
+                )
+            } catch (e: Exception) {
+                onComplete(
+                    ProductImportSummary(
+                        totalRead = 0,
+                        importedCount = 0,
+                        updatedCount = 0,
+                        skippedCount = 0,
+                        errorMessage = e.message ?: "Failed to read data file"
+                    )
+                )
+            }
+        }
+    }
+
+    private fun parseXlsxRows(zipBytes: ByteArray): List<List<String>> {
+        val sharedStrings = mutableListOf<String>()
+
+        // 1. Read shared strings from xl/sharedStrings.xml
+        try {
+            java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(zipBytes)).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (entry.name == "xl/sharedStrings.xml") {
+                        val parser = org.xmlpull.v1.XmlPullParserFactory.newInstance().newPullParser()
+                        parser.setInput(java.io.InputStreamReader(zis, java.nio.charset.StandardCharsets.UTF_8))
+                        var eventType = parser.eventType
+                        var insideText = false
+                        val currentText = StringBuilder()
+                        while (eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                            when (eventType) {
+                                org.xmlpull.v1.XmlPullParser.START_TAG -> {
+                                    if (parser.name == "t") {
+                                        insideText = true
+                                        currentText.setLength(0)
+                                    }
+                                }
+                                org.xmlpull.v1.XmlPullParser.TEXT -> {
+                                    if (insideText) currentText.append(parser.text)
+                                }
+                                org.xmlpull.v1.XmlPullParser.END_TAG -> {
+                                    if (parser.name == "t") {
+                                        insideText = false
+                                    } else if (parser.name == "si") {
+                                        sharedStrings.add(currentText.toString())
+                                    }
+                                }
+                            }
+                            eventType = parser.next()
+                        }
+                        break
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+        } catch (ignored: Exception) {}
+
+        // 2. Read sheet rows from xl/worksheets/sheet1.xml
+        val rows = mutableListOf<List<String>>()
+        try {
+            java.util.zip.ZipInputStream(java.io.ByteArrayInputStream(zipBytes)).use { zis ->
+                var entry = zis.nextEntry
+                while (entry != null) {
+                    if (entry.name == "xl/worksheets/sheet1.xml" || (entry.name.startsWith("xl/worksheets/") && entry.name.endsWith(".xml"))) {
+                        val parser = org.xmlpull.v1.XmlPullParserFactory.newInstance().newPullParser()
+                        parser.setInput(java.io.InputStreamReader(zis, java.nio.charset.StandardCharsets.UTF_8))
+                        var eventType = parser.eventType
+                        val currentRow = mutableMapOf<Int, String>()
+                        var currentCellRef = ""
+                        var currentCellType = ""
+                        var insideValue = false
+                        val cellVal = StringBuilder()
+
+                        while (eventType != org.xmlpull.v1.XmlPullParser.END_DOCUMENT) {
+                            when (eventType) {
+                                org.xmlpull.v1.XmlPullParser.START_TAG -> {
+                                    when (parser.name) {
+                                        "row" -> {
+                                            currentRow.clear()
+                                        }
+                                        "c" -> {
+                                            currentCellRef = parser.getAttributeValue(null, "r") ?: ""
+                                            currentCellType = parser.getAttributeValue(null, "t") ?: ""
+                                            cellVal.setLength(0)
+                                        }
+                                        "v", "t" -> {
+                                            insideValue = true
+                                        }
+                                    }
+                                }
+                                org.xmlpull.v1.XmlPullParser.TEXT -> {
+                                    if (insideValue) cellVal.append(parser.text)
+                                }
+                                org.xmlpull.v1.XmlPullParser.END_TAG -> {
+                                    when (parser.name) {
+                                        "v", "t" -> {
+                                            insideValue = false
+                                        }
+                                        "c" -> {
+                                            val colIndex = colRefToIndex(currentCellRef)
+                                            val rawStr = cellVal.toString().trim()
+                                            val finalVal = if (currentCellType == "s") {
+                                                val idx = rawStr.toIntOrNull() ?: -1
+                                                if (idx in 0 until sharedStrings.size) sharedStrings[idx] else rawStr
+                                            } else {
+                                                rawStr
+                                            }
+                                            currentRow[colIndex] = finalVal
+                                        }
+                                        "row" -> {
+                                            if (currentRow.isNotEmpty()) {
+                                                val maxCol = currentRow.keys.maxOrNull() ?: 0
+                                                val rowList = (0..maxCol).map { currentRow[it] ?: "" }
+                                                rows.add(rowList)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            eventType = parser.next()
+                        }
+                        break
+                    }
+                    entry = zis.nextEntry
+                }
+            }
+        } catch (ignored: Exception) {}
+
+        return rows
+    }
+
+    private fun colRefToIndex(ref: String): Int {
+        var col = 0
+        for (ch in ref) {
+            if (ch in 'A'..'Z') {
+                col = col * 26 + (ch - 'A' + 1)
+            } else {
+                break
+            }
+        }
+        return if (col > 0) col - 1 else 0
+    }
+
+    private fun parseCsvLine(line: String): List<String> {
+        val result = mutableListOf<String>()
+        val cur = StringBuilder()
+        var inQuotes = false
+        var i = 0
+        while (i < line.length) {
+            val c = line[i]
+            if (c == '\"') {
+                if (inQuotes && i + 1 < line.length && line[i + 1] == '\"') {
+                    cur.append('\"')
+                    i++
+                } else {
+                    inQuotes = !inQuotes
+                }
+            } else if (c == ',' && !inQuotes) {
+                result.add(cur.toString().trim())
+                cur.clear()
+            } else {
+                cur.append(c)
+            }
+            i++
+        }
+        result.add(cur.toString().trim())
+        return result
+    }
 }
+
+data class ProductImportSummary(
+    val totalRead: Int,
+    val importedCount: Int,
+    val updatedCount: Int,
+    val skippedCount: Int,
+    val errorMessage: String? = null
+)
 
 @HiltViewModel
 class CustomerViewModel @Inject constructor(

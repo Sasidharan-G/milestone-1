@@ -144,11 +144,21 @@ class SettingsViewModel @Inject constructor(
         initialValue = null
     )
 
-    val usersList: StateFlow<List<com.kadaikutty.pos.core.auth.UserEntity>> = database.userDao().getAllUsersFlow().stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = emptyList()
-    )
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val usersList: StateFlow<List<com.kadaikutty.pos.core.auth.UserEntity>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId.orEmpty()
+            if (companyId.isBlank()) {
+                flowOf(emptyList())
+            } else {
+                database.userDao().getUsersFlowByCompany(companyId)
+            }
+        }
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = emptyList()
+        )
 
     val currentLicense: StateFlow<com.kadaikutty.pos.core.license.LicenseEntity?> = licenseManager.currentLicense
     val isClockTampered: StateFlow<Boolean> = licenseManager.isClockTampered
@@ -156,7 +166,10 @@ class SettingsViewModel @Inject constructor(
     fun shouldShowRenewalAlert(): Boolean = licenseManager.shouldShowDailyRenewalAlert()
     fun markRenewalAlertShown() = licenseManager.recordRenewalAlertShown()
     fun refreshLicenseStatus() {
-        activeSession.value?.companyId?.let { licenseManager.startRealtimeLicenseSync(it) }
+        val session = activeSession.value
+        if (session != null) {
+            licenseManager.startRealtimeLicenseSync(session.companyId, session.userId)
+        }
     }
 
     fun logout(onComplete: () -> Unit = {}) {
@@ -516,6 +529,8 @@ class SettingsViewModel @Inject constructor(
 
                 val companyId = session.companyId
                 val credResult = createCredentials(cleanPhone, password, java.util.UUID.randomUUID().toString(), displayName)
+                val fullPermissions = permissions + com.kadaikutty.pos.core.security.Permission.PENDING_MASTER_APPROVAL
+                val currentBusinessName = appPreferences.shopName.first().ifBlank { "Store $companyId" }
                 
                 val userEntity = com.kadaikutty.pos.core.auth.UserEntity(
                     id = credResult.userId,
@@ -523,7 +538,7 @@ class SettingsViewModel @Inject constructor(
                     displayName = displayName,
                     salt = credResult.saltStr,
                     verifier = credResult.verifierStr,
-                    permissions = permissions.joinToString(",") { it.name },
+                    permissions = fullPermissions.joinToString(",") { it.name },
                     companyId = companyId,
                     role = role,
                     lastOnlineVerifiedAt = System.currentTimeMillis(),
@@ -541,7 +556,10 @@ class SettingsViewModel @Inject constructor(
                         "verifier" to userEntity.verifier,
                         "permissions" to userEntity.permissions,
                         "companyId" to userEntity.companyId,
+                        "businessName" to currentBusinessName,
                         "role" to userEntity.role,
+                        "status" to "PENDING_APPROVAL",
+                        "createdAt" to System.currentTimeMillis(),
                         "lastOnlineVerifiedAt" to userEntity.lastOnlineVerifiedAt,
                         "offlineValidUntil" to userEntity.offlineValidUntil
                     )
@@ -554,16 +572,18 @@ class SettingsViewModel @Inject constructor(
                         "full_name" to userEntity.displayName,
                         "salt" to userEntity.salt,
                         "verifier" to userEntity.verifier,
-                        "permissions" to permissions.map { it.name },
+                        "permissions" to fullPermissions.map { it.name },
                         "company_id" to userEntity.companyId,
-                        "role" to userEntity.role
+                        "business_name" to currentBusinessName,
+                        "role" to userEntity.role,
+                        "status" to "PENDING_APPROVAL"
                     )
                     firestore.collection("users").document(userEntity.username).set(rootMap)
                 } catch (rpcEx: Exception) {
                     rpcEx.printStackTrace()
                 }
 
-                onResult(true, "Staff account for '$displayName' ($cleanPhone) created successfully!")
+                onResult(true, "Staff account for '$displayName' ($cleanPhone) created! Awaiting Master Admin approval.")
             } catch (e: Exception) {
                 onResult(false, e.message ?: "Failed to create staff account")
             }

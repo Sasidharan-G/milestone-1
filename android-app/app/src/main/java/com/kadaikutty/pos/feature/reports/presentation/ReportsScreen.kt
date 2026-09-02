@@ -71,8 +71,11 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
         "📊 Sales & Bills", 
         "📦 Stock Value", 
         "💰 Profit & Loss", 
-        "🚚 Purchases"
+        "🚚 Purchases",
+        "🛡️ Audit & Deleted"
     )
+    val auditLogs by viewModel.auditLogs.collectAsState()
+    var deleteReason by remember { mutableStateOf("") }
 
     var showDatePicker by remember { mutableStateOf(false) }
     val dateRangeState = rememberDateRangePickerState()
@@ -106,16 +109,33 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
     if (deletingBillNum != null) {
         val bNum = deletingBillNum!!
         AlertDialog(
-            onDismissRequest = { deletingBillNum = null },
+            onDismissRequest = { 
+                deletingBillNum = null 
+                deleteReason = ""
+            },
             title = { Text("Delete Bill #$bNum", fontWeight = FontWeight.Bold) },
-            text = { Text("Are you sure you want to delete this bill? All sold items will be automatically returned back into inventory stock.") },
+            text = { 
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Are you sure you want to delete this bill? All sold items will be automatically returned back into inventory stock.")
+                    OutlinedTextField(
+                        value = deleteReason,
+                        onValueChange = { deleteReason = it },
+                        label = { Text("Reason for cancellation (optional)") },
+                        placeholder = { Text("e.g. Customer return, billing error") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
             confirmButton = {
                 Button(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     onClick = {
                         val target = deletingBillNum!!
+                        val reason = deleteReason
                         deletingBillNum = null
-                        viewModel.deleteSale(target, target, onSuccess = {
+                        deleteReason = ""
+                        viewModel.deleteSale(target, target, reason = reason, onSuccess = {
                             android.widget.Toast.makeText(context, "Bill #$target deleted & stock restored!", android.widget.Toast.LENGTH_SHORT).show()
                         }, onError = {
                             android.widget.Toast.makeText(context, "Failed to delete: ${it.message}", android.widget.Toast.LENGTH_SHORT).show()
@@ -126,7 +146,10 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                 }
             },
             dismissButton = {
-                TextButton(onClick = { deletingBillNum = null }) { Text("Cancel") }
+                TextButton(onClick = { 
+                    deletingBillNum = null 
+                    deleteReason = ""
+                }) { Text("Cancel") }
             }
         )
     }
@@ -164,7 +187,7 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
             )
         }
     ) { paddingValues ->
-        BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             Column(
                 modifier = Modifier
                     .fillMaxSize()
@@ -187,7 +210,9 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                             selected = activeReportTab == index,
                             onClick = {
                                 activeReportTab = index
-                                viewModel.setReportType(reportTypes[index])
+                                if (index < reportTypes.size) {
+                                    viewModel.setReportType(reportTypes[index])
+                                }
                             },
                             text = { Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
                         )
@@ -406,7 +431,9 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                         .fillMaxSize()
                         .weight(1f)
                 ) {
-                    if (isLoading) {
+                    if (activeReportTab == 4) {
+                        AuditLogsView(auditLogs = auditLogs)
+                    } else if (isLoading) {
                         CircularProgressIndicator(modifier = Modifier.align(Alignment.Center))
                     } else if (!error.isNullOrBlank()) {
                         Text(error ?: "Error loading report", color = MaterialTheme.colorScheme.error, modifier = Modifier.align(Alignment.Center))
@@ -840,3 +867,97 @@ fun DateRangePickerDialog(
         )
     }
 }
+
+@Composable
+private fun AuditLogsView(auditLogs: List<com.kadaikutty.pos.feature.billing.data.AuditLogEntity>) {
+    val timeFormatter = remember { SimpleDateFormat("hh:mm a, dd MMM yyyy", Locale.getDefault()) }
+
+    if (auditLogs.isEmpty()) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(48.dp))
+                Text("No deleted or cancelled bills recorded.", color = MaterialTheme.colorScheme.outline, fontSize = 14.sp)
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(auditLogs) { log ->
+                val dateStr = if (log.timestampEpochMs > 0) timeFormatter.format(Date(log.timestampEpochMs)) else "Recent"
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    shape = RoundedCornerShape(12.dp),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                ) {
+                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.errorContainer,
+                                shape = RoundedCornerShape(6.dp)
+                            ) {
+                                Text(
+                                    text = "CANCELLED BILL #${log.billNumber}",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                )
+                            }
+                            Text(
+                                text = Money(log.amountMinorUnits).toString(),
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 15.sp,
+                                color = MaterialTheme.colorScheme.error
+                            )
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = "👤 Cancelled by: ${log.performedByUserName.ifBlank { "Staff" }}",
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "🕒 $dateStr",
+                                fontSize = 11.sp,
+                                color = MaterialTheme.colorScheme.outline
+                            )
+                        }
+
+                        if (log.reason.isNotBlank()) {
+                            Surface(
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = "Reason: ${log.reason}",
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                    fontSize = 11.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
