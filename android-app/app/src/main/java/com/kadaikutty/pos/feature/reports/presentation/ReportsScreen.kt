@@ -10,6 +10,10 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -34,7 +38,7 @@ import com.kadaikutty.pos.feature.reports.presentation.components.BillDetailsDia
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReportsScreen(viewModel: ReportsViewModel) {
+fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
     val context = LocalContext.current
     var documentBytes by remember { mutableStateOf<ByteArray?>(null) }
 
@@ -67,12 +71,12 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
         ReportType.PROFIT,
         ReportType.PURCHASES
     )
-    val reportNames = listOf(
-        "📊 Sales & Bills", 
-        "📦 Stock Value", 
-        "💰 Profit & Loss", 
-        "🚚 Purchases",
-        "🛡️ Audit & Deleted"
+    val reportTabs = listOf(
+        Pair("Sales & Bills", Icons.Default.Receipt),
+        Pair("Stock Value", Icons.Default.Inventory2),
+        Pair("Profit & Loss", Icons.Default.TrendingUp),
+        Pair("Purchases", Icons.Default.LocalShipping),
+        Pair("Audit Log", Icons.Default.History)
     )
     val auditLogs by viewModel.auditLogs.collectAsState()
     var deleteReason by remember { mutableStateOf("") }
@@ -158,6 +162,11 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
         topBar = {
             TopAppBar(
                 title = { Text("Business Reports", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 actions = {
                     IconButton(onClick = { isGridView = !isGridView }) {
@@ -199,23 +208,58 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                 val expensesSum by viewModel.expensesSum.collectAsState()
                 val netProfitSum by viewModel.netProfitSum.collectAsState()
 
-                ScrollableTabRow(
-                    selectedTabIndex = activeReportTab,
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.primary,
-                    edgePadding = 12.dp
+                androidx.compose.foundation.lazy.LazyRow(
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                    contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    reportNames.forEachIndexed { index, name ->
-                        Tab(
-                            selected = activeReportTab == index,
-                            onClick = {
-                                activeReportTab = index
-                                if (index < reportTypes.size) {
-                                    viewModel.setReportType(reportTypes[index])
+                    items(reportTabs.size) { index ->
+                        val tab = reportTabs[index]
+                        val isSelected = activeReportTab == index
+                        val bgColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                        val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                        
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clickable(
+                                    interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                    indication = null
+                                ) {
+                                    activeReportTab = index
+                                    if (index < reportTypes.size) {
+                                        viewModel.setReportType(reportTypes[index])
+                                    }
                                 }
-                            },
-                            text = { Text(name, fontWeight = FontWeight.Bold, fontSize = 13.sp) }
-                        )
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(54.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(bgColor)
+                                    .border(
+                                        width = if (isSelected) 0.dp else 1.dp,
+                                        color = if (isSelected) Color.Transparent else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                        shape = androidx.compose.foundation.shape.CircleShape
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = tab.second,
+                                    contentDescription = tab.first,
+                                    tint = contentColor,
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text(
+                                text = tab.first,
+                                fontSize = 11.sp,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
                 }
 
@@ -226,90 +270,123 @@ fun ReportsScreen(viewModel: ReportsViewModel) {
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     var activePreset by remember { mutableStateOf("All Time") }
-                    Row(
+                    val presetOptions = listOf("Today", "Yesterday", "This Month", "All Time", "Custom")
+                    val presetIndex = presetOptions.indexOf(activePreset)
+
+                    var tabWidths by remember { mutableStateOf(mapOf<Int, androidx.compose.ui.geometry.Rect>()) }
+                    
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
+                            .horizontalScroll(rememberScrollState())
                     ) {
-                        FilterChip(
-                            selected = activePreset == "Today",
-                            onClick = {
-                                activePreset = "Today"
-                                val cal = java.util.Calendar.getInstance()
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-                                cal.set(java.util.Calendar.MINUTE, 0)
-                                cal.set(java.util.Calendar.SECOND, 0)
-                                cal.set(java.util.Calendar.MILLISECOND, 0)
-                                val start = cal.timeInMillis
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
-                                cal.set(java.util.Calendar.MINUTE, 59)
-                                cal.set(java.util.Calendar.SECOND, 59)
-                                cal.set(java.util.Calendar.MILLISECOND, 999)
-                                val end = cal.timeInMillis
-                                viewModel.setDateFilter(start, end)
-                            },
-                            label = { Text("Today", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                            shape = RoundedCornerShape(16.dp)
-                        )
-                        FilterChip(
-                            selected = activePreset == "Yesterday",
-                            onClick = {
-                                activePreset = "Yesterday"
-                                val cal = java.util.Calendar.getInstance()
-                                cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-                                cal.set(java.util.Calendar.MINUTE, 0)
-                                cal.set(java.util.Calendar.SECOND, 0)
-                                cal.set(java.util.Calendar.MILLISECOND, 0)
-                                val start = cal.timeInMillis
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, 23)
-                                cal.set(java.util.Calendar.MINUTE, 59)
-                                cal.set(java.util.Calendar.SECOND, 59)
-                                cal.set(java.util.Calendar.MILLISECOND, 999)
-                                val end = cal.timeInMillis
-                                viewModel.setDateFilter(start, end)
-                            },
-                            label = { Text("Yesterday", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                            shape = RoundedCornerShape(16.dp)
-                        )
-                        FilterChip(
-                            selected = activePreset == "This Month",
-                            onClick = {
-                                activePreset = "This Month"
-                                val cal = java.util.Calendar.getInstance()
-                                cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
-                                cal.set(java.util.Calendar.HOUR_OF_DAY, 0)
-                                cal.set(java.util.Calendar.MINUTE, 0)
-                                cal.set(java.util.Calendar.SECOND, 0)
-                                cal.set(java.util.Calendar.MILLISECOND, 0)
-                                val start = cal.timeInMillis
-                                val end = System.currentTimeMillis()
-                                viewModel.setDateFilter(start, end)
-                            },
-                            label = { Text("This Month", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                            shape = RoundedCornerShape(16.dp)
-                        )
-                        FilterChip(
-                            selected = activePreset == "All Time",
-                            onClick = {
-                                activePreset = "All Time"
-                                viewModel.setDateFilter(null, null)
-                            },
-                            label = { Text("All Time", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                            shape = RoundedCornerShape(16.dp)
-                        )
-                        FilterChip(
-                            selected = activePreset == "Custom",
-                            onClick = {
-                                activePreset = "Custom"
-                                showDatePicker = true
-                            },
-                            label = { Text("Custom Date", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
-                            leadingIcon = { Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp)) },
-                            shape = RoundedCornerShape(16.dp)
-                        )
+                        // Sliding indicator background
+                        val currentRect = tabWidths[presetIndex]
+                        if (currentRect != null) {
+                            val density = androidx.compose.ui.platform.LocalDensity.current
+                            val offset by androidx.compose.animation.core.animateDpAsState(
+                                targetValue = with(density) { currentRect.left.toDp() },
+                                animationSpec = androidx.compose.animation.core.spring(stiffness = 520f, dampingRatio = 0.75f)
+                            )
+                            val width by androidx.compose.animation.core.animateDpAsState(
+                                targetValue = with(density) { currentRect.width.toDp() },
+                                animationSpec = androidx.compose.animation.core.spring(stiffness = 260f, dampingRatio = 0.75f)
+                            )
+                            Box(
+                                modifier = Modifier
+                                    .padding(vertical = 4.dp)
+                                    .offset(x = offset)
+                                    .width(width)
+                                    .height(32.dp)
+                                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                            )
+                        }
+
+                        // The items
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        ) {
+                            presetOptions.forEachIndexed { index, preset ->
+                                val isSelected = presetIndex == index
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .onGloballyPositioned { coords ->
+                                            tabWidths = tabWidths + (index to coords.boundsInParent())
+                                        }
+                                        .height(32.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .border(
+                                            width = if (isSelected) 0.dp else 1.dp,
+                                            color = if (isSelected) Color.Transparent else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(8.dp)
+                                        )
+                                        .clickable(
+                                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                            indication = null
+                                        ) {
+                                            activePreset = preset
+                                            val cal = java.util.Calendar.getInstance()
+                                            when (preset) {
+                                                "Today" -> {
+                                                    cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0); cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+                                                    val start = cal.timeInMillis
+                                                    cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59); cal.set(java.util.Calendar.SECOND, 59); cal.set(java.util.Calendar.MILLISECOND, 999)
+                                                    viewModel.setDateFilter(start, cal.timeInMillis)
+                                                }
+                                                "Yesterday" -> {
+                                                    cal.add(java.util.Calendar.DAY_OF_YEAR, -1)
+                                                    cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0); cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+                                                    val start = cal.timeInMillis
+                                                    cal.set(java.util.Calendar.HOUR_OF_DAY, 23); cal.set(java.util.Calendar.MINUTE, 59); cal.set(java.util.Calendar.SECOND, 59); cal.set(java.util.Calendar.MILLISECOND, 999)
+                                                    viewModel.setDateFilter(start, cal.timeInMillis)
+                                                }
+                                                "This Month" -> {
+                                                    cal.set(java.util.Calendar.DAY_OF_MONTH, 1)
+                                                    cal.set(java.util.Calendar.HOUR_OF_DAY, 0); cal.set(java.util.Calendar.MINUTE, 0); cal.set(java.util.Calendar.SECOND, 0); cal.set(java.util.Calendar.MILLISECOND, 0)
+                                                    val start = cal.timeInMillis
+                                                    val end = System.currentTimeMillis()
+                                                    viewModel.setDateFilter(start, end)
+                                                }
+                                                "All Time" -> {
+                                                    viewModel.setDateFilter(null, null)
+                                                }
+                                                "Custom" -> {
+                                                    showDatePicker = true
+                                                }
+                                            }
+                                        }
+                                        .padding(horizontal = 12.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        if (preset == "Custom") {
+                                            Icon(Icons.Default.DateRange, contentDescription = null, modifier = Modifier.size(14.dp), tint = if(isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
+                                            Spacer(modifier = Modifier.width(4.dp))
+                                        }
+                                        
+                                        Box(contentAlignment = Alignment.Center) {
+                                            androidx.compose.animation.AnimatedVisibility(
+                                                visible = !isSelected,
+                                                enter = androidx.compose.animation.fadeIn(),
+                                                exit = androidx.compose.animation.fadeOut()
+                                            ) {
+                                                Text(preset, fontSize = 12.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            }
+                                            
+                                            androidx.compose.animation.AnimatedVisibility(
+                                                visible = isSelected,
+                                                enter = androidx.compose.animation.fadeIn(),
+                                                exit = androidx.compose.animation.fadeOut()
+                                            ) {
+                                                Text(preset, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary)
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
 
                     Row(

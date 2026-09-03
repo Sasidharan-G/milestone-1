@@ -31,6 +31,10 @@ import com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity
 import com.kadaikutty.pos.core.common.newRecordId
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOf
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 
 @HiltViewModel
 class BillingViewModel @Inject constructor(
@@ -53,6 +57,9 @@ class BillingViewModel @Inject constructor(
     private val purchaseDao = database.purchaseDao()
     private val draftCartDao = database.draftCartDao()
     private val auditLogDao = database.auditLogDao()
+
+    val isSyncing: kotlinx.coroutines.flow.StateFlow<Boolean> = syncScheduler.isSyncingFlow
+        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), false)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val stockBalances = sessionStore.activeSession
@@ -184,11 +191,18 @@ class BillingViewModel @Inject constructor(
         }
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private val sales = sessionStore.activeSession
+    val pagedSales: kotlinx.coroutines.flow.Flow<PagingData<SaleEntity>> = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
-            saleDao.getSales(companyId)
-        }
+            if (companyId.isBlank()) {
+                kotlinx.coroutines.flow.emptyFlow()
+            } else {
+                Pager(
+                    config = PagingConfig(pageSize = 20, enablePlaceholders = false),
+                    pagingSourceFactory = { saleDao.getSalesPaged(companyId) }
+                ).flow
+            }
+        }.cachedIn(viewModelScope)
 
     private val _selectedCustomerId = MutableStateFlow<String?>(null)
 
@@ -206,8 +220,8 @@ class BillingViewModel @Inject constructor(
     private val _lines = MutableStateFlow<List<SaleLine>>(emptyList())
     
     val uiState: StateFlow<BillingUiState> = combine(
-        combine(products, customers, sales, stockBalances) { p, c, s, st -> 
-            BillingUiState(products = p, customers = c, sales = s, stockBalances = st) 
+        combine(products, customers, stockBalances) { p, c, st -> 
+            BillingUiState(products = p, customers = c, stockBalances = st) 
         },
         combine(_lines, _selectedCustomerId, selectedCustomerCreditBalance) { l, cid, credit -> 
             Triple(l, cid, credit) 
@@ -522,8 +536,7 @@ class BillingViewModel @Inject constructor(
         viewModelScope.launch {
             val session = sessionStore.activeSession.first() ?: return@launch
             val companyId = session.companyId
-            val saleList = saleDao.getSales(companyId).first()
-            val sale = saleList.find { it.billNumber == billNumber } ?: return@launch
+            val sale = saleDao.getSaleByBillNumber(companyId, billNumber) ?: return@launch
             val items = saleDao.getSaleItems(companyId, sale.id).first()
             val productsList = masterDao.products(companyId, "").first()
             val productsMap = productsList.associateBy { it.id }
@@ -575,8 +588,7 @@ class BillingViewModel @Inject constructor(
 
             val session = sessionStore.activeSession.first() ?: return@launch
             val companyId = session.companyId
-            val saleList = saleDao.getSales(companyId).first()
-            val sale = saleList.find { it.billNumber == billNumber } ?: return@launch
+            val sale = saleDao.getSaleByBillNumber(companyId, billNumber) ?: return@launch
             val items = saleDao.getSaleItems(companyId, sale.id).first()
             val productsList = masterDao.products(companyId, "").first()
             val productsMap = productsList.associateBy { it.id }

@@ -6,16 +6,22 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
+import androidx.paging.compose.itemContentType
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -45,13 +51,14 @@ import com.kadaikutty.pos.feature.billing.presentation.components.HeldCartsDialo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun BillingScreen(viewModel: BillingViewModel) {
+fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
     val context = LocalContext.current
     val uiState by viewModel.uiState.collectAsState()
     
     val products = uiState.products
     val customers = uiState.customers
-    val sales = uiState.sales
+    val pagedSales = viewModel.pagedSales.collectAsLazyPagingItems()
+    val isSyncing by viewModel.isSyncing.collectAsState()
     val lines = uiState.lines
     val selectedCustomerId = uiState.selectedCustomerId
     val stockMap = uiState.stockBalances
@@ -174,8 +181,21 @@ fun BillingScreen(viewModel: BillingViewModel) {
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(com.kadaikutty.pos.R.string.billing), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
                 actions = {
+                    IconButton(onClick = { viewModel.forceSync() }) {
+                        Icon(
+                            Icons.Default.Sync,
+                            contentDescription = "Live Sync",
+                            tint = if (isSyncing) androidx.compose.ui.graphics.Color(0xFFFBBF24) else androidx.compose.ui.graphics.Color(0xFF69F0AE),
+                            modifier = if (isSyncing) Modifier.rotate(180f) else Modifier
+                        )
+                    }
                     IconButton(onClick = { showCameraScanner = true }) {
                         Icon(Icons.Default.QrCodeScanner, contentDescription = "Fast Barcode Scanner", tint = MaterialTheme.colorScheme.onPrimary)
                     }
@@ -791,7 +811,8 @@ fun BillingScreen(viewModel: BillingViewModel) {
                 Text("Sales History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    items(sales, key = { it.id }) { sale ->
+                    items(count = pagedSales.itemCount, key = pagedSales.itemKey { it.id }, contentType = pagedSales.itemContentType { "Sale" }) { index ->
+                        val sale = pagedSales[index] ?: return@items
                         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(sale.createdAtEpochMs))
                         val customerName = customers.find { it.id == sale.customerId }?.name ?: "Walk-in"
                         Card(

@@ -25,6 +25,7 @@ coroutines = "1.9.0"
 generativeai = "0.9.0"
 firebase-bom = "33.7.0"
 kotlinx-serialization-json = "1.7.3"
+paging = "3.3.2"
 
 coil = "2.6.0"
 biometric = "1.2.0-alpha05"
@@ -64,6 +65,7 @@ room-runtime = { module = "androidx.room:room-runtime", version.ref = "room" }
 room-ktx = { module = "androidx.room:room-ktx", version.ref = "room" }
 room-compiler = { module = "androidx.room:room-compiler", version.ref = "room" }
 room-testing = { module = "androidx.room:room-testing", version.ref = "room" }
+room-paging = { module = "androidx.room:room-paging", version.ref = "room" }
 
 androidx-work-runtime-ktx = { module = "androidx.work:work-runtime-ktx", version.ref = "work-runtime-ktx" }
 androidx-datastore-preferences = { module = "androidx.datastore:datastore-preferences", version.ref = "datastore" }
@@ -93,6 +95,8 @@ firebase-storage = { module = "com.google.firebase:firebase-storage" }
 firebase-appcheck-playintegrity = { module = "com.google.firebase:firebase-appcheck-playintegrity" }
 firebase-appcheck-debug = { module = "com.google.firebase:firebase-appcheck-debug" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization-json" }
+androidx-paging-runtime = { module = "androidx.paging:paging-runtime", version.ref = "paging" }
+androidx-paging-compose = { module = "androidx.paging:paging-compose", version.ref = "paging" }
 
 
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }

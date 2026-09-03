@@ -71,6 +71,8 @@ class ReportsViewModel @Inject constructor(
     private val _expensesSum = MutableStateFlow(0L)
     val expensesSum: StateFlow<Long> = _expensesSum.asStateFlow()
 
+
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     val auditLogs: StateFlow<List<com.kadaikutty.pos.feature.billing.data.AuditLogEntity>> = sessionStore.activeSession
         .flatMapLatest { session ->

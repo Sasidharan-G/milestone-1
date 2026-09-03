@@ -10,8 +10,16 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.ExistingPeriodicWorkPolicy
 import java.util.concurrent.TimeUnit
 import androidx.work.BackoffPolicy
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.map
 
 class SyncScheduler(private val context: Context) {
+
+    val isSyncingFlow: Flow<Boolean> = WorkManager.getInstance(context)
+        .getWorkInfosForUniqueWorkFlow("billing-sync")
+        .map { workInfos ->
+            workInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING }
+        }
     fun request() {
         val constraints = Constraints(requiredNetworkType = NetworkType.CONNECTED)
         

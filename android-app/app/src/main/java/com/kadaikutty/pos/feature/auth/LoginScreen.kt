@@ -30,11 +30,12 @@ import com.kadaikutty.pos.core.presentation.components.LoadingOverlay
 
 
 @Composable
-fun LoginScreen(
+fun LoginScreenContent(
     viewModel: LoginViewModel,
     onLoginSuccess: () -> Unit,
     onNavigateToRegister: () -> Unit,
-    onOpenMasterControl: () -> Unit = {}
+    onOpenMasterControl: () -> Unit = {},
+    triggerAnimation: (() -> Unit) -> Unit
 ) {
     val state by viewModel.state.collectAsState()
     var message by remember { mutableStateOf("") }
@@ -73,60 +74,13 @@ fun LoginScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF2C3E50),
-                        Color(0xFF1A2536),
-                        Color(0xFF0F172A)
-                    )
-                )
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .widthIn(max = 420.dp)
-                .padding(24.dp)
-                .border(
-                    width = 1.dp,
-                    color = Color(0xFF334155),
-                    shape = RoundedCornerShape(24.dp)
-                ),
-            shape = RoundedCornerShape(24.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF111C2E))
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(32.dp)
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Top Electric Blue Lock Badge
-                Box(
-                    modifier = Modifier
-                        .size(68.dp)
-                        .background(
-                            color = Color(0xFF1976D2),
-                            shape = RoundedCornerShape(20.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Lock,
-                        contentDescription = null,
-                        modifier = Modifier.size(34.dp),
-                        tint = Color.White
-                    )
-                }
-
                 Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
@@ -146,19 +100,19 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = state.mobileNumber,
                     onValueChange = { viewModel.updateMobileNumber(it) },
-                    label = { Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), color = Color(0xFF94A3B8)) },
-                    placeholder = { Text(stringResource(com.kadaikutty.pos.R.string.enter_10_digit_mobile), color = Color(0xFF64748B)) },
-                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    label = { Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), color = Color.White.copy(alpha = 0.8f)) },
+                    placeholder = { Text(stringResource(com.kadaikutty.pos.R.string.enter_10_digit_mobile), color = Color.White.copy(alpha = 0.5f)) },
+                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(percent = 50),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0xFF162238),
-                        unfocusedContainerColor = Color(0xFF162238),
-                        focusedBorderColor = Color(0xFF1E88E5),
-                        unfocusedBorderColor = Color(0xFF334155),
-                        cursorColor = Color(0xFF1E88E5)
+                        focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                        unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color.Transparent,
+                        cursorColor = Color.White
                     ),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -167,28 +121,31 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = state.password,
                     onValueChange = { viewModel.updatePassword(it) },
-                    label = { Text(stringResource(com.kadaikutty.pos.R.string.password), color = Color(0xFF94A3B8)) },
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    label = { Text(stringResource(com.kadaikutty.pos.R.string.password), color = Color.White.copy(alpha = 0.8f)) },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                tint = Color(0xFF94A3B8)
-                            )
+                        if (state.password.isNotEmpty()) {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                    tint = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     },
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = RoundedCornerShape(percent = 50),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
                         unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0xFF162238),
-                        unfocusedContainerColor = Color(0xFF162238),
-                        focusedBorderColor = Color(0xFF1E88E5),
-                        unfocusedBorderColor = Color(0xFF334155),
-                        cursorColor = Color(0xFF1E88E5)
+                        focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                        unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                        focusedBorderColor = Color.White,
+                        unfocusedBorderColor = Color.Transparent,
+                        cursorColor = Color.White
                     ),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -209,9 +166,9 @@ fun LoginScreen(
                             modifier = Modifier.padding(horizontal = 8.dp),
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFF1E88E5),
+                                checkedTrackColor = Color(0xFF8E2128), // Matches maroon theme
                                 uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color(0xFF475569)
+                                uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
                             )
                         )
                         Text("Online", fontSize = 12.sp, color = Color(0xFF94A3B8))
@@ -221,16 +178,18 @@ fun LoginScreen(
                         text = "Forgot Password?",
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color(0xFF38BDF8),
+                        color = Color.White,
                         modifier = Modifier.clickable {
                             val phone = state.mobileNumber.trim()
                             if (phone.isBlank()) {
                                 message = "Please enter your mobile number first."
                             } else if (activity != null) {
-                                viewModel.requestPasswordResetOtp(phone, activity, 
-                                    onCodeSent = { _ -> message = "Live SMS OTP sent to your mobile!" },
-                                    onError = { errMsg -> message = "Recovery failed: $errMsg" }
-                                )
+                                triggerAnimation {
+                                    viewModel.requestPasswordResetOtp(phone, activity, 
+                                        onCodeSent = { _ -> message = "Live SMS OTP sent to your mobile!" },
+                                        onError = { errMsg -> message = "Recovery failed: $errMsg" }
+                                    )
+                                }
                             } else {
                                 message = "Activity context is missing."
                             }
@@ -238,50 +197,24 @@ fun LoginScreen(
                     )
                 }
 
-                if (!state.error.isNullOrBlank()) {
-                    Surface(
-                        color = Color(0xFF450A0A),
-                        shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Lock,
-                                contentDescription = null,
-                                tint = Color(0xFFF87171),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = state.error ?: "",
-                                color = Color(0xFFFCA5A5),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
-                        }
-                    }
-                }
 
                 Button(
-                    onClick = { viewModel.login() },
+                    onClick = { triggerAnimation { viewModel.login() } },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(52.dp),
+                    shape = RoundedCornerShape(percent = 50),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF1E88E5),
-                        contentColor = Color.White
+                        containerColor = Color.White,
+                        contentColor = Color(0xFFE40000)
                     ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 0.dp),
                     enabled = !state.loading
                 ) {
                     if (state.loading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            color = Color.White
+                            color = Color(0xFFE40000)
                         )
                     } else {
                         Text("Sign In", fontWeight = FontWeight.Bold, fontSize = 15.sp)
@@ -292,35 +225,27 @@ fun LoginScreen(
                     text = "New business? Register here",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color(0xFF38BDF8),
+                    color = Color.White,
                     modifier = Modifier
                         .clickable { onNavigateToRegister() }
                         .padding(vertical = 4.dp)
                 )
 
-                HorizontalDivider(color = Color(0xFF1E293B), modifier = Modifier.padding(vertical = 4.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
 
-                // 🛡️ Super Master Access Button
-                TextButton(
-                    onClick = { showMasterPinDialog = true },
-                    modifier = Modifier.padding(top = 2.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Surface(
-                            shape = CircleShape,
-                            color = Color(0xFFF59E0B).copy(alpha = 0.2f),
-                            modifier = Modifier.size(20.dp)
-                        ) {
-                            Box(contentAlignment = Alignment.Center) {
-                                Text("🛡️", fontSize = 10.sp)
-                            }
-                        }
-                        Text("Super Master Control Panel", color = Color(0xFFF59E0B), fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    }
-                }
+                // 🛡️ Super Master Access Button (Logo)
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(id = com.kadaikutty.pos.R.drawable.ic_master_logo),
+                    contentDescription = "Master Control",
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .size(36.dp)
+                        .clickable(
+                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                            indication = null,
+                            onClick = { triggerAnimation { showMasterPinDialog = true } }
+                        )
+                )
 
                 if (message.isNotBlank()) {
                     Text(
@@ -333,7 +258,6 @@ fun LoginScreen(
                     )
                 }
             }
-        }
 
         // Master Secret PIN Dialog with Cloud Sync and Forgot PIN OTP
         if (showMasterPinDialog) {
@@ -343,37 +267,54 @@ fun LoginScreen(
                     enteredMasterPin = ""
                     masterPinError = false
                 },
+                containerColor = Color(0xFF5C151A), // Maroon Background
+                titleContentColor = Color.White,
+                textContentColor = Color.White.copy(alpha = 0.9f),
                 title = {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("🛡️", fontSize = 18.sp)
-                        Text("Super Master Authentication", fontWeight = FontWeight.Bold)
+                        Text("Super Master Authentication", fontWeight = FontWeight.Bold, color = Color.White)
                     }
                 },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Enter Super Master Secret PIN (Cloud Synced):")
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text("Enter Super Master Secret PIN (Cloud Synced):", color = Color.White.copy(alpha = 0.8f))
                         OutlinedTextField(
                             value = enteredMasterPin,
                             onValueChange = {
                                 enteredMasterPin = it.filter { ch -> ch.isDigit() }.take(6)
                                 masterPinError = false
                             },
-                            label = { Text("Master PIN") },
-                            placeholder = { Text("Enter 4-6 digit PIN") },
+                            label = { Text("Master PIN", color = Color.White.copy(alpha = 0.8f)) },
+                            placeholder = { Text("Enter 4-6 digit PIN", color = Color.White.copy(alpha = 0.5f)) },
                             isError = masterPinError,
-                            supportingText = if (masterPinError) { { Text("Incorrect Master PIN. Check your cloud PIN or use SMS OTP.", color = MaterialTheme.colorScheme.error) } } else null,
+                            supportingText = if (masterPinError) { { Text("Incorrect Master PIN.", color = Color(0xFFFF5252)) } } else null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                             trailingIcon = {
                                 IconButton(onClick = { masterPinVisible = !masterPinVisible }) {
                                     Icon(
                                         imageVector = if (masterPinVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                        contentDescription = if (masterPinVisible) "Hide PIN" else "Show PIN"
+                                        contentDescription = if (masterPinVisible) "Hide PIN" else "Show PIN",
+                                        tint = Color.White.copy(alpha = 0.8f)
                                     )
                                 }
                             },
                             visualTransformation = if (masterPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(percent = 50),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                                focusedBorderColor = Color.White,
+                                unfocusedBorderColor = Color.Transparent,
+                                cursorColor = Color.White,
+                                errorBorderColor = Color(0xFFFF5252),
+                                errorLabelColor = Color(0xFFFF5252),
+                                errorSupportingTextColor = Color(0xFFFF5252)
+                            )
                         )
 
                         // 📱 Master Forgot PIN via Firebase SMS OTP
@@ -429,17 +370,22 @@ fun LoginScreen(
                                 }
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF59E0B)),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color(0xFF5C151A),
+                            disabledContainerColor = Color.White.copy(alpha = 0.5f),
+                            disabledContentColor = Color(0xFF5C151A).copy(alpha = 0.5f)
+                        ),
                         enabled = enteredMasterPin.length >= 4 && !isCheckingMasterPin
                     ) {
-                        Text(if (isCheckingMasterPin) "Verifying..." else "Open Control Panel", fontWeight = FontWeight.Bold, color = Color.Black)
+                        Text(if (isCheckingMasterPin) "Verifying..." else "Open Control Panel", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = {
                         showMasterPinDialog = false
                         enteredMasterPin = ""
-                    }) { Text("Cancel") }
+                    }) { Text("Cancel", color = Color.White.copy(alpha = 0.8f)) }
                 }
             )
         }
@@ -453,38 +399,62 @@ fun LoginScreen(
                     masterNewPin = ""
                     masterResetVerificationId = null
                 },
-                title = { Text("🛡️ Reset Master Secret PIN", fontWeight = FontWeight.Bold) },
+                containerColor = Color(0xFF5C151A), // Maroon Background
+                titleContentColor = Color.White,
+                textContentColor = Color.White.copy(alpha = 0.9f),
+                title = { Text("🛡️ Reset Master Secret PIN", fontWeight = FontWeight.Bold, color = Color.White) },
                 text = {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("SMS OTP sent to Master mobile ($masterResetTargetPhone):", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        Text("SMS OTP sent to Master mobile ($masterResetTargetPhone):", fontSize = 12.sp, color = Color.White.copy(alpha = 0.8f))
                         
                         OutlinedTextField(
                             value = masterResetOtp,
                             onValueChange = { masterResetOtp = it.filter { ch -> ch.isDigit() }.take(6) },
-                            label = { Text("6-Digit SMS OTP") },
-                            placeholder = { Text("Enter 6-digit OTP") },
+                            label = { Text("6-Digit SMS OTP", color = Color.White.copy(alpha = 0.8f)) },
+                            placeholder = { Text("Enter 6-digit OTP", color = Color.White.copy(alpha = 0.5f)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(percent = 50),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                                focusedBorderColor = Color.White,
+                                unfocusedBorderColor = Color.Transparent,
+                                cursorColor = Color.White
+                            )
                         )
 
                         OutlinedTextField(
                             value = masterNewPin,
                             onValueChange = { masterNewPin = it.filter { ch -> ch.isDigit() }.take(6) },
-                            label = { Text("New Master PIN (4-6 Digits)") },
-                            placeholder = { Text("Enter new secret PIN") },
+                            label = { Text("New Master PIN (4-6 Digits)", color = Color.White.copy(alpha = 0.8f)) },
+                            placeholder = { Text("Enter new secret PIN", color = Color.White.copy(alpha = 0.5f)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                             trailingIcon = {
                                 IconButton(onClick = { masterNewPinVisible = !masterNewPinVisible }) {
                                     Icon(
                                         imageVector = if (masterNewPinVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                        contentDescription = if (masterNewPinVisible) "Hide PIN" else "Show PIN"
+                                        contentDescription = if (masterNewPinVisible) "Hide PIN" else "Show PIN",
+                                        tint = Color.White.copy(alpha = 0.8f)
                                     )
                                 }
                             },
                             visualTransformation = if (masterNewPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
                             singleLine = true,
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(percent = 50),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                                unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                                focusedBorderColor = Color.White,
+                                unfocusedBorderColor = Color.Transparent,
+                                cursorColor = Color.White
+                            )
                         )
                     }
                 },
@@ -510,20 +480,24 @@ fun LoginScreen(
                                 }
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = Color.White,
+                            contentColor = Color(0xFF5C151A),
+                            disabledContainerColor = Color.White.copy(alpha = 0.5f),
+                            disabledContentColor = Color(0xFF5C151A).copy(alpha = 0.5f)
+                        ),
                         enabled = masterResetOtp.length == 6 && masterNewPin.length >= 4 && !masterResetLoading
                     ) {
-                        Text(if (masterResetLoading) "Updating..." else "Verify & Set PIN", fontWeight = FontWeight.Bold, color = Color.White)
+                        Text(if (masterResetLoading) "Updating..." else "Verify & Set PIN", fontWeight = FontWeight.Bold)
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = {
                         showMasterOtpResetDialog = false
                         masterResetOtp = ""
-                        masterResetOtp = ""
                         masterNewPin = ""
                         masterResetVerificationId = null
-                    }) { Text("Cancel") }
+                    }) { Text("Cancel", color = Color.White.copy(alpha = 0.8f)) }
                 }
             )
         }
@@ -643,7 +617,6 @@ fun LoginScreen(
                         }
                     }
                 }
-            }
         }
     }
 }

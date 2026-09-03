@@ -321,8 +321,7 @@ class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     Log.e("PullWorker", "Failed pulling inserts for $colName", e)
                 }
             }
-            
-            sharedPrefs.edit().putLong("last_pull_timestamp_$companyId", now).apply()
+            sharedPrefs.edit().putLong("last_pull_timestamp_$companyId", newTimestamp).apply()
             return Result.success()
 
         } catch (e: Exception) {

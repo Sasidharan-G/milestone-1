@@ -137,6 +137,9 @@ data class LoginUiState(
                 LoginMode.Offline -> authRepository.loginOffline(cleanPhone, password)
             }
             password.fill('\u0000')
+            
+            // No artificial delay - animation runs for exact duration of login
+            
             mutableState.update {
                 when (result) {
                     is LoginResult.Success -> it.copy(loading = false, complete = true, isSuperMaster = (result.session.role == "SUPER_ADMIN"), password = "")
@@ -240,5 +243,9 @@ data class LoginUiState(
                 onResult(false, e.message)
             }
         }
+    }
+
+    fun clearError() {
+        mutableState.update { it.copy(error = null) }
     }
 }

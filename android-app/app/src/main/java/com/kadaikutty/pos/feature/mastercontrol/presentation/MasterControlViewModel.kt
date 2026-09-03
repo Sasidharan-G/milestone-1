@@ -256,9 +256,17 @@ class MasterControlViewModel @Inject constructor(
             .groupBy { it.ownerMobile.replace("[^0-9]".toRegex(), "").takeLast(10).ifBlank { it.companyId } }
             .values
             .map { group ->
-                group.maxByOrNull { it.activatedAtEpochMs.coerceAtLeast(it.validUntilEpochMs) } ?: group.first()
+                group.maxByOrNull { 
+                    val statusWeight = when (it.licenseStatus) {
+                        "ACTIVE_PAID" -> 4L
+                        "TRIAL" -> 3L
+                        "PENDING_APPROVAL" -> 2L
+                        else -> 1L
+                    }
+                    statusWeight * 100000000000000L + it.activatedAtEpochMs.coerceAtLeast(it.validUntilEpochMs)
+                } ?: group.first()
             }
-            .sortedByDescending { it.activatedAtEpochMs }
+            .sortedByDescending { it.activatedAtEpochMs.coerceAtLeast(it.validUntilEpochMs) }
 
         val pending = deduplicatedList.count { it.licenseStatus == "PENDING_APPROVAL" }
         val trial = deduplicatedList.count { it.licenseStatus == "TRIAL" && !it.isExpired }
@@ -305,7 +313,6 @@ class MasterControlViewModel @Inject constructor(
                     "validUntilEpochMs" to validUntil,
                     "notes" to "2-Day Free Trial approved by Master Admin"
                 )
-
                 firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
                 _state.value = _state.value.copy(successMessage = "2-Day Free Trial activated for $businessName!")
             } catch (e: Exception) {
@@ -336,7 +343,7 @@ class MasterControlViewModel @Inject constructor(
                     "notes" to "Full Paid License ($years Year) granted by Master Admin"
                 )
 
-                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge())
                 _state.value = _state.value.copy(successMessage = "Full $years Year ($totalDays Days) access granted to $businessName!")
             } catch (e: Exception) {
                 _state.value = _state.value.copy(errorMessage = "Failed to grant license: ${e.message}")
@@ -364,7 +371,7 @@ class MasterControlViewModel @Inject constructor(
                     "notes" to "Custom Access ($days Days) granted by Master Admin"
                 )
 
-                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge())
                 _state.value = _state.value.copy(successMessage = "Custom $days Days access granted to $businessName!")
             } catch (e: Exception) {
                 _state.value = _state.value.copy(errorMessage = "Failed to grant access: ${e.message}")
@@ -385,7 +392,7 @@ class MasterControlViewModel @Inject constructor(
                     "notes" to "Access manually REVOKED / CUT by Master Admin"
                 )
 
-                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge())
                 _state.value = _state.value.copy(successMessage = "Access immediately REVOKED for $businessName!")
             } catch (e: Exception) {
                 _state.value = _state.value.copy(errorMessage = "Failed to revoke access: ${e.message}")

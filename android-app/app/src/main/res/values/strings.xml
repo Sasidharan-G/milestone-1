@@ -5,9 +5,9 @@
     
     <!-- Authentication & Session -->
     <string name="welcome_back">Welcome Back</string>
-    <string name="sign_in_subtitle">Sign in to Kadaikutty POS Enterprise System</string>
+    <string name="sign_in_subtitle">Kadaikutty POS Enterprise System</string>
     <string name="mobile_number">Mobile Number</string>
-    <string name="enter_10_digit_mobile">Enter 10-digit registered mobile number</string>
+    <string name="enter_10_digit_mobile">Enter Mobile Number</string>
     <string name="password">Password</string>
     <string name="forgot_password">Forgot Password?</string>
     <string name="sign_in">Sign In</string>

@@ -3,11 +3,11 @@ package com.kadaikutty.pos.core.ui.theme
 import androidx.compose.ui.graphics.Color
 
 // Modern Vibrant Fintech / Retail POS Palette
-val PrimarySapphire = Color(0xFF2563EB)         // Vibrant Royal Sapphire
-val PrimaryDarkSapphire = Color(0xFF1D4ED8)
-val PrimaryLightSapphire = Color(0xFF60A5FA)
-val PrimaryContainerBlue = Color(0xFFDBEAFE)     // Soft crisp light blue
-val OnPrimaryContainerBlue = Color(0xFF1E3A8A)
+val PrimarySapphire = Color(0xFF5C151A)         // Vibrant Royal Sapphire -> Maroon
+val PrimaryDarkSapphire = Color(0xFF4A1115)
+val PrimaryLightSapphire = Color(0xFF8B252C)
+val PrimaryContainerBlue = Color(0xFFFDF7F7)     // Soft crisp light blue -> Light Maroon
+val OnPrimaryContainerBlue = Color(0xFF3A0D10)
 
 val EmeraldSuccess = Color(0xFF10B981)          // Electric Emerald for sales & profit
 val EmeraldDark = Color(0xFF059669)

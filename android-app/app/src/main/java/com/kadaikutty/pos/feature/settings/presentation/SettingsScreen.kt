@@ -57,6 +57,7 @@ enum class SettingsCategory(val title: String, val icon: ImageVector) {
 @Composable
 fun SettingsScreen(
     viewModel: SettingsViewModel,
+    onBack: () -> Unit = {},
     onOpenMasterControl: () -> Unit = {},
     onOpenSyncDiagnostics: () -> Unit = {}
 ) {
@@ -185,6 +186,11 @@ fun SettingsScreen(
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
+                    }
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)

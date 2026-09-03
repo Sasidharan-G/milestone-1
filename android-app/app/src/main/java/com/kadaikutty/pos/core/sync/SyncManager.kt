@@ -101,7 +101,8 @@ class SyncManager(
                 "productId" to item.productId,
                 "quantity" to item.quantity,
                 "unitPriceMinorUnits" to item.unitPriceMinorUnits,
-                "lineTotalMinorUnits" to item.lineTotalMinorUnits
+                "lineTotalMinorUnits" to item.lineTotalMinorUnits,
+                "discountMinorUnits" to item.discountMinorUnits
             )
         }
         val payload = toJson(mapOf(
@@ -111,6 +112,11 @@ class SyncManager(
             "totalMinorUnits" to sale.totalMinorUnits,
             "createdAtEpochMs" to sale.createdAtEpochMs,
             "customerId" to sale.customerId,
+            "paymentMode" to sale.paymentMode,
+            "paidCashMinorUnits" to sale.paidCashMinorUnits,
+            "paidUpiMinorUnits" to sale.paidUpiMinorUnits,
+            "creditAppliedMinorUnits" to sale.creditAppliedMinorUnits,
+            "discountMinorUnits" to sale.discountMinorUnits,
             "items" to itemsList
         ))
         enqueueItem(companyId, "Sale", sale.id, operation, payload)
@@ -134,6 +140,13 @@ class SyncManager(
             "supplierId" to purchase.supplierId,
             "totalMinorUnits" to purchase.totalMinorUnits,
             "createdAtEpochMs" to purchase.createdAtEpochMs,
+            "invoiceNumber" to purchase.invoiceNumber,
+            "notes" to purchase.notes,
+            "paymentMode" to purchase.paymentMode,
+            "paidCashMinorUnits" to purchase.paidCashMinorUnits,
+            "paidUpiMinorUnits" to purchase.paidUpiMinorUnits,
+            "creditAppliedMinorUnits" to purchase.creditAppliedMinorUnits,
+            "orderNumber" to purchase.orderNumber,
             "items" to itemsList
         ))
         enqueueItem(companyId, "Purchase", purchase.id, "INSERT", payload)
@@ -211,7 +224,6 @@ class SyncManager(
 
             if (incomingPrec >= existingPrec) {
                 if (operation == "PARTIAL_UPDATE" && existing.operation == "PARTIAL_UPDATE") {
-                    // Merge payloads if both are partial updates
                     try {
                         val existingMap = org.json.JSONObject(existing.payload)
                         val incomingMap = org.json.JSONObject(payloadJson)
@@ -225,7 +237,6 @@ class SyncManager(
                         database.syncQueueDao().updatePending(existing.id, operation, payloadJson, now)
                     }
                 } else if (operation == "PARTIAL_UPDATE" && existing.operation == "INSERT") {
-                    // If it's an insert in queue, merge partial updates into the insert payload
                     try {
                         val existingMap = org.json.JSONObject(existing.payload)
                         val incomingMap = org.json.JSONObject(payloadJson)
@@ -297,19 +308,30 @@ class SyncManager(
     }
 
     private fun toJson(value: Any?): String {
-        return when (value) {
-            null -> "null"
-            is String -> "\"${value.replace("\"", "\\\"")}\""
-            is Number, is Boolean -> "$value"
-            is Map<*, *> -> {
-                value.entries.joinToString(prefix = "{", postfix = "}") { (k, v) ->
-                    "\"$k\":${toJson(v)}"
+        return try {
+            if (value is Map<*, *>) {
+                val jsonObject = org.json.JSONObject()
+                value.forEach { (k, v) ->
+                    if (v is List<*>) {
+                        val jsonArray = org.json.JSONArray()
+                        v.forEach { item ->
+                            if (item is Map<*, *>) {
+                                jsonArray.put(org.json.JSONObject(item as Map<*, *>))
+                            } else {
+                                jsonArray.put(item)
+                            }
+                        }
+                        jsonObject.put(k.toString(), jsonArray)
+                    } else {
+                        jsonObject.put(k.toString(), v)
+                    }
                 }
+                jsonObject.toString()
+            } else {
+                org.json.JSONObject.wrap(value).toString()
             }
-            is List<*> -> {
-                value.joinToString(prefix = "[", postfix = "]") { toJson(it) }
-            }
-            else -> "\"$value\""
+        } catch (e: Exception) {
+            "{}"
         }
     }
 }

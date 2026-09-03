@@ -40,64 +40,15 @@ import com.kadaikutty.pos.feature.masters.data.ProductEntity
 import com.kadaikutty.pos.feature.masters.data.ExpenseEntity
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 
-@Composable
-fun MasterGridCard(
-    title: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    isSelected: Boolean,
-    onClick: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val containerColor = if (isSelected) {
-        MaterialTheme.colorScheme.primary
-    } else {
-        MaterialTheme.colorScheme.surface
-    }
-    val contentColor = if (isSelected) {
-        MaterialTheme.colorScheme.onPrimary
-    } else {
-        MaterialTheme.colorScheme.onSurface
-    }
 
-    Card(
-        modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
-            .border(
-                width = 1.dp,
-                color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(12.dp),
-            ),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 3.dp else 1.dp),
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                tint = contentColor,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(6.dp))
-            Text(
-                text = title,
-                fontSize = 11.sp,
-                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
-                color = contentColor,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-            )
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,7 +58,8 @@ fun MasterScreens(
     customerVm: CustomerViewModel,
     supplierVm: SupplierViewModel,
     expenseVm: ExpenseViewModel,
-    settingsVm: com.kadaikutty.pos.feature.settings.presentation.SettingsViewModel
+    settingsVm: com.kadaikutty.pos.feature.settings.presentation.SettingsViewModel,
+    onBack: () -> Unit = {}
 ) {
     var activeTab by remember { mutableIntStateOf(0) }
     val userSession by settingsVm.activeSession.collectAsState()
@@ -116,6 +68,11 @@ fun MasterScreens(
         topBar = {
             TopAppBar(
                 title = { Text("Master Data Management", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
             )
         }
@@ -139,36 +96,68 @@ fun MasterScreens(
                 }
             }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 12.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(6.dp)
+            androidx.compose.foundation.lazy.LazyRow(
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                val chunkedTabs = masterTabs.chunked(3)
-                chunkedTabs.forEach { rowTabs ->
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                items(masterTabs) { (index, title, icon) ->
+                    val isSelected = activeTab == index
+                    val bgColor = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface
+                    val contentColor = if (isSelected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+                    
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clickable(
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null
+                            ) { activeTab = index }
                     ) {
-                        rowTabs.forEach { (index, title, icon) ->
-                            MasterGridCard(
-                                title = title,
-                                icon = icon,
-                                isSelected = activeTab == index,
-                                onClick = { activeTab = index },
-                                modifier = Modifier.weight(1f)
+                        Box(
+                            contentAlignment = Alignment.Center,
+                            modifier = Modifier
+                                .size(54.dp)
+                                .clip(androidx.compose.foundation.shape.CircleShape)
+                                .background(bgColor)
+                                .border(
+                                    width = if (isSelected) 0.dp else 1.dp,
+                                    color = if (isSelected) Color.Transparent else MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                    shape = androidx.compose.foundation.shape.CircleShape
+                                )
+                        ) {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = title,
+                                tint = contentColor,
+                                modifier = Modifier.size(24.dp)
                             )
                         }
-                        repeat(3 - rowTabs.size) {
-                            Spacer(modifier = Modifier.weight(1f))
-                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = title,
+                            fontSize = 11.sp,
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                            color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
             }
 
-            Box(modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp)) {
-                when (activeTab) {
+            AnimatedContent(
+                targetState = activeTab,
+                transitionSpec = {
+                    if (targetState > initialState) {
+                        (slideInHorizontally(animationSpec = tween(300)) { width -> width } + fadeIn(animationSpec = tween(300))).togetherWith(slideOutHorizontally(animationSpec = tween(300)) { width -> -width } + fadeOut(animationSpec = tween(300)))
+                    } else {
+                        (slideInHorizontally(animationSpec = tween(300)) { width -> -width } + fadeIn(animationSpec = tween(300))).togetherWith(slideOutHorizontally(animationSpec = tween(300)) { width -> width } + fadeOut(animationSpec = tween(300)))
+                    }
+                },
+                modifier = Modifier.fillMaxSize().padding(horizontal = 12.dp),
+                label = "tab_transition"
+            ) { targetTab ->
+                when (targetTab) {
                     0 -> CategoryTabScreen(categoryVm)
                     1 -> ProductTabScreen(productVm)
                     2 -> CustomerTabScreen(customerVm)
@@ -235,18 +224,19 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Create Category", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("Create Category", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = name,
                                 onValueChange = { name = it },
-                                label = { Text("Category Name") },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
+                                label = { Text("Category Name", fontSize = 13.sp) },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(56.dp)
                             )
                             Button(
                                 onClick = {
@@ -262,14 +252,13 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                                         }
                                     }
                                 },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = RoundedCornerShape(8.dp),
                             ) {
-                                Icon(Icons.Default.Add, contentDescription = null)
+                                Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Add Category")
+                                Text("Add Category", fontSize = 14.sp)
                             }
-
                         }
                     }
                 }
@@ -281,10 +270,11 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Categories") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        label = { Text("Search Categories", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(top = 4.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
                 }
 
@@ -328,18 +318,19 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
             Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(
                     modifier = Modifier.weight(1.2f).fillMaxHeight(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Create Category", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Create Category", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it },
-                            label = { Text("Category Name") },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            label = { Text("Category Name", fontSize = 13.sp) },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp)
                         )
                         Button(
                             onClick = {
@@ -352,12 +343,12 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                                     })
                                 }
                             },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.fillMaxWidth().height(44.dp),
+                            shape = RoundedCornerShape(8.dp)
                         ) {
-                            Icon(Icons.Default.Add, contentDescription = null)
+                            Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
-                            Text("Add Category")
+                            Text("Add Category", fontSize = 14.sp)
                         }
                         if (message.isNotBlank()) {
                             Text(message, color = MaterialTheme.colorScheme.primary, fontSize = 13.sp, fontWeight = FontWeight.Medium)
@@ -372,10 +363,11 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Categories") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                        label = { Text("Search Categories", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(bottom = 8.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
 
                     LazyColumn(
@@ -650,18 +642,19 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Create Product", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("Create Product", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = name,
                                 onValueChange = { name = it },
-                                label = { Text("Product Name") },
-                                shape = RoundedCornerShape(12.dp),
-                                modifier = Modifier.fillMaxWidth()
+                                label = { Text("Product Name", fontSize = 13.sp) },
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier.fillMaxWidth().height(56.dp)
                             )
 
                             val selectedCategoryName = categories.find { it.id == selectedCategoryId }?.name ?: "Select Category"
@@ -824,10 +817,11 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Products") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        label = { Text("Search Products", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(top = 4.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
                 }
 
@@ -924,18 +918,19 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                     Card(
                         modifier = Modifier.fillMaxWidth().fillMaxHeight(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                     Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Create Product", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Create Product", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it },
-                            label = { Text("Product Name") },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.fillMaxWidth()
+                            label = { Text("Product Name", fontSize = 13.sp) },
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().height(56.dp)
                         )
 
                         val selectedCategoryName = categories.find { it.id == selectedCategoryId }?.name ?: "Select Category"
@@ -1083,10 +1078,11 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Products") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                        label = { Text("Search Products", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(bottom = 12.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
 
                     LazyColumn(
@@ -1211,12 +1207,13 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Create Customer", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("Create Customer", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = name,
                                 onValueChange = { name = it },
@@ -1290,10 +1287,11 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Customers") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        label = { Text("Search Customers", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(top = 8.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
                 }
 
@@ -1372,12 +1370,13 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
             Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(
                     modifier = Modifier.weight(1.2f).fillMaxHeight(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Create Customer", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Create Customer", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it },
@@ -1450,10 +1449,11 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Customers") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                        label = { Text("Search Customers", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(bottom = 12.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
 
                     LazyColumn(
@@ -1600,12 +1600,13 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Create Supplier", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("Create Supplier", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = name,
                                 onValueChange = { name = it },
@@ -1668,10 +1669,11 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Suppliers") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+                        label = { Text("Search Suppliers", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(top = 8.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
                 }
 
@@ -1754,12 +1756,13 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
             Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(
                     modifier = Modifier.weight(1.2f).fillMaxHeight(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Create Supplier", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Create Supplier", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = it },
@@ -1821,10 +1824,11 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Suppliers") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        shape = RoundedCornerShape(12.dp),
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                        label = { Text("Search Suppliers", fontSize = 13.sp) },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(bottom = 12.dp),
+                        textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
 
                     LazyColumn(
@@ -1964,12 +1968,13 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                 item {
                     Card(
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                        shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                     ) {
                         Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            Text("Create Expense", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            Text("Create Expense", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = description,
                                 onValueChange = { description = it },
@@ -2066,12 +2071,13 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
             Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Card(
                     modifier = Modifier.weight(1.2f).fillMaxHeight(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                    shape = RoundedCornerShape(12.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.2f)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Text("Create Expense", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Create Expense", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = description,
                             onValueChange = { description = it },
@@ -2822,22 +2828,22 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
         // 1. Content Above Search Bar (normal scrollable item)
         item {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp),
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Max).padding(bottom = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Card(
-                    modifier = Modifier.weight(1f),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                     shape = RoundedCornerShape(16.dp)
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
-                        Text("Total Customer Credits Receivable", fontSize = 11.sp, color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f))
+                        Text("Total Customer Credits Receivable", fontSize = 11.sp, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.8f))
                         Spacer(modifier = Modifier.height(4.dp))
-                        Text(Money(totalRec ?: 0L).toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Text(Money(totalRec ?: 0L).toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
                     }
                 }
                 Card(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
                     shape = RoundedCornerShape(16.dp)
                 ) {
@@ -2868,7 +2874,7 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
                     OutlinedTextField(
                         value = search,
                         onValueChange = { search = it },
-                        label = { Text("Search by name") },
+                        label = { Text("Search by name", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f)

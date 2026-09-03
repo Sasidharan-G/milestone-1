@@ -54,6 +54,9 @@ interface PurchaseDao {
     @Query("SELECT * FROM purchases WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
     fun getPurchases(companyId: String): Flow<List<PurchaseEntity>>
 
+    @Query("SELECT SUM(totalMinorUnits) FROM purchases WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs")
+    fun getPurchasesTotalSince(companyId: String, sinceEpochMs: Long): Flow<Long?>
+
     @Query("SELECT * FROM purchase_items WHERE companyId = :companyId AND purchaseId = :purchaseId")
     fun getPurchaseItems(companyId: String, purchaseId: String): Flow<List<PurchaseItemEntity>>
 

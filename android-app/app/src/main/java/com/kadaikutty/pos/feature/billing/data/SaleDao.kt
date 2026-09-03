@@ -4,6 +4,7 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.Query
 import androidx.room.Transaction
+import androidx.paging.PagingSource
 import kotlinx.coroutines.flow.Flow
 
 @Dao interface SaleDao {
@@ -32,7 +33,18 @@ import kotlinx.coroutines.flow.Flow
 
     @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
     fun getSales(companyId: String): Flow<List<SaleEntity>>
-
+    
+    @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
+    fun getSalesPaged(companyId: String): PagingSource<Int, SaleEntity>
+    
+    @Query("SELECT COUNT(*) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs")
+    fun getSalesCountSince(companyId: String, sinceEpochMs: Long): Flow<Int>
+    
+    @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs")
+    fun getSalesTotalSince(companyId: String, sinceEpochMs: Long): Flow<Long?>
+    
+    @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC LIMIT :limit")
+    fun getRecentSales(companyId: String, limit: Int): Flow<List<SaleEntity>>
     @Query("SELECT * FROM sale_items WHERE companyId = :companyId AND saleId = :saleId")
     fun getSaleItems(companyId: String, saleId: String): Flow<List<SaleItemEntity>>
 

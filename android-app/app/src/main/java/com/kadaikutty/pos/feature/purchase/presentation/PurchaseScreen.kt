@@ -9,6 +9,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.*
@@ -40,7 +41,7 @@ import com.kadaikutty.pos.feature.purchase.data.PurchaseItemEntity
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PurchaseScreen(viewModel: PurchaseViewModel) {
+fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
     val uiState by viewModel.uiState.collectAsState()
     
     val products = uiState.products
@@ -176,6 +177,11 @@ fun PurchaseScreen(viewModel: PurchaseViewModel) {
         topBar = {
             TopAppBar(
                 title = { Text(stringResource(com.kadaikutty.pos.R.string.purchase), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
             )
         }

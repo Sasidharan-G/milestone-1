@@ -207,7 +207,7 @@ class DefaultAuthRepository(
                 localResult
             } else {
                 password.fill('\u0000')
-                LoginResult.Failure(if (e.message?.contains("network", ignoreCase = true) == true) "Network error. Please check your internet or switch to Offline mode." else "Invalid mobile number or password.")
+                LoginResult.Failure(if (e is com.google.firebase.FirebaseNetworkException || e is java.net.UnknownHostException || e.message?.contains("network", ignoreCase = true) == true || e.message?.contains("offline", ignoreCase = true) == true) "Network error. Please switch to 'Offline Mode' using the toggle to sign in." else "Invalid mobile number or password.")
             }
         }
     }

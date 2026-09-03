@@ -5,6 +5,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -32,6 +33,12 @@ import com.kadaikutty.pos.core.security.Permission
 import com.kadaikutty.pos.core.auth.Session
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
+import androidx.compose.runtime.remember
+import androidx.compose.ui.platform.LocalDensity
+import com.kadaikutty.pos.R
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -46,9 +53,7 @@ import com.kadaikutty.pos.feature.settings.presentation.SettingsScreen
 import com.kadaikutty.pos.feature.settings.presentation.SettingsViewModel
 import com.kadaikutty.pos.feature.settings.presentation.SyncDiagnosticsScreen
 import com.kadaikutty.pos.feature.settings.presentation.SyncDiagnosticsViewModel
-import com.kadaikutty.pos.feature.auth.LoginScreen
 import com.kadaikutty.pos.feature.auth.LoginViewModel
-import com.kadaikutty.pos.feature.auth.RegisterScreen
 import com.kadaikutty.pos.feature.auth.RegisterViewModel
 import androidx.compose.animation.core.*
 import androidx.compose.ui.draw.rotate
@@ -67,6 +72,7 @@ import com.kadaikutty.pos.feature.reports.presentation.ReportsViewModel
 import com.kadaikutty.pos.core.ui.theme.BillingTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
+import androidx.compose.ui.draw.shadow
 import com.google.firebase.auth.FirebaseAuth
 
 val LocalLayoutMode = staticCompositionLocalOf { "Auto" }
@@ -124,35 +130,24 @@ fun BillingApp() {
                     popExitTransition = { androidx.compose.animation.ExitTransition.None }
                 ) {
                 composable(AppRoute.Login.path) {
-                    val vm: LoginViewModel = hiltViewModel()
-                    LoginScreen(
-                        viewModel = vm,
+                    val loginVm: LoginViewModel = hiltViewModel()
+                    val registerVm: RegisterViewModel = hiltViewModel()
+                    
+                    com.kadaikutty.pos.feature.auth.AuthScreen(
+                        loginViewModel = loginVm,
+                        registerViewModel = registerVm,
                         onLoginSuccess = {
                             navController.navigate(AppRoute.Home.path) {
                                 popUpTo(AppRoute.Login.path) { inclusive = true }
                             }
                         },
-                        onNavigateToRegister = {
-                            navController.navigate(AppRoute.Register.path)
-                        },
-                    ) {
-                        navController.navigate(AppRoute.MasterControl.path)
-                    }
+                        onOpenMasterControl = {
+                            navController.navigate(AppRoute.MasterControl.path)
+                        }
+                    )
                 }
 
-                composable(AppRoute.Register.path) {
-                    val vm: RegisterViewModel = hiltViewModel()
-                    RegisterScreen(
-                        viewModel = vm,
-                        onNavigateBackToLogin = {
-                            navController.popBackStack()
-                        }
-                    ) {
-                        navController.navigate(AppRoute.Home.path) {
-                            popUpTo(AppRoute.Login.path) { inclusive = true }
-                        }
-                    }
-                }
+                // Removed AppRoute.Register.path as it is now handled via flip inside AuthScreen
 
                 composable(AppRoute.Home.path) {
                     val vm: HomeViewModel = hiltViewModel()
@@ -312,29 +307,31 @@ fun BillingApp() {
                         customerVm = custVm,
                         supplierVm = suppVm,
                         expenseVm = expVm,
-                        settingsVm = settingsVm
+                        settingsVm = settingsVm,
+                        onBack = { navController.popBackStack() }
                     )
                 }
 
                 composable(AppRoute.Billing.path) {
                     val vm: BillingViewModel = hiltViewModel()
-                    BillingScreen(viewModel = vm)
+                    BillingScreen(viewModel = vm, onBack = { navController.popBackStack() })
                 }
 
                 composable(AppRoute.Purchases.path) {
                     val vm: PurchaseViewModel = hiltViewModel()
-                    PurchaseScreen(viewModel = vm)
+                    PurchaseScreen(viewModel = vm, onBack = { navController.popBackStack() })
                 }
 
                 composable(AppRoute.Reports.path) {
                     val vm: ReportsViewModel = hiltViewModel()
-                    ReportsScreen(viewModel = vm)
+                    ReportsScreen(viewModel = vm, onBack = { navController.popBackStack() })
                 }
 
                 composable(AppRoute.Settings.path) {
                     val vm: SettingsViewModel = hiltViewModel()
                     SettingsScreen(
                         viewModel = vm,
+                        onBack = { navController.popBackStack() },
                         onOpenMasterControl = {
                             navController.navigate(AppRoute.MasterControl.path)
                         },
@@ -391,12 +388,14 @@ fun BillingApp() {
                         settingsViewModel.markRenewalAlertShown()
                         showRenewalDailyDialog = false
                     },
+                    containerColor = Color(0xFFFDF7F7), // Light maroon shade
+                    tonalElevation = 8.dp,
                     icon = { Icon(Icons.Default.Timer, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(36.dp)) },
-                    title = { Text("⚠️ License Expiry Reminder", fontWeight = FontWeight.Bold) },
+                    title = { Text("⚠️ License Expiry Reminder", fontWeight = FontWeight.Bold, color = Color(0xFF5C151A)) },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Your KadaiKutty POS License expires in ${currentLicense!!.remainingDays} days!", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                            Text("To avoid billing disruptions and maintain your uninterrupted POS operations, please contact the Master Admin to renew your 1-Year license.")
+                            Text("To avoid billing disruptions and maintain your uninterrupted POS operations, please contact the Master Admin to renew your 1-Year license.", color = Color.Black.copy(alpha = 0.8f))
                         }
                     },
                     confirmButton = {
@@ -412,7 +411,7 @@ fun BillingApp() {
                             },
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981))
                         ) {
-                            Text("WhatsApp to Renew", fontWeight = FontWeight.Bold)
+                            Text("WhatsApp to Renew", fontWeight = FontWeight.Bold, color = Color.White)
                         }
                     },
                     dismissButton = {
@@ -422,7 +421,7 @@ fun BillingApp() {
                                 showRenewalDailyDialog = false
                             }
                         ) {
-                            Text("Remind Later")
+                            Text("Remind Later", color = Color(0xFF5C151A))
                         }
                     }
                 )
@@ -466,6 +465,7 @@ fun HomeScreen(
 
     var selectedBillNumForDetail by remember { mutableStateOf<String?>(null) }
     var showLogoutDialog by remember { mutableStateOf(value = false) }
+    var showSettingsMenu by remember { mutableStateOf(value = false) }
 
     // Bill Details Dialog for Recent Invoices
     if (selectedBillNumForDetail != null) {
@@ -488,8 +488,10 @@ fun HomeScreen(
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
-            title = { Text("Confirm Logout") },
-            text = { Text("Are you sure you want to logout? Unsynced data will be preserved in cloud queue.") },
+            containerColor = Color(0xFFFDF7F7), // Light maroon shade
+            tonalElevation = 8.dp, // Light shadow
+            title = { Text("Confirm Logout", color = Color(0xFF5C151A)) },
+            text = { Text("Are you sure you want to logout? Unsynced data will be preserved in cloud queue.", color = Color.Black.copy(alpha = 0.7f)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -497,172 +499,314 @@ fun HomeScreen(
                         onLogout()
                     }
                 ) {
-                    Text("Logout", color = MaterialTheme.colorScheme.error)
+                    Text("Logout", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) {
-                    Text("Cancel")
+                    Text("Cancel", color = Color(0xFF5C151A))
                 }
             }
         )
     }
 
     Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Column {
-                        Text(
-                            text = shopName.ifBlank { "Kadaikutty POS" },
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 18.sp,
-                            color = MaterialTheme.colorScheme.onPrimary
+        bottomBar = {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp), // Floating margin
+                contentAlignment = Alignment.Center
+            ) {
+                Surface(
+                    modifier = Modifier.width(260.dp).height(65.dp),
+                    shape = RoundedCornerShape(35.dp),
+                    color = Color.Transparent,
+                    shadowElevation = 8.dp
+                ) {
+                    Box(
+                        modifier = Modifier.fillMaxSize().background(
+                            androidx.compose.ui.graphics.Brush.horizontalGradient(
+                                colors = listOf(Color(0xFF4A1115), Color(0xFF5C151A), Color(0xFF4A1115))
+                            )
                         )
-                        val roleDisplay = when (session?.role?.uppercase()) {
-                            "CASHIER" -> "👤 Cashier: ${session.displayName.ifBlank { session.userId }}"
-                            "STORE_MANAGER" -> "👔 Manager: ${session.displayName.ifBlank { session.userId }}"
-                            "INWARD_CLERK" -> "🚚 Stock: ${session.displayName.ifBlank { session.userId }}"
-                            else -> "👑 Admin: ${session?.displayName?.ifBlank { session.userId } ?: "Owner"}"
-                        }
-                        Text(
-                            text = "$roleDisplay • Live",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.85f)
-                        )
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
-                actions = {
-                    // 🔄 Live Rotating Cloud Backup Action Pill
-                    Surface(
-                        onClick = {
-                            viewModel.triggerCloudSync()
-                            Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
-                        },
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (dashboardState.isSyncing) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.onPrimary.copy(alpha = 0.15f),
-                        modifier = Modifier.padding(end = 6.dp)
                     ) {
                         Row(
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
-                            Icon(
-                                imageVector = if (dashboardState.pendingSyncCount == 0 && !dashboardState.isSyncing) Icons.Default.CloudDone else Icons.Default.Sync,
-                                contentDescription = "Cloud Sync",
-                                tint = if (dashboardState.isSyncing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary,
-                                modifier = Modifier.size(18.dp).then(syncIconModifier)
-                            )
-                            Text(
-                                text = when {
-                                    dashboardState.isSyncing -> "Syncing..."
-                                    dashboardState.pendingSyncCount > 0 -> "${dashboardState.pendingSyncCount} Pending"
-                                    else -> "Live Cloud"
-                                },
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (dashboardState.isSyncing) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onPrimary
-                            )
+                        // Left: Master Catalog
+                        if (showMasters) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable { onNavigateTo(AppRoute.Masters) }.padding(8.dp)
+                            ) {
+                                Icon(Icons.Default.Menu, contentDescription = "Masters", tint = Color.White.copy(alpha = 0.8f))
+                                Text("Masters", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.width(48.dp))
                         }
-                    }
 
-                    if (showSettings) {
-                        IconButton(onClick = { onNavigateTo(AppRoute.Settings) }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.onPrimary)
+                        // Center Spacer for FAB
+                        Spacer(modifier = Modifier.width(64.dp))
+
+                        // Right: Reports
+                        if (showReports) {
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier.clickable { onNavigateTo(AppRoute.Reports) }.padding(8.dp)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Reports", tint = Color.White.copy(alpha = 0.8f))
+                                Text("Reports", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.width(48.dp))
                         }
-                    }
-                    IconButton(onClick = onCloseShiftClick) {
-                        Icon(Icons.Default.Lock, contentDescription = "Close Shift", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                    IconButton(onClick = { showLogoutDialog = true }) {
-                        Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = "Logout", tint = MaterialTheme.colorScheme.onPrimary)
+                        }
                     }
                 }
-            )
+
+                // Center Raised FAB (Inward Stock)
+                if (showPurchases) {
+                    FloatingActionButton(
+                        onClick = { onNavigateTo(AppRoute.Purchases) },
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .offset(y = (-20).dp)
+                            .size(64.dp)
+                            .border(4.dp, MaterialTheme.colorScheme.background, CircleShape),
+                        shape = CircleShape,
+                        containerColor = Color(0xFF5C151A),
+                        contentColor = Color.White,
+                        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 10.dp)
+                    ) {
+                        Icon(Icons.Default.Add, contentDescription = "Inward Stock", modifier = Modifier.size(32.dp))
+                    }
+                }
+            }
         }
     ) { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .padding(paddingValues)
-                .verticalScroll(rememberScrollState())
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
-            // 1. 📈 Live Business Performance Summary (Top 2x2 KPI Matrix)
-            Text(
-                text = "Today's Live Performance",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // KPI 1: Today's Revenue
-                DashboardKpiCard(
-                    title = "Today's Sales",
-                    value = Money(dashboardState.todaySalesMinorUnits).toString(),
-                    subtitle = "${dashboardState.todayInvoicesCount} Invoices",
-                    icon = Icons.Default.ShoppingCart,
-                    accentColor = Color(0xFF059669),
-                    modifier = Modifier.weight(1f),
-                    onClick = { if (showReports) onNavigateTo(AppRoute.Reports) }
-                )
-
-                // KPI 2: Low Stock Warning
-                DashboardKpiCard(
-                    title = "Low Stock Alert",
-                    value = "${dashboardState.lowStockCount} Items",
-                    subtitle = if (dashboardState.lowStockCount > 0) "Needs Restock" else "Stock Healthy",
-                    icon = Icons.Default.Warning,
-                    accentColor = if (dashboardState.lowStockCount > 0) MaterialTheme.colorScheme.error else Color(0xFF059669),
-                    modifier = Modifier.weight(1f),
-                    onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
-                )
+            val topInset = paddingValues.calculateTopPadding()
+            val scoopHeight = topInset + 72.dp
+            val density = LocalDensity.current
+            val maroonScoopShape = remember(scoopHeight, density) {
+                object : androidx.compose.ui.graphics.Shape {
+                    override fun createOutline(
+                        size: androidx.compose.ui.geometry.Size,
+                        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
+                        density: androidx.compose.ui.unit.Density
+                    ): androidx.compose.ui.graphics.Outline {
+                        val scoopDepth = with(density) { scoopHeight.toPx() }
+                        val corner = with(density) { 48.dp.toPx() }
+                        val path = Path().apply {
+                            moveTo(0f, 0f)
+                            lineTo(size.width * 0.35f, 0f)
+                            // S-curve: wider white area at top for icons
+                            cubicTo(
+                                size.width * 0.58f, 0f,
+                                size.width * 0.50f, scoopDepth * 0.85f,
+                                size.width, scoopDepth
+                            )
+                            lineTo(size.width, size.height - corner)
+                            quadraticTo(size.width, size.height, size.width - corner, size.height)
+                            lineTo(corner, size.height)
+                            quadraticTo(0f, size.height, 0f, size.height - corner)
+                            close()
+                        }
+                        return androidx.compose.ui.graphics.Outline.Generic(path)
+                    }
+                }
             }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                // KPI 3: Customer Due
-                DashboardKpiCard(
-                    title = "Customer Due",
-                    value = Money(dashboardState.customerCreditDueMinorUnits).toString(),
-                    subtitle = "Ledger Balance",
-                    icon = Icons.Default.AccountBox,
-                    accentColor = Color(0xFF2563EB),
-                    modifier = Modifier.weight(1f),
-                    onClick = { if (showMasters) onNavigateTo(AppRoute.Masters) }
-                )
-
-                // KPI 4: Inward Purchases
-                DashboardKpiCard(
-                    title = "Inward Stock",
-                    value = Money(dashboardState.todayPurchasesMinorUnits).toString(),
-                    subtitle = "Purchased Today",
-                    icon = Icons.Default.Add,
-                    accentColor = Color(0xFF7C3AED),
-                    modifier = Modifier.weight(1f),
-                    onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
-                )
+            val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { 4 })
+            LaunchedEffect(pagerState) {
+                while(true) {
+                    kotlinx.coroutines.delay(3000)
+                    val nextPage = (pagerState.currentPage + 1) % 4
+                    pagerState.animateScrollToPage(
+                        page = nextPage,
+                        animationSpec = tween(durationMillis = 800, easing = FastOutSlowInEasing)
+                    )
+                }
             }
+
+            Box(modifier = Modifier.fillMaxWidth()) {
+                // 1. Maroon background with S-curve + bottom rounded corners
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(maroonScoopShape)
+                        .background(Color(0xFF5C151A))
+                        .padding(top = scoopHeight - 12.dp)
+                        .padding(bottom = 20.dp)
+                ) {
+                    Text(
+                        text = shopName.ifBlank { "Kadaikutty POS" },
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 26.sp,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Text(
+                        text = "In the moment",
+                        fontSize = 15.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 16.dp)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    androidx.compose.foundation.pager.HorizontalPager(
+                        state = pagerState,
+                        contentPadding = PaddingValues(start = 16.dp, end = 48.dp),
+                        pageSpacing = 12.dp,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { page ->
+                        when (page) {
+                            0 -> DashboardKpiCard(
+                                title = "Today's Sales",
+                                value = Money(dashboardState.todaySalesMinorUnits).toString(),
+                                subtitle = "${dashboardState.todayInvoicesCount} Invoices",
+                                icon = Icons.Default.ShoppingCart,
+                                accentColor = Color(0xFF8B252C),
+                                modifier = Modifier.fillMaxWidth().height(150.dp),
+                                onClick = { if (showReports) onNavigateTo(AppRoute.Reports) }
+                            )
+                            1 -> DashboardKpiCard(
+                                title = "Low Stock Alert",
+                                value = "${dashboardState.lowStockCount} Items",
+                                subtitle = if (dashboardState.lowStockCount > 0) "Needs Restock" else "Stock Healthy",
+                                icon = Icons.Default.Warning,
+                                accentColor = if (dashboardState.lowStockCount > 0) MaterialTheme.colorScheme.error else Color(0xFF8B252C),
+                                modifier = Modifier.fillMaxWidth().height(150.dp),
+                                onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
+                            )
+                            2 -> DashboardKpiCard(
+                                title = "Customer Due",
+                                value = Money(dashboardState.customerCreditDueMinorUnits).toString(),
+                                subtitle = "Ledger Balance",
+                                icon = Icons.Default.AccountBox,
+                                accentColor = Color(0xFF8B252C),
+                                modifier = Modifier.fillMaxWidth().height(150.dp),
+                                onClick = { if (showMasters) onNavigateTo(AppRoute.Masters) }
+                            )
+                            3 -> DashboardKpiCard(
+                                title = "Inward Stock",
+                                value = Money(dashboardState.todayPurchasesMinorUnits).toString(),
+                                subtitle = "Purchased Today",
+                                icon = Icons.Default.Add,
+                                accentColor = Color(0xFF8B252C),
+                                modifier = Modifier.fillMaxWidth().height(150.dp),
+                                onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
+                            )
+                        }
+                    }
+
+                    // Dots
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 16.dp)
+                                .align(Alignment.Center),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            repeat(4) { iteration ->
+                                val color = if (pagerState.currentPage == iteration) Color.White else Color.White.copy(alpha = 0.3f)
+                                Box(
+                                    modifier = Modifier
+                                        .padding(horizontal = 4.dp)
+                                        .clip(CircleShape)
+                                        .background(color)
+                                        .size(6.dp)
+                                )
+                            }
+                        }
+                    }
+                } // close maroon Column
+
+                // 2. Icons overlay at top-right
+                Row(
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(top = topInset, end = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(0.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = {
+                        viewModel.triggerCloudSync()
+                        Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
+                    }) {
+                        val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
+                        Icon(
+                            imageVector = if (dashboardState.pendingSyncCount == 0 && !dashboardState.isSyncing) Icons.Default.CloudDone else Icons.Default.Sync,
+                            contentDescription = "Cloud Sync",
+                            tint = if (dashboardState.isSyncing) Color(0xFF38BDF8) else Color(0xFF5C151A),
+                            modifier = Modifier.size(24.dp).then(syncIconModifier)
+                        )
+                    }
+                    IconButton(onClick = onCloseShiftClick) {
+                        Icon(Icons.Default.Lock, contentDescription = "Close Shift", tint = Color(0xFF5C151A))
+                    }
+                    Box {
+                        IconButton(onClick = { showSettingsMenu = true }) {
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF5C151A))
+                        }
+                        DropdownMenu(
+                            expanded = showSettingsMenu,
+                            onDismissRequest = { showSettingsMenu = false }
+                        ) {
+                            if (showSettings) {
+                                DropdownMenuItem(
+                                    text = { Text("Settings") },
+                                    onClick = {
+                                        showSettingsMenu = false
+                                        onNavigateTo(AppRoute.Settings)
+                                    },
+                                    leadingIcon = { Icon(Icons.Default.Settings, contentDescription = null) }
+                                )
+                            }
+                            DropdownMenuItem(
+                                text = { Text("Logout", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    showSettingsMenu = false
+                                    showLogoutDialog = true
+                                },
+                                leadingIcon = { Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = MaterialTheme.colorScheme.error) }
+                            )
+                        }
+                    }
+                }
+            } // close header Box
+            // Spacer to wrap bottom contents
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(24.dp)
+            ) {
 
             // 2. ⚡ Hero Point of Sale Card
             if (showSales) {
                 val heroGradient = androidx.compose.ui.graphics.Brush.linearGradient(
                     colors = listOf(
-                        Color(0xFF1E40AF),
-                        Color(0xFF2563EB),
-                        Color(0xFF3B82F6)
+                        Color(0xFF5C151A),
+                        Color(0xFF8B252C),
+                        Color(0xFF4A1115)
                     )
                 )
 
@@ -673,7 +817,7 @@ fun HomeScreen(
                         .clickable { onNavigateTo(AppRoute.Billing) }
                         .border(
                             width = 1.dp,
-                            color = Color(0xFF60A5FA).copy(alpha = 0.4f),
+                            color = Color(0xFF8B252C).copy(alpha = 0.4f),
                             shape = RoundedCornerShape(20.dp)
                         ),
                     shape = RoundedCornerShape(20.dp),
@@ -743,20 +887,16 @@ fun HomeScreen(
                                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                                     ) {
                                         Text(
-                                            text = "⚡",
-                                            fontSize = 13.sp
-                                        )
-                                        Text(
                                             text = "START NEW BILL",
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 13.sp,
-                                            color = Color(0xFF1E40AF)
+                                            color = Color(0xFF5C151A)
                                         )
                                     }
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                                         contentDescription = null,
-                                        tint = Color(0xFF1E40AF),
+                                        tint = Color(0xFF5C151A),
                                         modifier = Modifier.size(14.dp)
                                     )
                                 }
@@ -766,55 +906,7 @@ fun HomeScreen(
                 }
             }
 
-            // 3. 🗂️ Operations Matrix Grid (2x2 Grid Tiles)
-            Text(
-                text = "Business Modules",
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onBackground
-            )
 
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (showPurchases) {
-                    DashboardTileCard(
-                        title = "Inward Stock",
-                        icon = Icons.Default.AddCircle,
-                        iconContainerColor = Color(0xFFEFF6FF),
-                        iconTint = Color(0xFF2563EB),
-                        badge = if (dashboardState.lowStockCount > 0) "${dashboardState.lowStockCount} Low" else null,
-                        badgeColor = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateTo(AppRoute.Purchases) }
-                    )
-                }
-                if (showMasters) {
-                    DashboardTileCard(
-                        title = "Master Catalog",
-                        icon = Icons.Default.Menu,
-                        iconContainerColor = Color(0xFFF5F3FF),
-                        iconTint = Color(0xFF7C3AED),
-                        badge = "6 Modules",
-                        badgeColor = Color(0xFF7C3AED),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateTo(AppRoute.Masters) }
-                    )
-                }
-            }
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                if (showReports) {
-                    DashboardTileCard(
-                        title = "Analytics & Reports",
-                        icon = Icons.AutoMirrored.Filled.List,
-                        iconContainerColor = Color(0xFFECFDF5),
-                        iconTint = Color(0xFF059669),
-                        badge = "Live Reports",
-                        badgeColor = Color(0xFF059669),
-                        modifier = Modifier.weight(1f),
-                        onClick = { onNavigateTo(AppRoute.Reports) }
-                    )
-                }
-            }
 
             // 4. 🧾 Recent Invoices Live Activity Feed
             if (dashboardState.recentSales.isNotEmpty()) {
@@ -906,7 +998,8 @@ fun HomeScreen(
             }
 
             Spacer(modifier = Modifier.height(16.dp))
-        }
+        } // close the inner Column
+        } // close the outer scrolling Column
     }
 }
 
@@ -921,22 +1014,16 @@ fun DashboardKpiCard(
     onClick: () -> Unit = {}
 ) {
     Card(
-        modifier = modifier
-            .clickable { onClick() }
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(16.dp)
-            ),
-        shape = RoundedCornerShape(16.dp),
+        modifier = modifier.clickable { onClick() },
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier
-                .padding(12.dp)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(16.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -945,34 +1032,34 @@ fun DashboardKpiCard(
             ) {
                 Text(
                     text = title,
-                    fontSize = 11.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Surface(
-                    color = accentColor.copy(alpha = 0.12f),
+                    color = accentColor.copy(alpha = 0.15f),
                     shape = RoundedCornerShape(8.dp)
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
                         tint = accentColor,
-                        modifier = Modifier.padding(4.dp).size(16.dp)
+                        modifier = Modifier.padding(6.dp).size(20.dp)
                     )
                 }
             }
 
             Text(
                 text = value,
-                fontSize = 16.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = accentColor
             )
 
             Text(
                 text = subtitle,
-                fontSize = 10.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.8f)
+                fontSize = 12.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
             )
         }
     }

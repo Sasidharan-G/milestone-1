@@ -40,8 +40,6 @@ class HomeViewModel @Inject constructor(
     val activeSession: StateFlow<Session?> = sessionStore.activeSession
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    private val _isSyncing = MutableStateFlow(false)
-
     val dashboardState: StateFlow<HomeDashboardUiState> = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
@@ -55,38 +53,46 @@ class HomeViewModel @Inject constructor(
                     set(Calendar.MILLISECOND, 0)
                 }.timeInMillis
 
-                val salesFlow = database.saleDao().getSales(companyId)
+                val salesCountFlow = database.saleDao().getSalesCountSince(companyId, startOfToday)
+                val salesTotalFlow = database.saleDao().getSalesTotalSince(companyId, startOfToday)
                 val stockFlow = database.purchaseDao().getStockBalances(companyId)
                 val creditsFlow = database.masterDao().getTotalCustomerCreditsReceivable(companyId)
-                val purchasesFlow = database.purchaseDao().getPurchases(companyId)
+                val purchasesTotalFlow = database.purchaseDao().getPurchasesTotalSince(companyId, startOfToday)
                 val pendingFlow = database.syncQueueDao().pendingCount(companyId)
+                val recentSalesFlow = database.saleDao().getRecentSales(companyId, 5)
 
-                combine(salesFlow, stockFlow, creditsFlow, purchasesFlow, pendingFlow) { sales, stockList, customerCredits, purchases, pendingCount ->
-                    val todaySales = sales.filter { it.createdAtEpochMs >= startOfToday }
-                    val todaySalesTotal = todaySales.sumOf { it.totalMinorUnits }
-                    val todayInvoices = todaySales.size
-
-                    val lowStockItems = stockList.count { it.currentStock <= 5 }
+                val aggregatedFlow = combine(
+                    combine(salesCountFlow, salesTotalFlow, purchasesTotalFlow) { count, sTotal, pTotal ->
+                        Triple(count, sTotal ?: 0L, pTotal ?: 0L)
+                    },
+                    stockFlow,
+                    creditsFlow,
+                    pendingFlow,
+                    recentSalesFlow
+                ) { stats, stockList, customerCredits, pendingCount, recent ->
                     val customerDue = customerCredits ?: 0L
-
-                    val todayPurchases = purchases.filter { it.createdAtEpochMs >= startOfToday }
-                        .sumOf { it.totalMinorUnits }
-
-                    val recent = sales.take(5)
-
                     HomeDashboardUiState(
-                        todaySalesMinorUnits = todaySalesTotal,
-                        todayInvoicesCount = todayInvoices,
-                        lowStockCount = lowStockItems,
+                        todaySalesMinorUnits = stats.second,
+                        todayInvoicesCount = stats.first,
+                        lowStockCount = stockList.count { it.currentStock <= 5 },
                         customerCreditDueMinorUnits = customerDue,
-                        todayPurchasesMinorUnits = todayPurchases,
+                        todayPurchasesMinorUnits = stats.third,
                         recentSales = recent,
                         pendingSyncCount = pendingCount,
-                        isSyncing = _isSyncing.value,
-                        lastSyncMessage = if (pendingCount == 0) "All data backed up to cloud" else "$pendingCount items ready to sync"
+                        isSyncing = false, // Default, overwritten by combine below
+                        lastSyncMessage = "" // Default, overwritten by combine below
                     )
-                }.combine(_isSyncing) { state, isSyncing ->
-                    state.copy(isSyncing = isSyncing)
+                }
+
+                aggregatedFlow.combine(syncScheduler.isSyncingFlow) { state, isSyncing ->
+                    state.copy(
+                        isSyncing = isSyncing,
+                        lastSyncMessage = when {
+                            isSyncing -> "Sync in progress..."
+                            state.pendingSyncCount == 0 -> "All data backed up to cloud"
+                            else -> "${state.pendingSyncCount} items ready to sync"
+                        }
+                    )
                 }
             }
         }
@@ -129,12 +135,7 @@ class HomeViewModel @Inject constructor(
     }
 
     fun triggerCloudSync() {
-        viewModelScope.launch {
-            _isSyncing.value = true
-            syncScheduler.request()
-            kotlinx.coroutines.delay(2000)
-            _isSyncing.value = false
-        }
+        syncScheduler.request()
     }
 
     fun logout() {

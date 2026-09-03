@@ -190,13 +190,18 @@ class RegisterViewModel @Inject constructor(
             }
         }
     }
+
+    fun clearError() {
+        _state.update { it.copy(error = null) }
+    }
 }
 
 @Composable
-fun RegisterScreen(
+fun RegisterScreenContent(
     viewModel: RegisterViewModel,
     onNavigateBackToLogin: () -> Unit,
-    onRegisterSuccess: () -> Unit
+    onRegisterSuccess: () -> Unit,
+    triggerAnimation: (() -> Unit) -> Unit
 ) {
     val state by viewModel.state.collectAsState()
     val scrollState = rememberScrollState()
@@ -218,60 +223,14 @@ fun RegisterScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(
-                Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF2C3E50),
-                        Color(0xFF1A2536),
-                        Color(0xFF0F172A)
-                    )
-                )
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        Card(
+        Column(
             modifier = Modifier
+                .padding(32.dp)
                 .fillMaxWidth()
-                .widthIn(max = 440.dp)
-                .padding(24.dp)
-                .verticalScroll(scrollState)
-                .border(
-                    width = 1.dp,
-                    color = Color(0xFF334155),
-                    shape = RoundedCornerShape(24.dp)
-                ),
-            shape = RoundedCornerShape(24.dp),
-            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF111C2E))
+                .verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(28.dp)
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(14.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                // Electric Blue Badge
-                Box(
-                    modifier = Modifier
-                        .size(64.dp)
-                        .background(
-                            color = Color(0xFF1976D2),
-                            shape = RoundedCornerShape(20.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Home,
-                        contentDescription = null,
-                        modifier = Modifier.size(32.dp),
-                        tint = Color.White
-                    )
-                }
-
                 Spacer(modifier = Modifier.height(2.dp))
 
                 Text(
@@ -288,23 +247,25 @@ fun RegisterScreen(
 
                 Spacer(modifier = Modifier.height(4.dp))
 
+                val glassColors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                    unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                    focusedBorderColor = Color.White,
+                    unfocusedBorderColor = Color.Transparent,
+                    cursorColor = Color.White
+                )
+                val glassShape = RoundedCornerShape(percent = 50)
+
                 OutlinedTextField(
                     value = state.mobileNumber,
                     onValueChange = { viewModel.updateMobileNumber(it) },
-                    label = { Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), color = Color(0xFF94A3B8)) },
-                    placeholder = { Text(stringResource(com.kadaikutty.pos.R.string.enter_10_digit_mobile), color = Color(0xFF64748B)) },
-                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF94A3B8)) },
+                    label = { Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0xFF162238),
-                        unfocusedContainerColor = Color(0xFF162238),
-                        focusedBorderColor = Color(0xFF1E88E5),
-                        unfocusedBorderColor = Color(0xFF334155),
-                        cursorColor = Color(0xFF1E88E5)
-                    ),
+                    shape = glassShape,
+                    colors = glassColors,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -312,19 +273,10 @@ fun RegisterScreen(
                 OutlinedTextField(
                     value = state.businessName,
                     onValueChange = { viewModel.updateBusinessName(it) },
-                    label = { Text("Shop / Business Name", color = Color(0xFF94A3B8)) },
-                    placeholder = { Text("e.g. Sasi Supermarket", color = Color(0xFF64748B)) },
-                    leadingIcon = { Icon(Icons.Default.Home, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0xFF162238),
-                        unfocusedContainerColor = Color(0xFF162238),
-                        focusedBorderColor = Color(0xFF1E88E5),
-                        unfocusedBorderColor = Color(0xFF334155),
-                        cursorColor = Color(0xFF1E88E5)
-                    ),
+                    label = { Text("Shop Name", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    leadingIcon = { Icon(Icons.Default.Home, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
+                    shape = glassShape,
+                    colors = glassColors,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -332,19 +284,10 @@ fun RegisterScreen(
                 OutlinedTextField(
                     value = state.ownerName,
                     onValueChange = { viewModel.updateOwnerName(it) },
-                    label = { Text("Owner / Admin Name", color = Color(0xFF94A3B8)) },
-                    placeholder = { Text("e.g. Sasi Dharan", color = Color(0xFF64748B)) },
-                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0xFF162238),
-                        unfocusedContainerColor = Color(0xFF162238),
-                        focusedBorderColor = Color(0xFF1E88E5),
-                        unfocusedBorderColor = Color(0xFF334155),
-                        cursorColor = Color(0xFF1E88E5)
-                    ),
+                    label = { Text("Owner Name", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
+                    shape = glassShape,
+                    colors = glassColors,
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
@@ -352,116 +295,78 @@ fun RegisterScreen(
                 OutlinedTextField(
                     value = state.passwordString,
                     onValueChange = { viewModel.updatePassword(it) },
-                    label = { Text("Password", color = Color(0xFF94A3B8)) },
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                    trailingIcon = {
-                        IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                            Icon(
-                                imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                tint = Color(0xFF94A3B8)
-                            )
-                        }
-                    },
+                    label = { Text("Password", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0xFF162238),
-                        unfocusedContainerColor = Color(0xFF162238),
-                        focusedBorderColor = Color(0xFF1E88E5),
-                        unfocusedBorderColor = Color(0xFF334155),
-                        cursorColor = Color(0xFF1E88E5)
-                    ),
+                    shape = glassShape,
+                    colors = glassColors,
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    trailingIcon = {
+                        if (state.passwordString.isNotEmpty()) {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                    tint = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
                 )
 
                 OutlinedTextField(
                     value = state.confirmPasswordString,
                     onValueChange = { viewModel.updateConfirmPassword(it) },
-                    label = { Text("Confirm Password", color = Color(0xFF94A3B8)) },
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF94A3B8)) },
-                    trailingIcon = {
-                        IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
-                            Icon(
-                                imageVector = if (confirmPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password",
-                                tint = Color(0xFF94A3B8)
-                            )
-                        }
-                    },
+                    label = { Text("Confirm", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color(0xFF162238),
-                        unfocusedContainerColor = Color(0xFF162238),
-                        focusedBorderColor = Color(0xFF1E88E5),
-                        unfocusedBorderColor = Color(0xFF334155),
-                        cursorColor = Color(0xFF1E88E5)
-                    ),
+                    shape = glassShape,
+                    colors = glassColors,
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                if (!state.error.isNullOrBlank()) {
-                    Surface(
-                        color = Color(0xFF450A0A),
-                        shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFEF4444).copy(alpha = 0.5f)),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Icon(
-                                Icons.Default.Lock,
-                                contentDescription = null,
-                                tint = Color(0xFFF87171),
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Text(
-                                text = state.error ?: "",
-                                color = Color(0xFFFCA5A5),
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Medium
-                            )
+                    singleLine = true,
+                    trailingIcon = {
+                        if (state.confirmPasswordString.isNotEmpty()) {
+                            IconButton(onClick = { confirmPasswordVisible = !confirmPasswordVisible }) {
+                                Icon(
+                                    imageVector = if (confirmPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                    contentDescription = if (confirmPasswordVisible) "Hide password" else "Show password",
+                                    tint = Color.White.copy(alpha = 0.8f),
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
                         }
                     }
-                }
+                )
+
 
                 Button(
                     onClick = { 
-                        if (activity != null) {
-                            viewModel.register(activity)
-                        }
+                        triggerAnimation { viewModel.registerDirectly { onRegisterSuccess() } }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(50.dp),
-                    shape = RoundedCornerShape(12.dp),
+                        .height(52.dp),
+                    shape = RoundedCornerShape(percent = 50),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF1E88E5),
-                        contentColor = Color.White
+                        containerColor = Color.White,
+                        contentColor = Color(0xFFE40000)
                     ),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 0.dp),
                     enabled = !state.loading
                 ) {
-                    if (state.loading && !state.showOtpDialog) {
+                    if (state.loading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            color = Color.White
+                            color = Color(0xFFE40000)
                         )
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White)
-                            Text("Send OTP & Register", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFE40000))
+                            Text("Instant Register Shop", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
                 }
@@ -470,42 +375,10 @@ fun RegisterScreen(
                     text = "Already have an account? Sign In",
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
-                    color = Color(0xFF38BDF8),
+                    color = Color.White,
                     modifier = Modifier
                         .clickable { onNavigateBackToLogin() }
                         .padding(vertical = 4.dp)
                 )
-            }
-        }
-
-        if (state.showOtpDialog) {
-            androidx.compose.ui.window.Dialog(
-                onDismissRequest = { viewModel.dismissOtpDialog() }
-            ) {
-                Surface(
-                    shape = RoundedCornerShape(24.dp),
-                    color = Color(0xFF0B0F17),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
-                        otpLength = 6,
-                        otpValue = state.otp,
-                        phoneNumber = state.mobileNumber,
-                        onOtpChange = { viewModel.updateOtp(it) },
-                        onVerifyTriggered = {
-                            viewModel.verifyOtpAndCompleteRegistration { onRegisterSuccess() }
-                        },
-                        onResendClick = {
-                            if (activity != null) {
-                                viewModel.register(activity)
-                            }
-                        },
-                        isLoading = state.loading,
-                        errorMessage = state.error
-                    )
-                }
-            }
         }
     }
-}

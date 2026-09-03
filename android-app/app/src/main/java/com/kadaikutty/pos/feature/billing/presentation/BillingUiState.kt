@@ -8,7 +8,6 @@ import com.kadaikutty.pos.feature.billing.data.SaleEntity
 data class BillingUiState(
     val products: List<ProductEntity> = emptyList(),
     val customers: List<CustomerEntity> = emptyList(),
-    val sales: List<SaleEntity> = emptyList(),
     val stockBalances: Map<String, Long> = emptyMap(),
     val lines: List<SaleLine> = emptyList(),
     val selectedCustomerId: String? = null,

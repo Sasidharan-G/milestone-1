@@ -260,14 +260,8 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
 
     private fun extractUpdatedAtFromPayload(payload: String): Long {
         return try {
-            val start = payload.indexOf("\"updatedAtEpochMs\":")
-            if (start == -1) return 0L
-            val valueStart = start + "\"updatedAtEpochMs\":".length
-            var valueEnd = payload.indexOf(',', valueStart)
-            if (valueEnd == -1) valueEnd = payload.indexOf('}', valueStart)
-            if (valueEnd == -1) return 0L
-            val valueStr = payload.substring(valueStart, valueEnd).trim()
-            valueStr.toLongOrNull() ?: 0L
+            val json = JSONObject(payload)
+            json.optLong("updatedAtEpochMs", 0L)
         } catch (_: Exception) {
             0L
         }
