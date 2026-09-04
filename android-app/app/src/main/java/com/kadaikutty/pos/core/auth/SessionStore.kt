@@ -14,6 +14,8 @@ class SessionStore(private val store: DataStore<Preferences>) {
     private val permissionsKey = stringPreferencesKey("session_permissions")
     private val companyIdKey = stringPreferencesKey("session_company_id")
     private val roleKey = stringPreferencesKey("session_role")
+    private val sessionTokenKey = stringPreferencesKey("session_token")
+    private val deviceIdKey = stringPreferencesKey("session_device_id")
 
     val activeSession: Flow<Session?> = store.data.map { preferences ->
         val id = preferences[userId] ?: return@map null
@@ -27,7 +29,9 @@ class SessionStore(private val store: DataStore<Preferences>) {
             displayName = preferences[displayName]?.ifBlank { "User" } ?: "User",
             permissions = if (perms.isEmpty()) Permission.ALL_ACTIVE else perms,
             companyId = preferences[companyIdKey]?.ifBlank { "company_main" } ?: "company_main",
-            role = preferences[roleKey] ?: "ADMIN"
+            role = preferences[roleKey] ?: "ADMIN",
+            sessionToken = preferences[sessionTokenKey],
+            deviceId = preferences[deviceIdKey]
         )
     }
 
@@ -38,6 +42,16 @@ class SessionStore(private val store: DataStore<Preferences>) {
             it[permissionsKey] = session.permissions.joinToString(",") { it.name }
             it[companyIdKey] = session.companyId
             it[roleKey] = session.role
+            if (session.sessionToken != null) {
+                it[sessionTokenKey] = session.sessionToken
+            } else {
+                it.remove(sessionTokenKey)
+            }
+            if (session.deviceId != null) {
+                it[deviceIdKey] = session.deviceId
+            } else {
+                it.remove(deviceIdKey)
+            }
         }
     }
 
@@ -48,6 +62,8 @@ class SessionStore(private val store: DataStore<Preferences>) {
             it.remove(permissionsKey)
             it.remove(companyIdKey)
             it.remove(roleKey)
+            it.remove(sessionTokenKey)
+            it.remove(deviceIdKey)
         }
     }
 }

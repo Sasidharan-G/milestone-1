@@ -43,11 +43,15 @@ data class MasterControlUiState(
 
 @HiltViewModel
 class MasterControlViewModel @Inject constructor(
-    private val firestore: FirebaseFirestore
+    private val firestore: FirebaseFirestore,
+    private val sessionSecurityManager: com.kadaikutty.pos.core.auth.SessionSecurityManager
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(MasterControlUiState())
     val state: StateFlow<MasterControlUiState> = _state.asStateFlow()
+
+    val isMasterSessionTerminated = sessionSecurityManager.isMasterSessionTerminated
+    val masterTerminationReason = sessionSecurityManager.masterTerminationReason
 
     val masterMobile = MutableStateFlow("")
     val masterPin = MutableStateFlow("9840")
@@ -69,9 +73,21 @@ class MasterControlViewModel @Inject constructor(
     private var rawUserDocs = listOf<com.google.firebase.firestore.DocumentSnapshot>()
 
     init {
+        registerMasterSession()
         listenToLicenses()
         listenToStaffRequests()
         listenToMasterConfig()
+    }
+
+    fun registerMasterSession() {
+        viewModelScope.launch {
+            sessionSecurityManager.registerMasterSession()
+        }
+    }
+
+    fun acknowledgeMasterTermination() {
+        sessionSecurityManager.resetMasterTermination()
+        sessionSecurityManager.clearMasterSession()
     }
 
     fun refresh() {
@@ -806,6 +822,7 @@ class MasterControlViewModel @Inject constructor(
 
     override fun onCleared() {
         super.onCleared()
+        sessionSecurityManager.clearMasterSession()
         licensesListener?.remove()
         companiesListener?.remove()
         usersListener?.remove()

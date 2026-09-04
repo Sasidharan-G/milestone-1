@@ -59,6 +59,53 @@ fun MasterControlScreen(
     var editPinInput by remember(masterPin) { mutableStateOf(masterPin) }
     var editPinVisible by remember { mutableStateOf(false) }
 
+    val isMasterSessionTerminated by viewModel.isMasterSessionTerminated.collectAsState()
+    val masterTerminationReason by viewModel.masterTerminationReason.collectAsState()
+
+    if (isMasterSessionTerminated) {
+        AlertDialog(
+            onDismissRequest = {
+                viewModel.acknowledgeMasterTermination()
+                onBack()
+            },
+            containerColor = Color(0xFF1E293B),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color(0xFFEF4444),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Master Control Closed",
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+            },
+            text = {
+                Text(
+                    text = masterTerminationReason ?: "Master Control was opened on another device. This session has been terminated.",
+                    color = Color(0xFFE2E8F0),
+                    fontSize = 14.sp
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        viewModel.acknowledgeMasterTermination()
+                        onBack()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                ) {
+                    Text("OK", color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
     LaunchedEffect(state.successMessage, state.errorMessage) {
         if (state.successMessage != null) {
             android.widget.Toast.makeText(context, state.successMessage, android.widget.Toast.LENGTH_LONG).show()

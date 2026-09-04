@@ -8,6 +8,7 @@ import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.firstOrNull
 
 class AppPreferences(private val dataStore: DataStore<Preferences>) {
     private val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
@@ -136,6 +137,23 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             it[shopEmailKey] = email
             it[shopLogoPathKey] = logoPath
         }
+    }
+
+    private val installationDeviceIdKey = stringPreferencesKey("installation_device_id")
+    val installationDeviceId: Flow<String?> = dataStore.data.map { it[installationDeviceIdKey] }
+
+    suspend fun getOrCreateInstallationDeviceId(): String {
+        val existing = installationDeviceId.firstOrNull()
+        if (!existing.isNullOrBlank()) return existing
+        val newId = java.util.UUID.randomUUID().toString()
+        dataStore.edit { it[installationDeviceIdKey] = newId }
+        return newId
+    }
+
+    fun getDeviceModelName(): String {
+        val manufacturer = android.os.Build.MANUFACTURER.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
+        val model = android.os.Build.MODEL
+        return if (model.startsWith(manufacturer, ignoreCase = true)) model else "$manufacturer $model"
     }
 }
 

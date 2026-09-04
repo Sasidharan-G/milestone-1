@@ -16,6 +16,9 @@ import kotlinx.coroutines.tasks.await
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+import kotlinx.coroutines.flow.firstOrNull
+import java.util.UUID
+
 class DefaultAuthRepository(
     private val firebaseAuth: FirebaseAuth,
     private val firestore: FirebaseFirestore,
@@ -25,6 +28,7 @@ class DefaultAuthRepository(
     private val database: BillingDatabase,
     private val appPreferences: AppPreferences,
     private val msg91OtpService: com.kadaikutty.pos.core.otp.Msg91OtpService,
+    private val sessionSecurityManager: SessionSecurityManager,
 ) : AuthRepository {
 
     private fun normalizePhone(phone: String): String {
@@ -130,15 +134,20 @@ class DefaultAuthRepository(
                 )
 
                 if (verifier.matches(cred, password)) {
+                    val sessionToken = UUID.randomUUID().toString()
+                    val deviceId = appPreferences.getOrCreateInstallationDeviceId()
                     val session = Session(
                         userId = userId,
                         displayName = displayName,
                         permissions = perms,
                         accessToken = userId,
                         companyId = companyId,
-                        role = role
+                        role = role,
+                        sessionToken = sessionToken,
+                        deviceId = deviceId
                     )
                     sessions.save(session)
+                    sessionSecurityManager.registerSession(cleanPhone, companyId, role, sessionToken)
 
                     val nowMs = System.currentTimeMillis()
                     val offlineValidityMs = 30 * 24 * 60 * 60 * 1000L
@@ -346,14 +355,19 @@ class DefaultAuthRepository(
         )
 
         val result = if (verifier.matches(offlineCred, password)) {
+            val sessionToken = UUID.randomUUID().toString()
+            val deviceId = appPreferences.getOrCreateInstallationDeviceId()
             val session = Session(
                 userId = userEntity.id,
                 displayName = userEntity.displayName,
                 permissions = permissions,
                 companyId = userEntity.companyId,
-                role = userEntity.role
+                role = userEntity.role,
+                sessionToken = sessionToken,
+                deviceId = deviceId
             )
             sessions.save(session)
+            sessionSecurityManager.registerSession(cleanPhone, userEntity.companyId, userEntity.role, sessionToken)
             val activeLic = database.licenseDao().getActiveLicense()
             if (activeLic != null && activeLic.businessName.isNotBlank() && activeLic.businessName != "My Shop") {
                 appPreferences.saveShopName(activeLic.businessName)
@@ -370,8 +384,10 @@ class DefaultAuthRepository(
     }
 
     override suspend fun logout() {
-        // We do NOT sign out of Firebase Auth here because this device acts as a POS terminal
-        // and needs to continue background sync for secondary local users (Cashiers).
+        val currentSession = sessions.activeSession.firstOrNull()
+        if (currentSession != null) {
+            sessionSecurityManager.clearSession(currentSession.userId)
+        }
         sessions.clear()
     }
 
@@ -498,15 +514,20 @@ class DefaultAuthRepository(
             val offlineValidityMs = 30 * 24 * 60 * 60 * 1000L
             val offlineValidUntil = nowMs + offlineValidityMs
 
+            val sessionToken = UUID.randomUUID().toString()
+            val deviceId = appPreferences.getOrCreateInstallationDeviceId()
             val session = Session(
                 userId = userId,
                 displayName = ownerName,
                 permissions = Permission.ALL_ACTIVE,
                 accessToken = userId,
                 companyId = companyId,
-                role = "ADMIN"
+                role = "ADMIN",
+                sessionToken = sessionToken,
+                deviceId = deviceId
             )
             sessions.save(session)
+            sessionSecurityManager.registerSession(cleanPhone, companyId, "ADMIN", sessionToken)
 
             val userEntity = UserEntity(
                 id = userId,
@@ -693,15 +714,20 @@ class DefaultAuthRepository(
             val offlineValidityMs = 30 * 24 * 60 * 60 * 1000L // 30 days
             val offlineValidUntil = nowMs + offlineValidityMs
 
+            val sessionToken = UUID.randomUUID().toString()
+            val deviceId = appPreferences.getOrCreateInstallationDeviceId()
             val session = Session(
                 userId = userId,
                 displayName = ownerName,
                 permissions = Permission.ALL_ACTIVE,
                 accessToken = userId,
                 companyId = companyId,
-                role = "ADMIN"
+                role = "ADMIN",
+                sessionToken = sessionToken,
+                deviceId = deviceId
             )
             sessions.save(session)
+            sessionSecurityManager.registerSession(cleanPhone, companyId, "ADMIN", sessionToken)
 
             val userEntity = UserEntity(
                 id = userId,

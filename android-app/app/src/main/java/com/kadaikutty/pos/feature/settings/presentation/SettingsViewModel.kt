@@ -41,8 +41,29 @@ class SettingsViewModel @Inject constructor(
     private val firestore: com.google.firebase.firestore.FirebaseFirestore,
 
     private val sampleDataGenerator: com.kadaikutty.pos.core.sample.SampleDataGenerator,
-    private val licenseManager: com.kadaikutty.pos.core.license.LicenseManager
+    private val licenseManager: com.kadaikutty.pos.core.license.LicenseManager,
+    private val sessionSecurityManager: com.kadaikutty.pos.core.auth.SessionSecurityManager
 ) : ViewModel() {
+
+    val isSessionTerminated: StateFlow<Boolean> = sessionSecurityManager.isSessionTerminated
+    val terminationReason: StateFlow<String?> = sessionSecurityManager.terminationReason
+
+    init {
+        viewModelScope.launch {
+            sessionStore.activeSession.collectLatest { session ->
+                if (session != null && !session.sessionToken.isNullOrBlank()) {
+                    sessionSecurityManager.startListeningToSession(session.userId, session.sessionToken)
+                }
+            }
+        }
+    }
+
+    fun acknowledgeSessionTermination() {
+        sessionSecurityManager.resetSessionTermination()
+        viewModelScope.launch {
+            sessionStore.clear()
+        }
+    }
 
     fun loadDemoSampleData(onResult: (String) -> Unit) {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {

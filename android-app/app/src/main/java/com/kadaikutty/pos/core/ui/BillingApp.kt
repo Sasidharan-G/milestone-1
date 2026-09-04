@@ -105,6 +105,9 @@ fun BillingApp() {
 
 
 
+    val isSessionTerminated by settingsViewModel.isSessionTerminated.collectAsState()
+    val terminationReason by settingsViewModel.terminationReason.collectAsState()
+
     if (isLoggedIn == null) {
         Box(
             modifier = Modifier
@@ -119,6 +122,49 @@ fun BillingApp() {
 
     CompositionLocalProvider(LocalLayoutMode provides layoutMode) {
         BillingTheme(themeMode = themeMode, darkTheme = useDarkTheme) {
+            if (isSessionTerminated) {
+                AlertDialog(
+                    onDismissRequest = { },
+                    containerColor = Color(0xFF1E293B),
+                    title = {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                imageVector = Icons.Default.Warning,
+                                contentDescription = null,
+                                tint = Color(0xFFEF4444),
+                                modifier = Modifier.size(24.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                text = "Session Expired",
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            )
+                        }
+                    },
+                    text = {
+                        Text(
+                            text = terminationReason ?: "Your account has been logged in on another device. This session has expired.",
+                            color = Color(0xFFE2E8F0),
+                            fontSize = 14.sp
+                        )
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                settingsViewModel.acknowledgeSessionTermination()
+                                navController.navigate(AppRoute.Login.path) {
+                                    popUpTo(0) { inclusive = true }
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                        ) {
+                            Text("Back to Login", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                )
+            }
+
             val startDest = if (isLoggedIn == true) AppRoute.Home.path else AppRoute.Login.path
             Box(modifier = Modifier.fillMaxSize()) {
                 NavHost(
