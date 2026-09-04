@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "817979322520",
-    "project_id": "pos-app-99742",
-    "storage_bucket": "pos-app-99742.firebasestorage.app"
+    "project_number": "549036385121",
+    "project_id": "kadaikutty-pos",
+    "storage_bucket": "kadaikutty-pos.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:817979322520:android:c4b5168697e28aad1ee0ed",
+        "mobilesdk_app_id": "1:549036385121:android:e7af17c8357c69f0881b20",
         "android_client_info": {
           "package_name": "com.kadaikutty.pos"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyC3sbaqOlaAt2Y8_pv8COjIFqSqFEcWqoc"
+          "current_key": "AIzaSyAMNvT0MoGW5ISb5_5s1mNXYgVRjQhQO2s"
         }
       ],
       "services": {

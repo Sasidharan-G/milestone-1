@@ -593,7 +593,7 @@ class BillingViewModel @Inject constructor(
             val productsList = masterDao.products(companyId, "").first()
             val productsMap = productsList.associateBy { it.id }
             
-            val shopName = appPreferences.shopName.first().ifBlank { "My Shop" }
+            val shopName = appPreferences.shopName.first().ifBlank { "Store" }
             val shopAddress = appPreferences.shopAddress.first()
             
             val customerName = if (sale.customerId == null) {

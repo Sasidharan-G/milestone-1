@@ -94,15 +94,7 @@ fun MasterControlScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text("🛡️ Super Master Control", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
-                            Surface(
-                                shape = RoundedCornerShape(4.dp),
-                                color = Color(0xFFE11D48)
-                            ) {
-                                Text("SUPER ADMIN", fontSize = 9.sp, fontWeight = FontWeight.ExtraBold, color = Color.White, modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp))
-                            }
-                        }
+                        Text("Super Master Control", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
                         Text("SaaS Direct Offline Licensing & Remote Control", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f))
                     }
                 },
@@ -252,7 +244,7 @@ fun MasterControlScreen(
                         ) {
                             Icon(Icons.Default.NotificationsActive, contentDescription = null, tint = Color(0xFFFB7185))
                             Column(modifier = Modifier.weight(1f)) {
-                                Text("🔔 ${state.pendingCount} New Shops Waiting For Approval!", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
+                                Text("${state.pendingCount} New Shops Waiting For Approval!", fontWeight = FontWeight.Bold, color = Color.White, fontSize = 13.sp)
                                 Text("Click here to grant 2-Day Free Trial or 365-Day Full License.", fontSize = 11.sp, color = Color(0xFFFDA4AF))
                             }
                             Icon(Icons.Default.ChevronRight, contentDescription = null, tint = Color.White)
@@ -298,10 +290,10 @@ fun MasterControlScreen(
                 ) {
                     listOf(
                         Pair("ALL", "All Shops (${state.licenses.size})"),
-                        Pair("PENDING", "🔔 Pending (${state.pendingCount})"),
-                        Pair("TRIAL", "🟡 2-Day Trial (${state.activeTrialCount})"),
-                        Pair("ACTIVE", "🟢 1-Year Paid (${state.activePaidCount})"),
-                        Pair("REVOKED", "🔴 Expired/Cut (${state.expiredCount})")
+                        Pair("PENDING", "Pending (${state.pendingCount})"),
+                        Pair("TRIAL", "2-Day Trial (${state.activeTrialCount})"),
+                        Pair("ACTIVE", "1-Year Paid (${state.activePaidCount})"),
+                        Pair("REVOKED", "Expired/Cut (${state.expiredCount})")
                     ).forEach { (key, label) ->
                         FilterChip(
                             selected = state.selectedFilter == key,
@@ -364,7 +356,7 @@ fun MasterControlScreen(
                     }
                 }
             } else {
-                // 👥 STAFF APPROVAL TAB CONTENT
+                // STAFF APPROVAL TAB CONTENT
                 val filteredStaff = remember(state.staffRequests, state.searchQuery) {
                     state.staffRequests.filter { staff ->
                         val matchesQuery = state.searchQuery.isBlank() ||
@@ -460,8 +452,8 @@ fun MasterControlScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Grant 48 Hours (2 Days) instant free trial access for:")
-                    Text("🏪 ${shop.businessName}", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                    Text("👤 Owner: ${shop.ownerName} (${shop.ownerMobile})")
+                    Text(shop.businessName, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                    Text("Owner: ${shop.ownerName} (${shop.ownerMobile})")
                     Text("Duration will be calculated starting from now.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             },
@@ -539,7 +531,7 @@ fun MasterControlScreen(
                     FilterChip(
                         selected = isCustomDays,
                         onClick = { isCustomDays = true },
-                        label = { Text("⚡ Custom Days", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
+                        label = { Text("Custom Days", fontSize = 11.sp, fontWeight = FontWeight.Bold) },
                         shape = RoundedCornerShape(12.dp)
                     )
 
@@ -561,8 +553,8 @@ fun MasterControlScreen(
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            Text("🗓️ Access Duration: ${calculatedExpiry.first} Days", fontWeight = FontWeight.Bold, color = Color(0xFF047857), fontSize = 13.sp)
-                            Text("⏰ Valid Until: ${calculatedExpiry.second}", fontWeight = FontWeight.Bold, color = Color(0xFF047857), fontSize = 13.sp)
+                            Text("Access Duration: ${calculatedExpiry.first} Days", fontWeight = FontWeight.Bold, color = Color(0xFF047857), fontSize = 13.sp)
+                            Text("Valid Until: ${calculatedExpiry.second}", fontWeight = FontWeight.Bold, color = Color(0xFF047857), fontSize = 13.sp)
                         }
                     }
                 }
@@ -598,7 +590,7 @@ fun MasterControlScreen(
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text("Are you sure you want to CUT access for:")
-                    Text("🏪 ${shop.businessName}", fontWeight = FontWeight.Bold)
+                    Text(shop.businessName, fontWeight = FontWeight.Bold)
                     Text("Their terminal will be locked immediately and will display the contact renewal screen.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -626,7 +618,7 @@ fun MasterControlScreen(
             onDismissRequest = { selectedShopForDelete = null },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("🗑️", fontSize = 18.sp)
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                     Text("Delete Shop Permanently?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -660,7 +652,7 @@ fun MasterControlScreen(
             onDismissRequest = { selectedStaffForDelete = null },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("🗑️", fontSize = 18.sp)
+                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
                     Text("Delete Staff Permanently?", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -693,7 +685,7 @@ fun MasterControlScreen(
             onDismissRequest = { showMasterProfileDialog = false },
             title = {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("⚙️", fontSize = 18.sp)
+                    Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(20.dp))
                     Text("Super Master Security Settings", fontWeight = FontWeight.Bold)
                 }
             },
@@ -841,7 +833,7 @@ fun ShopLicenseAdminCard(
                         }
                     }
                     Text(
-                        text = "👤 ${license.ownerName.ifBlank { "Owner" }} • 📱 +91 ${license.ownerMobile}",
+                        text = "${license.ownerName.ifBlank { "Owner" }} • +91 ${license.ownerMobile}",
                         fontSize = 12.sp,
                         color = Color(0xFF94A3B8)
                     )
@@ -924,7 +916,7 @@ fun ShopLicenseAdminCard(
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                     modifier = Modifier.weight(1f)
                 ) {
-                    Text("⚡ 2d Trial", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("2d Trial", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
 
                 // 365 Days / Multi-Year License Button
@@ -935,7 +927,7 @@ fun ShopLicenseAdminCard(
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                     modifier = Modifier.weight(1.2f)
                 ) {
-                    Text("💎 1-Yr", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("1-Yr", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
 
                 // Cut / Revoke Button
@@ -946,7 +938,7 @@ fun ShopLicenseAdminCard(
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                     modifier = Modifier.weight(0.8f)
                 ) {
-                    Text("🚫 Cut", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    Text("Cut", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
 
                 // Wipe / Delete Record from Cloud Button
@@ -957,7 +949,7 @@ fun ShopLicenseAdminCard(
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
                     modifier = Modifier.weight(0.9f)
                 ) {
-                    Text("🗑️ Delete", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
+                    Text("Delete", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFEF4444))
                 }
             }
         }
@@ -1018,7 +1010,7 @@ fun StaffApprovalAdminCard(
                     }
                     Column {
                         Text(request.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color.White)
-                        Text("🏪 ${request.businessName}", fontSize = 12.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.Medium)
+                        Text(request.businessName, fontSize = 12.sp, color = Color(0xFF94A3B8), fontWeight = FontWeight.Medium)
                     }
                 }
 
@@ -1043,10 +1035,10 @@ fun StaffApprovalAdminCard(
                 ) {
                     Text(
                         text = when {
-                            isPending -> "⏳ PENDING APPROVAL"
-                            isActive -> "✅ ACTIVE & APPROVED"
-                            isRejected -> "❌ REJECTED"
-                            else -> "🔴 DEACTIVATED"
+                            isPending -> "PENDING APPROVAL"
+                            isActive -> "ACTIVE & APPROVED"
+                            isRejected -> "REJECTED"
+                            else -> "DEACTIVATED"
                         },
                         fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold,

@@ -173,7 +173,7 @@ fun SearchableProductSelectorDialog(
                                 )
                             }
                             Text(
-                                text = "Select ➔",
+                                text = "Select",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.primary
@@ -275,7 +275,7 @@ fun SearchableProductSelectorDialog(
                                             Text(
                                                 text = when {
                                                     isOutOfStock -> "Out of Stock"
-                                                    isLowStock -> "⚠️ Low Stock: $pStockStr"
+                                                    isLowStock -> "Low Stock: $pStockStr"
                                                     else -> "Stock: $pStockStr"
                                                 },
                                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),

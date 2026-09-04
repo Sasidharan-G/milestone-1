@@ -176,7 +176,7 @@ fun SearchableCustomerSelectorDialog(
                                 )
                             }
                             Text(
-                                text = "Select ➔",
+                                text = "Select",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 12.sp,
                                 color = MaterialTheme.colorScheme.primary

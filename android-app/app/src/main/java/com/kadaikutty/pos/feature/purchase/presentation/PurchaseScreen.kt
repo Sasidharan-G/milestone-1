@@ -449,7 +449,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                             color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f),
                                             shape = RoundedCornerShape(4.dp)
                                         ) {
-                                            Text("🏢 $lineSuppName", fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
+                                            Text(lineSuppName, fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
                                         }
                                         Text("${line.unitValue} each", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                     }

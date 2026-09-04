@@ -239,9 +239,9 @@ fun BillingApp() {
                                                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                                             Text(df.format(Date(shift.closedAtEpochMs)), fontWeight = FontWeight.Bold, fontSize = 12.sp)
                                                             val statusText = when {
-                                                                isMatch -> "✅ Tally Matched"
-                                                                isShortage -> "⚠️ Shortage: -${Money(kotlin.math.abs(shift.discrepancyMinorUnits))}"
-                                                                else -> "ℹ️ Extra: +${Money(shift.discrepancyMinorUnits)}"
+                                                                isMatch -> "Tally Matched"
+                                                                isShortage -> "Shortage: -${Money(kotlin.math.abs(shift.discrepancyMinorUnits))}"
+                                                                else -> "Extra: +${Money(shift.discrepancyMinorUnits)}"
                                                             }
                                                             val statusColor = when {
                                                                 isMatch -> Color(0xFF2E7D32)
@@ -362,7 +362,7 @@ fun BillingApp() {
 
             }
 
-            // 🔒 Strict Offline/Online Expiry Lock Screen
+            // Strict Offline/Online Expiry Lock Screen
             val isLicenseLocked = (isLoggedIn == true) && (activeSession?.role != "SUPER_ADMIN") && ((currentLicense?.isExpired == true) || isClockTampered)
             if (isLicenseLocked) {
                 com.kadaikutty.pos.feature.subscription.LicenseExpiredLockScreen(
@@ -379,7 +379,7 @@ fun BillingApp() {
                 )
             }
 
-            // ⚠️ 7-Day Expiry Renewal Reminder Dialog (Max 2 times per day)
+            // 7-Day Expiry Renewal Reminder Dialog (Max 2 times per day)
             if (showRenewalDailyDialog && (currentLicense != null)) {
                 val context = LocalContext.current
                 val masterContactPhone = "+919840000000"
@@ -391,7 +391,7 @@ fun BillingApp() {
                     containerColor = Color(0xFFFDF7F7), // Light maroon shade
                     tonalElevation = 8.dp,
                     icon = { Icon(Icons.Default.Timer, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(36.dp)) },
-                    title = { Text("⚠️ License Expiry Reminder", fontWeight = FontWeight.Bold, color = Color(0xFF5C151A)) },
+                    title = { Text("License Expiry Reminder", fontWeight = FontWeight.Bold, color = Color(0xFF5C151A)) },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Your KadaiKutty POS License expires in ${currentLicense!!.remainingDays} days!", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
@@ -800,7 +800,7 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
 
-            // 2. ⚡ Hero Point of Sale Card
+            // 2. Hero Point of Sale Card
             if (showSales) {
                 val heroGradient = androidx.compose.ui.graphics.Brush.linearGradient(
                     colors = listOf(
@@ -869,7 +869,7 @@ fun HomeScreen(
                                 }
                             }
 
-                            // ⚡ Dedicated START NEW BILL CTA Button
+                            // Dedicated START NEW BILL CTA Button
                             Surface(
                                 shape = RoundedCornerShape(12.dp),
                                 color = Color.White,
@@ -908,7 +908,7 @@ fun HomeScreen(
 
 
 
-            // 4. 🧾 Recent Invoices Live Activity Feed
+            // 4. Recent Invoices Live Activity Feed
             if (dashboardState.recentSales.isNotEmpty()) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -923,7 +923,7 @@ fun HomeScreen(
                     )
                     if (showReports) {
                         TextButton(onClick = { onNavigateTo(AppRoute.Reports) }) {
-                            Text("View All ➔", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text("View All", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
                     }
                 }

@@ -60,7 +60,7 @@ fun HeldCartsDialog(
                 ) {
                     Column {
                         Text(
-                            text = "📑 Parked / Held Bills",
+                            text = "Parked / Held Bills",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onSurface

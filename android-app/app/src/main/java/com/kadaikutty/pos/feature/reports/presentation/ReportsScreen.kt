@@ -523,7 +523,8 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                             Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(48.dp))
                             Text("No records found for this period.", color = MaterialTheme.colorScheme.outline, fontSize = 14.sp)
                         }
-                                          val report = reportData!!
+                    } else {
+                        val report = reportData!!
                         val isBillsDetail = selectedType == ReportType.SALES
 
                         val filteredRows = if (selectedType == ReportType.SALES && salesSearchQuery.isNotBlank()) {
@@ -657,14 +658,8 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                                                 horizontalArrangement = Arrangement.SpaceBetween,
                                                                 verticalAlignment = Alignment.CenterVertically
                                                             ) {
-                                                                Text("👤 $customer", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
-                                                                Text("🕒 $dateTime", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
-                                                            }
-                                                            Row(
-                                                                modifier = Modifier.fillMaxWidth().padding(top = 2.dp),
-                                                                horizontalArrangement = Arrangement.End
-                                                            ) {
-                                                                Text("Tap to view items 📋", fontSize = 10.sp, color = MaterialTheme.colorScheme.primary.copy(alpha = 0.8f), fontWeight = FontWeight.Medium)
+                                                                Text(customer, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+                                                                Text(dateTime, fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
                                                             }
                                                         }
                                                     }
@@ -719,7 +714,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                                             modifier = Modifier.fillMaxWidth(),
                                                             horizontalArrangement = Arrangement.SpaceBetween
                                                         ) {
-                                                            Text("🏷️ $cat", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                            Text(cat, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                                             Text("Cost Rate: $cost", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                                                         }
                                                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
@@ -824,10 +819,10 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                                             modifier = Modifier.fillMaxWidth(),
                                                             horizontalArrangement = Arrangement.SpaceBetween
                                                         ) {
-                                                            Text("🏢 $supplier", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                                                            Text(supplier, fontSize = 12.sp, fontWeight = FontWeight.Medium)
                                                             Text("Mode: $mode", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                                         }
-                                                        Text("🕒 $date", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                                        Text(date, fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                                     }
                                                 }
                                             }
@@ -1005,13 +1000,13 @@ private fun AuditLogsView(auditLogs: List<com.kadaikutty.pos.feature.billing.dat
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "👤 Cancelled by: ${log.performedByUserName.ifBlank { "Staff" }}",
+                                text = "Cancelled by: ${log.performedByUserName.ifBlank { "Staff" }}",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "🕒 $dateStr",
+                                text = dateStr,
                                 fontSize = 11.sp,
                                 color = MaterialTheme.colorScheme.outline
                             )

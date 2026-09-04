@@ -106,6 +106,8 @@ object CoreModule {
     @Provides @Singleton fun firebaseFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
     @Provides @Singleton fun firebaseStorage(): FirebaseStorage = FirebaseStorage.getInstance()
     
+    @Provides @Singleton fun msg91OtpService(): com.kadaikutty.pos.core.otp.Msg91OtpService = com.kadaikutty.pos.core.otp.Msg91OtpService()
+
     @Provides @Singleton fun authRepository(
         firebaseAuth: FirebaseAuth, 
         firestore: FirebaseFirestore,
@@ -113,7 +115,9 @@ object CoreModule {
         credentials: OfflineCredentialStore, 
         verifier: OfflineCredentialVerifier, 
         database: BillingDatabase,
-    ): AuthRepository = DefaultAuthRepository(firebaseAuth, firestore, sessions, credentials, verifier, database)
+        appPreferences: AppPreferences,
+        msg91OtpService: com.kadaikutty.pos.core.otp.Msg91OtpService,
+    ): AuthRepository = DefaultAuthRepository(firebaseAuth, firestore, sessions, credentials, verifier, database, appPreferences, msg91OtpService)
     @Provides @Singleton fun logger(): AppLogger = AndroidLogger()
     @Provides @Singleton fun analyticsManager(@ApplicationContext context: Context) = com.kadaikutty.pos.core.analytics.AnalyticsManager(context)
     @Provides @Singleton fun syncScheduler(@ApplicationContext context: Context) = SyncScheduler(context)

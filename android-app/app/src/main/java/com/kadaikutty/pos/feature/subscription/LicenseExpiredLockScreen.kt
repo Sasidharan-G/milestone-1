@@ -139,7 +139,7 @@ fun LicenseExpiredLockScreen(
             Button(
                 onClick = {
                     try {
-                        val shop = shopName.ifBlank { license?.businessName ?: "My Shop" }
+                        val shop = shopName.ifBlank { license?.businessName ?: "Your Store" }
                         val url = "https://api.whatsapp.com/send?phone=$masterContactPhone&text=Hello%20Master%20Admin,%20I%20want%20to%20renew%20the%20KadaiKutty%20POS%20License%20for%20my%20store:%20${Uri.encode(shop)}"
                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                         context.startActivity(intent)

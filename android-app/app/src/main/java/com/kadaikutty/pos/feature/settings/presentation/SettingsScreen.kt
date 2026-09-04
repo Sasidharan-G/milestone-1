@@ -180,16 +180,21 @@ fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-
                         Text(
-                            text = brandingShopName.ifBlank { stringResource(com.kadaikutty.pos.R.string.settings_title) },
+                            text = if (activeCategory != null) activeCategory!!.title else brandingShopName.ifBlank { stringResource(com.kadaikutty.pos.R.string.settings_title) },
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimary
                         )
                     }
                 },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = {
+                        if (activeCategory != null) {
+                            activeCategory = null
+                        } else {
+                            onBack()
+                        }
+                    }) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 },
@@ -680,7 +685,7 @@ fun SettingsScreen(
                         ) {
                             Column {
                                 Text(
-                                    "🧾 Live Thermal Receipt Preview",
+                                    "Live Thermal Receipt Preview",
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = MaterialTheme.colorScheme.primary
@@ -1054,9 +1059,9 @@ fun SettingsScreen(
                                                             ) {
                                                                 Text(
                                                                     text = when {
-                                                                        isPending -> "⏳ Pending Master"
-                                                                        isInactive -> "🔴 Deactivated"
-                                                                        else -> "✅ Active"
+                                                                        isPending -> "Pending Master"
+                                                                        isInactive -> "Deactivated"
+                                                                        else -> "Active"
                                                                     },
                                                                     fontSize = 9.sp,
                                                                     fontWeight = FontWeight.Bold,
@@ -1072,7 +1077,7 @@ fun SettingsScreen(
                                                     }
                                                     Spacer(modifier = Modifier.height(2.dp))
                                                     Text(
-                                                        text = "📱 Login ID: +91 ${user.username}",
+                                                        text = "Login ID: +91 ${user.username}",
                                                         fontSize = 12.sp,
                                                         color = MaterialTheme.colorScheme.onSurfaceVariant
                                                     )
@@ -1728,27 +1733,6 @@ fun SettingsScreen(
                         }
                     }
                 } else {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        IconButton(onClick = { activeCategory = null }) {
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowBack,
-                                contentDescription = "Go back to settings dashboard"
-                            )
-                        }
-                        Text(
-                            text = activeCategory!!.title,
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-
                     when (activeCategory) {
                         SettingsCategory.SHOP_PROFILE -> {
                             shopDetailsCard(Modifier.fillMaxWidth())
@@ -1933,23 +1917,23 @@ fun AddUserDialog(
                     Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessBilling, onCheckedChange = { accessBilling = it; selectedRole = "CUSTOM" })
-                            Text("🛒 Point of Sale Billing & Checkout", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Point of Sale Billing & Checkout", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it; selectedRole = "CUSTOM" })
-                            Text("📦 Inventory & Inward Stock Purchases", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Inventory & Inward Stock Purchases", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it; selectedRole = "CUSTOM" })
-                            Text("🗂️ Master Catalog (Products & Pricing)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Master Catalog (Products & Pricing)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessReports, onCheckedChange = { accessReports = it; selectedRole = "CUSTOM" })
-                            Text("📊 Business Reports & Profit Analytics", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Business Reports & Profit Analytics", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" })
-                            Text("⚙️ Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }
@@ -2196,23 +2180,23 @@ fun EditUserDialog(
                     Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessBilling, onCheckedChange = { accessBilling = it; selectedRole = "CUSTOM" })
-                            Text("🛒 Point of Sale Billing & Checkout", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Point of Sale Billing & Checkout", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it; selectedRole = "CUSTOM" })
-                            Text("📦 Inventory & Inward Stock Purchases", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Inventory & Inward Stock Purchases", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it; selectedRole = "CUSTOM" })
-                            Text("🗂️ Master Catalog (Products & Pricing)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Master Catalog (Products & Pricing)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessReports, onCheckedChange = { accessReports = it; selectedRole = "CUSTOM" })
-                            Text("📊 Business Reports & Profit Analytics", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Business Reports & Profit Analytics", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" })
-                            Text("⚙️ Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                            Text("Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                     }
                 }

@@ -10,6 +10,8 @@ import com.google.firebase.auth.PhoneAuthOptions
 import com.google.firebase.auth.PhoneAuthProvider
 import com.google.firebase.firestore.FirebaseFirestore
 import com.kadaikutty.pos.core.license.LicenseEntity
+import com.kadaikutty.pos.core.preferences.AppPreferences
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.IOException
 import java.util.concurrent.TimeUnit
@@ -21,6 +23,8 @@ class DefaultAuthRepository(
     private val offlineCredentials: OfflineCredentialStore,
     private val verifier: OfflineCredentialVerifier,
     private val database: BillingDatabase,
+    private val appPreferences: AppPreferences,
+    private val msg91OtpService: com.kadaikutty.pos.core.otp.Msg91OtpService,
 ) : AuthRepository {
 
     private fun normalizePhone(phone: String): String {
@@ -61,20 +65,39 @@ class DefaultAuthRepository(
                 } catch (_: Exception) {}
             }
 
+            if (!userDoc.exists()) {
+                try {
+                    val s1 = firestore.collection("staff_requests").document(cleanPhone).get().await()
+                    if (s1.exists()) userDoc = s1
+                } catch (_: Exception) {}
+            }
+            if (!userDoc.exists()) {
+                try {
+                    val s2 = firestore.collection("staff_requests").whereEqualTo("username", cleanPhone).get().await()
+                    if (!s2.isEmpty) userDoc = s2.documents.first()
+                } catch (_: Exception) {}
+            }
+
             if (userDoc.exists()) {
                 val saltStr = userDoc.getString("salt") ?: ""
                 val verifierStr = userDoc.getString("verifier") ?: ""
-                val userId = userDoc.getString("user_id") ?: cleanPhone
-                val displayName = userDoc.getString("full_name") ?: cleanPhone
-                val companyId = userDoc.getString("company_id") ?: ""
+                val userId = userDoc.getString("user_id") ?: userDoc.getString("id") ?: cleanPhone
+                val displayName = userDoc.getString("full_name") ?: userDoc.getString("displayName") ?: cleanPhone
+                val companyId = userDoc.getString("company_id") ?: userDoc.getString("companyId") ?: ""
                 val role = userDoc.getString("role") ?: "ADMIN"
                 val status = userDoc.getString("status") ?: "ACTIVE"
-                val permsList = userDoc.get("permissions") as? List<*>
-                val perms = permsList?.mapNotNull {
-                    try { Permission.valueOf(it.toString()) } catch (_: Exception) { null }
-                }?.filter {
+                val rawPerms = userDoc.get("permissions")
+                val perms = when (rawPerms) {
+                    is List<*> -> rawPerms.mapNotNull {
+                        try { Permission.valueOf(it.toString().trim()) } catch (_: Exception) { null }
+                    }.toSet()
+                    is String -> rawPerms.split(",").mapNotNull {
+                        try { Permission.valueOf(it.trim()) } catch (_: Exception) { null }
+                    }.toSet()
+                    else -> Permission.ALL_ACTIVE
+                }.filter {
                     if (role == "ADMIN") it != Permission.ACCOUNT_INACTIVE && it != Permission.PENDING_MASTER_APPROVAL else true
-                }?.toSet() ?: Permission.ALL_ACTIVE
+                }.toSet()
 
                 if (role != "ADMIN") {
                     if (status.equals("PENDING_APPROVAL", ignoreCase = true) || perms.contains(Permission.PENDING_MASTER_APPROVAL)) {
@@ -152,10 +175,20 @@ class DefaultAuthRepository(
 
                             if (targetLicDoc != null && targetLicDoc.exists()) {
                                 val actualCompanyId = targetLicDoc.getString("companyId") ?: targetLicDoc.id
+                                val resolvedBizName = targetLicDoc.getString("businessName")
+                                    ?: targetLicDoc.getString("name")
+                                    ?: targetLicDoc.getString("business_name")
+                                    ?: userDoc.getString("business_name")
+                                    ?: userDoc.getString("name")
+                                    ?: ""
+                                val resolvedOwnerName = targetLicDoc.getString("ownerName")
+                                    ?: targetLicDoc.getString("full_name")
+                                    ?: userDoc.getString("full_name")
+                                    ?: displayName
                                 val licEntity = LicenseEntity(
                                     companyId = if (companyId.isNotBlank()) companyId else actualCompanyId,
-                                    businessName = targetLicDoc.getString("businessName") ?: userDoc.getString("business_name") ?: "My Shop",
-                                    ownerName = targetLicDoc.getString("ownerName") ?: displayName,
+                                    businessName = resolvedBizName,
+                                    ownerName = resolvedOwnerName,
                                     ownerMobile = targetLicDoc.getString("ownerMobile") ?: cleanPhone,
                                     licenseStatus = targetLicDoc.getString("licenseStatus") ?: "ACTIVE_PAID",
                                     licenseType = targetLicDoc.getString("licenseType") ?: "TRIAL_2_DAYS",
@@ -172,6 +205,12 @@ class DefaultAuthRepository(
                                 if (actualCompanyId != companyId && actualCompanyId.isNotBlank()) {
                                     database.licenseDao().saveLicense(licEntity.copy(companyId = actualCompanyId))
                                 }
+                                if (resolvedBizName.isNotBlank() && resolvedBizName != "My Shop") {
+                                    appPreferences.saveShopName(resolvedBizName)
+                                    if (resolvedOwnerName.isNotBlank()) {
+                                        appPreferences.saveOwnerName(resolvedOwnerName)
+                                    }
+                                }
                             }
                         } catch (e: Exception) {
                             e.printStackTrace()
@@ -185,6 +224,8 @@ class DefaultAuthRepository(
                     val localResult = loginOffline(username, password)
                     if (localResult is LoginResult.Success) {
                         localResult
+                    } else if (localResult is LoginResult.Failure && (localResult.message.contains("pending", ignoreCase = true) || localResult.message.contains("deactivated", ignoreCase = true))) {
+                        localResult
                     } else {
                         password.fill('\u0000')
                         LoginResult.Failure("Invalid mobile number or password.")
@@ -195,6 +236,8 @@ class DefaultAuthRepository(
                 val localResult = loginOffline(username, password)
                 if (localResult is LoginResult.Success) {
                     localResult
+                } else if (localResult is LoginResult.Failure && (localResult.message.contains("pending", ignoreCase = true) || localResult.message.contains("deactivated", ignoreCase = true))) {
+                    localResult
                 } else {
                     password.fill('\u0000')
                     LoginResult.Failure("Invalid mobile number or password.")
@@ -204,6 +247,8 @@ class DefaultAuthRepository(
             e.printStackTrace()
             val localResult = loginOffline(username, password)
             if (localResult is LoginResult.Success) {
+                localResult
+            } else if (localResult is LoginResult.Failure && (localResult.message.contains("pending", ignoreCase = true) || localResult.message.contains("deactivated", ignoreCase = true))) {
                 localResult
             } else {
                 password.fill('\u0000')
@@ -217,7 +262,7 @@ class DefaultAuthRepository(
         val userDao = database.userDao()
         val userEntity = userDao.getUserByUsername(username, cleanPhone) ?: return LoginResult.Failure("Invalid mobile number or password")
 
-        val permissions = if (userEntity.role == "ADMIN") {
+        var permissions = if (userEntity.role == "ADMIN") {
             val activePerms = userEntity.toPermissionsSet().filter { 
                 it != Permission.ACCOUNT_INACTIVE && it != Permission.REQUIRE_PASSWORD_CHANGE 
             }.toSet()
@@ -231,8 +276,47 @@ class DefaultAuthRepository(
 
         if (userEntity.role != "ADMIN") {
             if (permissions.contains(Permission.PENDING_MASTER_APPROVAL)) {
+                // Auto-heal: Check Firestore to see if Super Master already approved this staff account!
+                try {
+                    kotlinx.coroutines.withTimeout(3000L) {
+                        var cloudDoc = firestore.collection("users").document(cleanPhone).get().await()
+                        if (!cloudDoc.exists()) {
+                            cloudDoc = firestore.collection("users").document("+91$cleanPhone").get().await()
+                        }
+                        if (!cloudDoc.exists()) {
+                            cloudDoc = firestore.collection("staff_requests").document(userEntity.id).get().await()
+                        }
+                        if (!cloudDoc.exists()) {
+                            cloudDoc = firestore.collection("staff_requests").document(cleanPhone).get().await()
+                        }
+                        if (cloudDoc.exists()) {
+                            val cloudStatus = cloudDoc.getString("status") ?: ""
+                            val cloudPermsRaw = cloudDoc.get("permissions")
+                            if (cloudStatus.equals("ACTIVE", ignoreCase = true)) {
+                                val updatedPerms = when (cloudPermsRaw) {
+                                    is List<*> -> cloudPermsRaw.mapNotNull { 
+                                        try { Permission.valueOf(it.toString().trim()) } catch (_: Exception) { null }
+                                    }.toSet()
+                                    is String -> cloudPermsRaw.split(",").mapNotNull { 
+                                        try { Permission.valueOf(it.trim()) } catch (_: Exception) { null }
+                                    }.toSet()
+                                    else -> emptySet()
+                                }.filter { it != Permission.PENDING_MASTER_APPROVAL && it != Permission.ACCOUNT_INACTIVE }.toSet()
+
+                                val newPerms = updatedPerms.ifEmpty { 
+                                    permissions.filter { it != Permission.PENDING_MASTER_APPROVAL }.toSet()
+                                }
+                                permissions = newPerms
+                                userDao.updateUser(userEntity.copy(permissions = newPerms.joinToString(",") { it.name }))
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+
+            if (permissions.contains(Permission.PENDING_MASTER_APPROVAL)) {
                 password.fill('\u0000')
-                return LoginResult.Failure("Staff account is pending Master Admin approval. Please contact Super Master.")
+                return LoginResult.Failure("Staff account is pending Master Admin approval. Please contact Super Master or connect to internet to sync approval.")
             }
             if (permissions.contains(Permission.ACCOUNT_INACTIVE)) {
                 password.fill('\u0000')
@@ -270,6 +354,13 @@ class DefaultAuthRepository(
                 role = userEntity.role
             )
             sessions.save(session)
+            val activeLic = database.licenseDao().getActiveLicense()
+            if (activeLic != null && activeLic.businessName.isNotBlank() && activeLic.businessName != "My Shop") {
+                appPreferences.saveShopName(activeLic.businessName)
+                if (activeLic.ownerName.isNotBlank()) {
+                    appPreferences.saveOwnerName(activeLic.ownerName)
+                }
+            }
             LoginResult.Success(session)
         } else {
             LoginResult.Failure("Invalid mobile number or password")
@@ -320,6 +411,10 @@ class DefaultAuthRepository(
             val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
             val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
 
+            val nowMs = System.currentTimeMillis()
+            val trialDurationMs = 2L * 24 * 60 * 60 * 1000L // 48 Hours = 2 Days
+            val trialValidUntil = nowMs + trialDurationMs
+
             // Save Company, Profile, User, and Licenses to Firestore Cloud
             try {
                 val licenseMap = hashMapOf(
@@ -327,13 +422,13 @@ class DefaultAuthRepository(
                     "businessName" to businessName,
                     "ownerName" to ownerName,
                     "ownerMobile" to cleanPhone,
-                    "licenseStatus" to "PENDING_APPROVAL",
+                    "licenseStatus" to "TRIAL",
                     "licenseType" to "TRIAL_2_DAYS",
                     "yearsGranted" to 0,
-                    "daysGranted" to 0,
-                    "activatedAtEpochMs" to 0L,
-                    "validUntilEpochMs" to 0L,
-                    "notes" to "New Shop Registered. Waiting for Master Admin Approval."
+                    "daysGranted" to 2,
+                    "activatedAtEpochMs" to nowMs,
+                    "validUntilEpochMs" to trialValidUntil,
+                    "notes" to "2-Day Free Trial Activated upon Registration"
                 )
 
                 companyRef.set(mapOf(
@@ -342,8 +437,8 @@ class DefaultAuthRepository(
                     "owner_user_id" to userId,
                     "status" to "active",
                     "mobile" to cleanPhone,
-                    "license_status" to "PENDING_APPROVAL",
-                    "valid_until_epoch_ms" to 0L,
+                    "license_status" to "TRIAL",
+                    "valid_until_epoch_ms" to trialValidUntil,
                     "licenses" to licenseMap
                 )).await()
 
@@ -373,8 +468,8 @@ class DefaultAuthRepository(
                     "salt" to saltStr,
                     "verifier" to verifierStr,
                     "permissions" to Permission.ALL_ACTIVE.map { it.name },
-                    "license_status" to "PENDING_APPROVAL",
-                    "valid_until_epoch_ms" to 0L,
+                    "license_status" to "TRIAL",
+                    "valid_until_epoch_ms" to trialValidUntil,
                     "licenses" to licenseMap
                 )).await()
 
@@ -388,12 +483,18 @@ class DefaultAuthRepository(
                 businessName = businessName,
                 ownerName = ownerName,
                 ownerMobile = cleanPhone,
-                licenseStatus = "PENDING_APPROVAL",
-                licenseType = "TRIAL_2_DAYS"
+                licenseStatus = "TRIAL",
+                licenseType = "TRIAL_2_DAYS",
+                yearsGranted = 0,
+                daysGranted = 2,
+                activatedAtEpochMs = nowMs,
+                validUntilEpochMs = trialValidUntil,
+                lastVerifiedAtEpochMs = nowMs,
+                highestSeenClockEpochMs = nowMs,
+                notes = "2-Day Free Trial Activated"
             )
             database.licenseDao().saveLicense(licenseEntity)
 
-            val nowMs = System.currentTimeMillis()
             val offlineValidityMs = 30 * 24 * 60 * 60 * 1000L
             val offlineValidUntil = nowMs + offlineValidityMs
 
@@ -421,6 +522,16 @@ class DefaultAuthRepository(
             )
             database.userDao().insertUser(userEntity)
 
+            appPreferences.saveShopDetails(
+                name = businessName,
+                owner = ownerName,
+                gst = "",
+                address = "",
+                phone = cleanPhone,
+                email = "",
+                logoPath = ""
+            )
+
             RegisterResult.Success(companyId)
         } catch (e: Exception) {
             RegisterResult.Failure(e.message ?: "Failed to register merchant account")
@@ -433,22 +544,20 @@ class DefaultAuthRepository(
         onCodeSent: (String) -> Unit,
         onVerificationFailed: (String) -> Unit
     ) {
-        val formattedNumber = if (mobileNumber.startsWith("+")) mobileNumber else "+91$mobileNumber"
-        val options = PhoneAuthOptions.newBuilder(firebaseAuth)
-            .setPhoneNumber(formattedNumber)
-            .setTimeout(60L, TimeUnit.SECONDS)
-            .setActivity(activity)
-            .setCallbacks(object : PhoneAuthProvider.OnVerificationStateChangedCallbacks() {
-                override fun onVerificationCompleted(credential: PhoneAuthCredential) {}
-                override fun onVerificationFailed(e: com.google.firebase.FirebaseException) {
-                    onVerificationFailed(e.message ?: "Verification failed")
+        val cleanPhone = normalizePhone(mobileNumber)
+        val formattedNumber = if (cleanPhone.length == 10) "+91$cleanPhone" else mobileNumber
+        
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            when (val result = msg91OtpService.sendOtp(cleanPhone)) {
+                is com.kadaikutty.pos.core.otp.OtpSendResult.Success -> {
+                    onCodeSent(result.requestId)
                 }
-                override fun onCodeSent(verificationId: String, token: PhoneAuthProvider.ForceResendingToken) {
-                    onCodeSent(verificationId)
+                is com.kadaikutty.pos.core.otp.OtpSendResult.Failure -> {
+                    // If MSG91 network issue, provide clear error message
+                    onVerificationFailed(result.error)
                 }
-            })
-            .build()
-        PhoneAuthProvider.verifyPhoneNumber(options)
+            }
+        }
     }
 
     override suspend fun verifyRegistrationOtpAndRegister(
@@ -460,107 +569,142 @@ class DefaultAuthRepository(
         businessName: String
     ): RegisterResult {
         return try {
-            val credential = PhoneAuthProvider.getCredential(verificationId, otp)
-            val authResult = firebaseAuth.signInWithCredential(credential).await()
-            val user = authResult.user ?: return RegisterResult.Failure("Authentication failed")
-
             val cleanPhone = normalizePhone(mobileNumber)
+
+            // 1. Verify OTP with MSG91
+            val verifyRes = msg91OtpService.verifyOtp(cleanPhone, otp, requestId = verificationId)
+            if (verifyRes is com.kadaikutty.pos.core.otp.OtpVerifyResult.Failure) {
+                return RegisterResult.Failure(verifyRes.error)
+            }
+
+            // 2. Generate or fetch Firebase User UID safely
+            var currentUid = firebaseAuth.currentUser?.uid
+            if (currentUid == null) {
+                try {
+                    val anonResult = firebaseAuth.signInAnonymously().await()
+                    currentUid = anonResult.user?.uid
+                } catch (_: Exception) {
+                    currentUid = "usr_" + cleanPhone + "_" + (System.currentTimeMillis() % 100000)
+                }
+            }
+            val userId = currentUid ?: ("usr_" + cleanPhone)
 
             val companyRef = firestore.collection("companies").document()
             val companyId = companyRef.id
+            val nowMs = System.currentTimeMillis()
+            val trialDurationMs = 2L * 24 * 60 * 60 * 1000L // 48 Hours = 2 Days
+            val trialValidUntil = nowMs + trialDurationMs
+
             val licenseMap = hashMapOf(
                 "companyId" to companyId,
                 "businessName" to businessName,
                 "ownerName" to ownerName,
                 "ownerMobile" to cleanPhone,
-                "licenseStatus" to "PENDING_APPROVAL",
+                "licenseStatus" to "TRIAL",
                 "licenseType" to "TRIAL_2_DAYS",
                 "yearsGranted" to 0,
-                "daysGranted" to 0,
-                "activatedAtEpochMs" to 0L,
-                "validUntilEpochMs" to 0L,
-                "notes" to "New Shop Registered. Waiting for Master Admin Approval."
+                "daysGranted" to 2,
+                "activatedAtEpochMs" to nowMs,
+                "validUntilEpochMs" to trialValidUntil,
+                "notes" to "2-Day Free Trial Activated upon Registration"
             )
 
-            companyRef.set(mapOf(
-                "id" to companyId,
-                "name" to businessName,
-                "owner_user_id" to user.uid,
-                "status" to "active",
-                "mobile" to cleanPhone,
-                "license_status" to "PENDING_APPROVAL",
-                "valid_until_epoch_ms" to 0L,
-                "licenses" to licenseMap
-            )).await()
+            // Save Company, Profile, User, and Licenses to Firestore Cloud safely with timeout
+            try {
+                kotlinx.coroutines.withTimeout(5000L) {
+                    companyRef.set(mapOf(
+                        "id" to companyId,
+                        "name" to businessName,
+                        "owner_user_id" to userId,
+                        "status" to "active",
+                        "mobile" to cleanPhone,
+                        "license_status" to "TRIAL",
+                        "valid_until_epoch_ms" to trialValidUntil,
+                        "licenses" to licenseMap
+                    )).await()
 
-            firestore.collection("company_users").document().set(mapOf(
-                "company_id" to companyId,
-                "user_id" to user.uid,
-                "role" to "ADMIN",
-                "status" to "active",
-                "mobile" to cleanPhone,
-                "permissions" to Permission.ALL_ACTIVE.map { it.name }
-            )).await()
+                    firestore.collection("company_users").document().set(mapOf(
+                        "company_id" to companyId,
+                        "user_id" to userId,
+                        "role" to "ADMIN",
+                        "status" to "active",
+                        "mobile" to cleanPhone,
+                        "permissions" to Permission.ALL_ACTIVE.map { it.name }
+                    )).await()
 
-            firestore.collection("profiles").document(user.uid).set(mapOf(
-                "full_name" to ownerName,
-                "business_name" to businessName,
-                "mobile" to cleanPhone
-            )).await()
+                    firestore.collection("profiles").document(userId).set(mapOf(
+                        "full_name" to ownerName,
+                        "business_name" to businessName,
+                        "mobile" to cleanPhone
+                    )).await()
+                }
+            } catch (cloudErr: Exception) {
+                android.util.Log.w("DefaultAuthRepo", "Cloud sync delayed or offline: ${cloudErr.message}")
+            }
 
-            val offlineCred = verifier.create(cleanPhone, password, user.uid, ownerName)
+            val offlineCred = verifier.create(cleanPhone, password, userId, ownerName)
             offlineCredentials.save(offlineCred)
 
             val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
             val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
 
-            // Save to Firestore users collection for online multi-device authentication
-            firestore.collection("users").document(cleanPhone).set(mapOf(
-                "user_id" to user.uid,
-                "username" to cleanPhone,
-                "mobile" to cleanPhone,
-                "full_name" to ownerName,
-                "business_name" to businessName,
-                "company_id" to companyId,
-                "role" to "ADMIN",
-                "salt" to saltStr,
-                "verifier" to verifierStr,
-                "permissions" to Permission.ALL_ACTIVE.map { it.name },
-                "license_status" to "PENDING_APPROVAL",
-                "valid_until_epoch_ms" to 0L,
-                "licenses" to licenseMap
-            )).await()
-
+            // Save to Firestore users collection in background/safe timeout
             try {
-                firestore.collection("licenses").document(companyId).set(licenseMap, com.google.firebase.firestore.SetOptions.merge()).await()
-            } catch (_: Exception) {}
+                kotlinx.coroutines.withTimeout(3000L) {
+                    firestore.collection("users").document(cleanPhone).set(mapOf(
+                        "user_id" to userId,
+                        "username" to cleanPhone,
+                        "mobile" to cleanPhone,
+                        "full_name" to ownerName,
+                        "business_name" to businessName,
+                        "company_id" to companyId,
+                        "role" to "ADMIN",
+                        "salt" to saltStr,
+                        "verifier" to verifierStr,
+                        "permissions" to Permission.ALL_ACTIVE.map { it.name },
+                        "license_status" to "TRIAL",
+                        "valid_until_epoch_ms" to trialValidUntil,
+                        "licenses" to licenseMap
+                    )).await()
+
+                    firestore.collection("licenses").document(companyId).set(licenseMap, com.google.firebase.firestore.SetOptions.merge()).await()
+                }
+            } catch (cloudErr: Exception) {
+                android.util.Log.w("DefaultAuthRepo", "User cloud sync delayed: ${cloudErr.message}")
+            }
 
             val licenseEntity = LicenseEntity(
                 companyId = companyId,
                 businessName = businessName,
                 ownerName = ownerName,
                 ownerMobile = cleanPhone,
-                licenseStatus = "PENDING_APPROVAL",
-                licenseType = "TRIAL_2_DAYS"
+                licenseStatus = "TRIAL",
+                licenseType = "TRIAL_2_DAYS",
+                yearsGranted = 0,
+                daysGranted = 2,
+                activatedAtEpochMs = nowMs,
+                validUntilEpochMs = trialValidUntil,
+                lastVerifiedAtEpochMs = nowMs,
+                highestSeenClockEpochMs = nowMs,
+                notes = "2-Day Free Trial Activated"
             )
             database.licenseDao().saveLicense(licenseEntity)
 
-            val nowMs = System.currentTimeMillis()
             val offlineValidityMs = 30 * 24 * 60 * 60 * 1000L // 30 days
             val offlineValidUntil = nowMs + offlineValidityMs
 
             val session = Session(
-                userId = user.uid,
+                userId = userId,
                 displayName = ownerName,
                 permissions = Permission.ALL_ACTIVE,
-                accessToken = user.uid,
+                accessToken = userId,
                 companyId = companyId,
                 role = "ADMIN"
             )
             sessions.save(session)
 
             val userEntity = UserEntity(
-                id = user.uid,
+                id = userId,
                 username = cleanPhone,
                 displayName = ownerName,
                 salt = saltStr,
@@ -572,6 +716,16 @@ class DefaultAuthRepository(
                 offlineValidUntil = offlineValidUntil
             )
             database.userDao().insertUser(userEntity)
+
+            appPreferences.saveShopDetails(
+                name = businessName,
+                owner = ownerName,
+                gst = "",
+                address = "",
+                phone = cleanPhone,
+                email = "",
+                logoPath = ""
+            )
 
             password.fill('\u0000')
             RegisterResult.Success(companyId)
@@ -596,20 +750,25 @@ class DefaultAuthRepository(
         newPassword: CharArray
     ): RecoveryResult {
         return try {
-            val credential = PhoneAuthProvider.getCredential(verificationId, otp)
-            val authResult = firebaseAuth.signInWithCredential(credential).await()
-            val user = authResult.user ?: return RecoveryResult.Failure("Phone authentication failed")
-            val phone = user.phoneNumber ?: ""
-            val cleanPhone = normalizePhone(phone)
+            val cleanPhone = normalizePhone(verificationId)
 
-            val offlineCred = verifier.create(cleanPhone, newPassword, user.uid, cleanPhone)
+            // 1. Verify OTP with MSG91
+            val verifyRes = msg91OtpService.verifyOtp(cleanPhone, otp)
+            if (verifyRes is com.kadaikutty.pos.core.otp.OtpVerifyResult.Failure) {
+                return RecoveryResult.Failure(verifyRes.error)
+            }
+
+            // 2. Fetch or create user UID
+            val localUser = database.userDao().getUserByUsername(cleanPhone, cleanPhone)
+            val userId = localUser?.id ?: ("usr_" + cleanPhone)
+
+            val offlineCred = verifier.create(cleanPhone, newPassword, userId, cleanPhone)
             val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
             val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
 
             var updatedAny = false
 
             // 1. Update in Local SQLite Database (Works for both Admin and Staff/Cashier)
-            val localUser = database.userDao().getUserByUsername(cleanPhone, cleanPhone)
             if (localUser != null) {
                 val perms = localUser.toPermissionsSet().toMutableSet()
                 perms.remove(Permission.REQUIRE_PASSWORD_CHANGE)

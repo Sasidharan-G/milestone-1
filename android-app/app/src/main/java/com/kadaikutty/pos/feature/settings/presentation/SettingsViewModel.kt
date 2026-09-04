@@ -23,6 +23,7 @@ import javax.inject.Inject
 import com.kadaikutty.pos.core.backup.data.BackupManager
 import com.kadaikutty.pos.core.backup.domain.BackupResult
 import com.kadaikutty.pos.core.sync.SyncScheduler
+import kotlinx.coroutines.tasks.await
 
 data class BluetoothDeviceInfo(val name: String, val address: String)
 
@@ -181,10 +182,34 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    init {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val currentPref = appPreferences.shopName.first()
+            if (currentPref.isBlank() || currentPref == "My Shop") {
+                val lic = database.licenseDao().getActiveLicense()
+                if (lic != null && lic.businessName.isNotBlank() && lic.businessName != "My Shop") {
+                    appPreferences.saveShopName(lic.businessName)
+                    if (lic.ownerName.isNotBlank()) {
+                        appPreferences.saveOwnerName(lic.ownerName)
+                    }
+                } else {
+                    val allLics = database.licenseDao().getAllLicenses()
+                    val validLic = allLics.firstOrNull { it.businessName.isNotBlank() && it.businessName != "My Shop" }
+                    if (validLic != null) {
+                        appPreferences.saveShopName(validLic.businessName)
+                        if (validLic.ownerName.isNotBlank()) {
+                            appPreferences.saveOwnerName(validLic.ownerName)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     val shopName: StateFlow<String> = appPreferences.shopName.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
-        initialValue = "My Shop"
+        initialValue = ""
     )
 
     val ownerName: StateFlow<String> = appPreferences.ownerName.stateIn(
@@ -563,7 +588,6 @@ class SettingsViewModel @Inject constructor(
                         "lastOnlineVerifiedAt" to userEntity.lastOnlineVerifiedAt,
                         "offlineValidUntil" to userEntity.offlineValidUntil
                     )
-                    firestore.collection("users").document(companyId).collection("staff").document(userEntity.id).set(map)
                     
                     val rootMap = hashMapOf(
                         "user_id" to userEntity.id,
@@ -576,11 +600,29 @@ class SettingsViewModel @Inject constructor(
                         "company_id" to userEntity.companyId,
                         "business_name" to currentBusinessName,
                         "role" to userEntity.role,
-                        "status" to "PENDING_APPROVAL"
+                        "status" to "PENDING_APPROVAL",
+                        "createdAt" to System.currentTimeMillis()
                     )
-                    firestore.collection("users").document(userEntity.username).set(rootMap)
+
+                    kotlinx.coroutines.withTimeout(5000L) {
+                        firestore.collection("staff_requests").document(userEntity.id).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                        if (userEntity.username.isNotBlank()) {
+                            firestore.collection("staff_requests").document(userEntity.username).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                        }
+                        firestore.collection("users").document(companyId).collection("staff").document(userEntity.id).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                        firestore.collection("users").document(userEntity.username).set(rootMap, com.google.firebase.firestore.SetOptions.merge()).await()
+                        firestore.collection("users").document("+91${userEntity.username}").set(rootMap, com.google.firebase.firestore.SetOptions.merge()).await()
+                        firestore.collection("company_users").document().set(mapOf(
+                            "company_id" to companyId,
+                            "user_id" to userEntity.id,
+                            "role" to userEntity.role,
+                            "status" to "PENDING_APPROVAL",
+                            "mobile" to userEntity.username,
+                            "permissions" to fullPermissions.map { it.name }
+                        )).await()
+                    }
                 } catch (rpcEx: Exception) {
-                    rpcEx.printStackTrace()
+                    android.util.Log.e("SettingsVM", "Staff cloud sync error: ${rpcEx.message}", rpcEx)
                 }
 
                 onResult(true, "Staff account for '$displayName' ($cleanPhone) created! Awaiting Master Admin approval.")
@@ -648,9 +690,7 @@ class SettingsViewModel @Inject constructor(
                             "lastOnlineVerifiedAt" to updatedUser.lastOnlineVerifiedAt,
                             "offlineValidUntil" to updatedUser.offlineValidUntil
                         )
-                        firestore.collection("users").document(session.companyId).collection("staff").document(updatedUser.id).set(map)
-                        
-                        val rootMap = hashMapOf(
+                        val rootUpdate = hashMapOf(
                             "user_id" to updatedUser.id,
                             "username" to updatedUser.username,
                             "mobile" to updatedUser.username,
@@ -658,10 +698,17 @@ class SettingsViewModel @Inject constructor(
                             "salt" to updatedUser.salt,
                             "verifier" to updatedUser.verifier,
                             "permissions" to permissions.map { it.name },
-                            "company_id" to updatedUser.companyId,
                             "role" to updatedUser.role
                         )
-                        firestore.collection("users").document(updatedUser.username).set(rootMap, com.google.firebase.firestore.SetOptions.merge())
+                        kotlinx.coroutines.withTimeout(5000L) {
+                            firestore.collection("staff_requests").document(updatedUser.id).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                            if (updatedUser.username.isNotBlank()) {
+                                firestore.collection("staff_requests").document(updatedUser.username).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                            }
+                            firestore.collection("users").document(session.companyId).collection("staff").document(updatedUser.id).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                            firestore.collection("users").document(updatedUser.username).set(rootUpdate, com.google.firebase.firestore.SetOptions.merge()).await()
+                            firestore.collection("users").document("+91${updatedUser.username}").set(rootUpdate, com.google.firebase.firestore.SetOptions.merge()).await()
+                        }
                     }
                 } catch (ignored: Exception) {}
 
@@ -690,8 +737,11 @@ class SettingsViewModel @Inject constructor(
                 try {
                     val session = sessionStore.activeSession.first()
                     if (session != null) {
-                        firestore.collection("users").document(session.companyId).collection("staff").document(userId).delete()
-                        firestore.collection("users").document(existing.username).delete()
+                        kotlinx.coroutines.withTimeout(5000L) {
+                            firestore.collection("staff_requests").document(userId).delete().await()
+                            firestore.collection("users").document(session.companyId).collection("staff").document(userId).delete().await()
+                            firestore.collection("users").document(existing.username).delete().await()
+                        }
                     }
                 } catch (ignored: Exception) {}
 

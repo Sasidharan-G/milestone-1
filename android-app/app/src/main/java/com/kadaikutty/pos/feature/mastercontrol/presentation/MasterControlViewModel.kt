@@ -56,7 +56,13 @@ class MasterControlViewModel @Inject constructor(
     private var companiesListener: ListenerRegistration? = null
     private var usersListener: ListenerRegistration? = null
     private var staffListener: ListenerRegistration? = null
+    private var staffRequestsListener: ListenerRegistration? = null
+    private var pendingUsersListener: ListenerRegistration? = null
     private var configListener: ListenerRegistration? = null
+
+    private val staffRequestsMap = mutableMapOf<String, StaffApprovalRequest>()
+    private val collectionGroupStaffMap = mutableMapOf<String, StaffApprovalRequest>()
+    private val pendingUsersMap = mutableMapOf<String, StaffApprovalRequest>()
 
     private var rawLicenseDocs = listOf<com.google.firebase.firestore.DocumentSnapshot>()
     private var rawCompanyDocs = listOf<com.google.firebase.firestore.DocumentSnapshot>()
@@ -195,6 +201,7 @@ class MasterControlViewModel @Inject constructor(
             .addSnapshotListener { snapshot, _ ->
                 rawCompanyDocs = snapshot?.documents ?: emptyList()
                 reconcileLicenses()
+                scanCompanyStaffSubcollections()
             }
 
         // 3. Live listener for admin users in users collection
@@ -218,17 +225,6 @@ class MasterControlViewModel @Inject constructor(
         for (doc in rawLicenseDocs) {
             val companyId = doc.getString("companyId") ?: doc.id
             val ownerMobile = (doc.getString("ownerMobile") ?: "").replace("[^0-9]".toRegex(), "").takeLast(10)
-
-            // If the user deleted the admin or company in Firebase Console,
-            // cross-verify so it immediately disappears in real time!
-            val hasActiveCompany = existingCompanyIds.contains(companyId)
-            val hasActiveUser = existingUserPhones.contains(ownerMobile)
-
-            // If we have active data from Cloud and neither company nor admin user exists, it is deleted!
-            if (rawCompanyDocs.isNotEmpty() && rawUserDocs.isNotEmpty() && !hasActiveCompany && !hasActiveUser) {
-                orphanDocIdsToDelete.add(doc.id)
-                continue
-            }
 
             try {
                 val entity = LicenseEntity(
@@ -281,17 +277,6 @@ class MasterControlViewModel @Inject constructor(
             activePaidCount = paid,
             expiredCount = expired
         )
-
-        // Automatically purge any detected orphans from Cloud Firestore in background
-        if (orphanDocIdsToDelete.isNotEmpty()) {
-            viewModelScope.launch {
-                for (orphanId in orphanDocIdsToDelete) {
-                    try {
-                        firestore.collection("licenses").document(orphanId).delete().await()
-                    } catch (_: Exception) {}
-                }
-            }
-        }
     }
 
     /**
@@ -314,6 +299,12 @@ class MasterControlViewModel @Inject constructor(
                     "notes" to "2-Day Free Trial approved by Master Admin"
                 )
                 firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                try {
+                    firestore.collection("companies").document(companyId).set(mapOf(
+                        "license_status" to "TRIAL",
+                        "valid_until_epoch_ms" to validUntil
+                    ), com.google.firebase.firestore.SetOptions.merge()).await()
+                } catch (_: Exception) {}
                 _state.value = _state.value.copy(successMessage = "2-Day Free Trial activated for $businessName!")
             } catch (e: Exception) {
                 _state.value = _state.value.copy(errorMessage = "Failed to grant trial: ${e.message}")
@@ -323,14 +314,17 @@ class MasterControlViewModel @Inject constructor(
 
     /**
      * Manually sets/renews license duration based on Years (e.g. 1 Year = 365 days, 2 Years = 730 days)
-     * Calculated exactly from the date Master grants access.
+     * If user is currently on an active 2-day trial, extends after the trial!
      */
     fun grantYearlyLicense(companyId: String, businessName: String, years: Int) {
         viewModelScope.launch {
             try {
                 val now = System.currentTimeMillis()
                 val totalDays = years * 365
-                val validUntil = now + (totalDays.toLong() * 24 * 60 * 60 * 1000L)
+                val existingDoc = rawLicenseDocs.firstOrNull { it.getString("companyId") == companyId || it.id == companyId }
+                val existingValidUntil = existingDoc?.getLong("validUntilEpochMs") ?: 0L
+                val baseStart = if (existingValidUntil > now) existingValidUntil else now
+                val validUntil = baseStart + (totalDays.toLong() * 24 * 60 * 60 * 1000L)
 
                 val map = hashMapOf(
                     "companyId" to companyId,
@@ -343,7 +337,25 @@ class MasterControlViewModel @Inject constructor(
                     "notes" to "Full Paid License ($years Year) granted by Master Admin"
                 )
 
-                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge())
+                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                try {
+                    firestore.collection("companies").document(companyId).set(mapOf(
+                        "license_status" to "ACTIVE_PAID",
+                        "valid_until_epoch_ms" to validUntil
+                    ), com.google.firebase.firestore.SetOptions.merge()).await()
+                } catch (_: Exception) {}
+
+                val ownerMobile = existingDoc?.getString("ownerMobile") ?: ""
+                val cleanMobile = ownerMobile.replace("[^0-9]".toRegex(), "").takeLast(10)
+                if (cleanMobile.isNotBlank()) {
+                    try {
+                        firestore.collection("users").document(cleanMobile).set(mapOf(
+                            "license_status" to "ACTIVE_PAID",
+                            "valid_until_epoch_ms" to validUntil
+                        ), com.google.firebase.firestore.SetOptions.merge()).await()
+                    } catch (_: Exception) {}
+                }
+
                 _state.value = _state.value.copy(successMessage = "Full $years Year ($totalDays Days) access granted to $businessName!")
             } catch (e: Exception) {
                 _state.value = _state.value.copy(errorMessage = "Failed to grant license: ${e.message}")
@@ -353,12 +365,16 @@ class MasterControlViewModel @Inject constructor(
 
     /**
      * Custom Days License Grant (e.g., 30 days, 90 days, 180 days).
+     * If user is currently on an active 2-day trial, extends after the trial!
      */
     fun grantCustomDaysLicense(companyId: String, businessName: String, days: Int) {
         viewModelScope.launch {
             try {
                 val now = System.currentTimeMillis()
-                val validUntil = now + (days.toLong() * 24 * 60 * 60 * 1000L)
+                val existingDoc = rawLicenseDocs.firstOrNull { it.getString("companyId") == companyId || it.id == companyId }
+                val existingValidUntil = existingDoc?.getLong("validUntilEpochMs") ?: 0L
+                val baseStart = if (existingValidUntil > now) existingValidUntil else now
+                val validUntil = baseStart + (days.toLong() * 24 * 60 * 60 * 1000L)
 
                 val map = hashMapOf(
                     "companyId" to companyId,
@@ -371,7 +387,25 @@ class MasterControlViewModel @Inject constructor(
                     "notes" to "Custom Access ($days Days) granted by Master Admin"
                 )
 
-                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge())
+                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                try {
+                    firestore.collection("companies").document(companyId).set(mapOf(
+                        "license_status" to "ACTIVE_PAID",
+                        "valid_until_epoch_ms" to validUntil
+                    ), com.google.firebase.firestore.SetOptions.merge()).await()
+                } catch (_: Exception) {}
+
+                val ownerMobile = existingDoc?.getString("ownerMobile") ?: ""
+                val cleanMobile = ownerMobile.replace("[^0-9]".toRegex(), "").takeLast(10)
+                if (cleanMobile.isNotBlank()) {
+                    try {
+                        firestore.collection("users").document(cleanMobile).set(mapOf(
+                            "license_status" to "ACTIVE_PAID",
+                            "valid_until_epoch_ms" to validUntil
+                        ), com.google.firebase.firestore.SetOptions.merge()).await()
+                    } catch (_: Exception) {}
+                }
+
                 _state.value = _state.value.copy(successMessage = "Custom $days Days access granted to $businessName!")
             } catch (e: Exception) {
                 _state.value = _state.value.copy(errorMessage = "Failed to grant access: ${e.message}")
@@ -392,8 +426,14 @@ class MasterControlViewModel @Inject constructor(
                     "notes" to "Access manually REVOKED / CUT by Master Admin"
                 )
 
-                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge())
-                _state.value = _state.value.copy(successMessage = "Access immediately REVOKED for $businessName!")
+                firestore.collection("licenses").document(companyId).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
+                try {
+                    firestore.collection("companies").document(companyId).set(mapOf(
+                        "license_status" to "REVOKED",
+                        "valid_until_epoch_ms" to 0L
+                    ), com.google.firebase.firestore.SetOptions.merge()).await()
+                } catch (_: Exception) {}
+                _state.value = _state.value.copy(successMessage = "Access REVOKED for $businessName!")
             } catch (e: Exception) {
                 _state.value = _state.value.copy(errorMessage = "Failed to revoke access: ${e.message}")
             }
@@ -402,38 +442,124 @@ class MasterControlViewModel @Inject constructor(
 
     private fun listenToStaffRequests() {
         staffListener?.remove()
+        staffRequestsListener?.remove()
+        pendingUsersListener?.remove()
 
-        staffListener = firestore.collectionGroup("staff")
+        // 1. Primary listener: Top-Level "staff_requests" collection (Direct & always reliable)
+        staffRequestsListener = firestore.collection("staff_requests")
             .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-
-                if (snapshot != null) {
-                    val requests = snapshot.documents.mapNotNull { doc ->
-                        try {
-                            StaffApprovalRequest(
-                                id = doc.id,
-                                username = doc.getString("username") ?: "",
-                                displayName = doc.getString("displayName") ?: doc.getString("name") ?: "Staff",
-                                companyId = doc.getString("companyId") ?: doc.reference.parent.parent?.id ?: "",
-                                businessName = doc.getString("businessName") ?: "Shop",
-                                role = doc.getString("role") ?: "CASHIER",
-                                status = doc.getString("status") ?: "PENDING_APPROVAL",
-                                permissions = doc.getString("permissions") ?: "",
-                                createdAt = doc.getLong("createdAt") ?: 0L
-                            )
-                        } catch (e: Exception) {
-                            null
-                        }
-                    }.sortedByDescending { it.createdAt }
-
-                    val pendingCount = requests.count { it.status == "PENDING_APPROVAL" || it.permissions.contains("PENDING_MASTER_APPROVAL") }
-
-                    _state.value = _state.value.copy(
-                        staffRequests = requests,
-                        pendingStaffCount = pendingCount
-                    )
+                if (error != null) {
+                    android.util.Log.w("MasterControlVM", "staff_requests listener warning: ${error.message}")
+                    return@addSnapshotListener
                 }
+                staffRequestsMap.clear()
+                snapshot?.documents?.forEach { doc ->
+                    parseStaffDoc(doc)?.let { staffRequestsMap[it.username.ifBlank { it.id }] = it }
+                }
+                reconcileStaffRequests()
             }
+
+        // 2. Secondary listener: root "users" with status == "PENDING_APPROVAL"
+        pendingUsersListener = firestore.collection("users")
+            .whereEqualTo("status", "PENDING_APPROVAL")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    android.util.Log.w("MasterControlVM", "pending users listener warning: ${error.message}")
+                    return@addSnapshotListener
+                }
+                pendingUsersMap.clear()
+                snapshot?.documents?.forEach { doc ->
+                    parseStaffDoc(doc)?.let { pendingUsersMap[it.username.ifBlank { it.id }] = it }
+                }
+                reconcileStaffRequests()
+            }
+
+        // 3. Fallback listener: collectionGroup("staff")
+        try {
+            staffListener = firestore.collectionGroup("staff")
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        android.util.Log.w("MasterControlVM", "collectionGroup(staff) warning: ${error.message}")
+                        return@addSnapshotListener
+                    }
+                    collectionGroupStaffMap.clear()
+                    snapshot?.documents?.forEach { doc ->
+                        parseStaffDoc(doc)?.let { collectionGroupStaffMap[it.username.ifBlank { it.id }] = it }
+                    }
+                    reconcileStaffRequests()
+                }
+        } catch (e: Exception) {
+            android.util.Log.w("MasterControlVM", "collectionGroup(staff) could not attach: ${e.message}")
+        }
+    }
+
+    private fun scanCompanyStaffSubcollections() {
+        val companyIds = rawCompanyDocs.map { it.id }.toSet()
+        for (compId in companyIds) {
+            firestore.collection("users").document(compId).collection("staff")
+                .get()
+                .addOnSuccessListener { snapshot ->
+                    if (snapshot != null && !snapshot.isEmpty) {
+                        for (doc in snapshot.documents) {
+                            parseStaffDoc(doc)?.let {
+                                collectionGroupStaffMap[it.username.ifBlank { it.id }] = it
+                            }
+                        }
+                        reconcileStaffRequests()
+                    }
+                }
+        }
+    }
+
+    private fun parseStaffDoc(doc: com.google.firebase.firestore.DocumentSnapshot): StaffApprovalRequest? {
+        return try {
+            val role = doc.getString("role") ?: "CASHIER"
+            if (role == "ADMIN" || role == "SUPER_ADMIN") return null // Do not show shop owner admin accounts
+
+            val rawPhone = doc.getString("mobile") ?: doc.getString("phone") ?: doc.getString("username") ?: ""
+            val cleanPhone = rawPhone.replace("[^0-9]".toRegex(), "").takeLast(10)
+            val username = if (cleanPhone.length == 10) cleanPhone else (rawPhone.ifBlank { doc.id })
+            val displayName = doc.getString("displayName") ?: doc.getString("full_name") ?: doc.getString("name") ?: "Staff $username"
+            val companyId = doc.getString("companyId") ?: doc.getString("company_id") ?: doc.reference.parent.parent?.id ?: ""
+            val bizName = doc.getString("businessName") ?: doc.getString("business_name") ?: "Shop"
+            val status = doc.getString("status") ?: "PENDING_APPROVAL"
+            val permissions = when (val p = doc.get("permissions")) {
+                is List<*> -> p.joinToString(",")
+                is String -> p
+                else -> ""
+            }
+            val createdAt = doc.getLong("createdAt") ?: doc.getLong("created_at") ?: System.currentTimeMillis()
+
+            StaffApprovalRequest(
+                id = doc.getString("id") ?: doc.getString("user_id") ?: doc.id,
+                username = username,
+                displayName = displayName,
+                companyId = companyId,
+                businessName = bizName,
+                role = role,
+                status = status,
+                permissions = permissions,
+                createdAt = createdAt
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun reconcileStaffRequests() {
+        val merged = mutableMapOf<String, StaffApprovalRequest>()
+        // Merge order: pendingUsers -> collectionGroup -> staff_requests
+        pendingUsersMap.values.forEach { merged[it.username.ifBlank { it.id }] = it }
+        collectionGroupStaffMap.values.forEach { merged[it.username.ifBlank { it.id }] = it }
+        staffRequestsMap.values.forEach { merged[it.username.ifBlank { it.id }] = it }
+
+        val list = merged.values.sortedByDescending { it.createdAt }
+        val pendingCount = list.count { it.status == "PENDING_APPROVAL" || it.permissions.contains("PENDING_MASTER_APPROVAL") }
+
+        _state.value = _state.value.copy(
+            staffRequests = list,
+            pendingStaffCount = pendingCount
+        )
     }
 
     fun approveStaff(request: StaffApprovalRequest) {
@@ -442,27 +568,66 @@ class MasterControlViewModel @Inject constructor(
                 val cleanPerms = request.permissions.split(",")
                     .filter { it.isNotBlank() && it != "PENDING_MASTER_APPROVAL" && it != "ACCOUNT_INACTIVE" }
                     .joinToString(",")
+                val rootPerms = cleanPerms.split(",").filter { it.isNotBlank() }
 
-                // 1. Update company staff sub-collection
-                firestore.collection("users")
-                    .document(request.companyId)
-                    .collection("staff")
-                    .document(request.id)
-                    .set(mapOf(
+                // 1. Update top-level staff_requests
+                try {
+                    val updateMap = mapOf(
                         "status" to "ACTIVE",
                         "permissions" to cleanPerms
-                    ), com.google.firebase.firestore.SetOptions.merge()).await()
+                    )
+                    firestore.collection("staff_requests")
+                        .document(request.id)
+                        .set(updateMap, com.google.firebase.firestore.SetOptions.merge()).await()
+                    if (request.username.isNotBlank() && request.username != request.id) {
+                        firestore.collection("staff_requests")
+                            .document(request.username)
+                            .set(updateMap, com.google.firebase.firestore.SetOptions.merge()).await()
+                    }
+                } catch (_: Exception) {}
 
-                // 2. Update root users collection for login
-                if (request.username.isNotBlank()) {
-                    val rootPerms = cleanPerms.split(",").filter { it.isNotBlank() }
-                    firestore.collection("users")
-                        .document(request.username)
-                        .set(mapOf(
-                            "status" to "ACTIVE",
-                            "permissions" to rootPerms
-                        ), com.google.firebase.firestore.SetOptions.merge()).await()
+                // 2. Update company staff sub-collection
+                if (request.companyId.isNotBlank()) {
+                    try {
+                        firestore.collection("users")
+                            .document(request.companyId)
+                            .collection("staff")
+                            .document(request.id)
+                            .set(mapOf(
+                                "status" to "ACTIVE",
+                                "permissions" to cleanPerms
+                            ), com.google.firebase.firestore.SetOptions.merge()).await()
+                    } catch (_: Exception) {}
                 }
+
+                // 3. Update root users collection for login
+                if (request.username.isNotBlank()) {
+                    val cleanMobile = request.username.replace("[^0-9]".toRegex(), "").takeLast(10)
+                    val updateMap = mapOf(
+                        "status" to "ACTIVE",
+                        "permissions" to rootPerms
+                    )
+                    firestore.collection("users").document(request.username).set(updateMap, com.google.firebase.firestore.SetOptions.merge()).await()
+                    if (cleanMobile.isNotBlank() && cleanMobile != request.username) {
+                        firestore.collection("users").document(cleanMobile).set(updateMap, com.google.firebase.firestore.SetOptions.merge()).await()
+                        firestore.collection("users").document("+91$cleanMobile").set(updateMap, com.google.firebase.firestore.SetOptions.merge()).await()
+                    }
+                }
+
+                // 4. Update company_users mapping
+                try {
+                    val cu = firestore.collection("company_users").whereEqualTo("user_id", request.id).get().await()
+                    for (d in cu.documents) {
+                        d.reference.set(mapOf("status" to "ACTIVE"), com.google.firebase.firestore.SetOptions.merge()).await()
+                    }
+                } catch (_: Exception) {}
+
+                // Update local in-memory state immediately
+                val key = request.username.ifBlank { request.id }
+                staffRequestsMap[key] = request.copy(status = "ACTIVE", permissions = cleanPerms)
+                collectionGroupStaffMap[key] = request.copy(status = "ACTIVE", permissions = cleanPerms)
+                pendingUsersMap.remove(key)
+                reconcileStaffRequests()
 
                 _state.value = _state.value.copy(successMessage = "Staff '${request.displayName}' for '${request.businessName}' approved and activated!")
             } catch (e: Exception) {
@@ -474,17 +639,40 @@ class MasterControlViewModel @Inject constructor(
     fun rejectStaff(request: StaffApprovalRequest) {
         viewModelScope.launch {
             try {
-                firestore.collection("users")
-                    .document(request.companyId)
-                    .collection("staff")
-                    .document(request.id)
-                    .set(mapOf("status" to "REJECTED"), com.google.firebase.firestore.SetOptions.merge()).await()
+                // 1. Update staff_requests
+                try {
+                    firestore.collection("staff_requests")
+                        .document(request.id)
+                        .set(mapOf("status" to "REJECTED"), com.google.firebase.firestore.SetOptions.merge()).await()
+                } catch (_: Exception) {}
 
+                // 2. Update company staff sub-collection
+                if (request.companyId.isNotBlank()) {
+                    try {
+                        firestore.collection("users")
+                            .document(request.companyId)
+                            .collection("staff")
+                            .document(request.id)
+                            .set(mapOf("status" to "REJECTED"), com.google.firebase.firestore.SetOptions.merge()).await()
+                    } catch (_: Exception) {}
+                }
+
+                // 3. Update root users
                 if (request.username.isNotBlank()) {
+                    val cleanMobile = request.username.replace("[^0-9]".toRegex(), "").takeLast(10)
                     firestore.collection("users")
                         .document(request.username)
                         .set(mapOf("status" to "REJECTED"), com.google.firebase.firestore.SetOptions.merge()).await()
+                    if (cleanMobile.isNotBlank() && cleanMobile != request.username) {
+                        firestore.collection("users").document(cleanMobile).set(mapOf("status" to "REJECTED"), com.google.firebase.firestore.SetOptions.merge()).await()
+                    }
                 }
+
+                val key = request.username.ifBlank { request.id }
+                staffRequestsMap[key] = request.copy(status = "REJECTED")
+                collectionGroupStaffMap[key] = request.copy(status = "REJECTED")
+                pendingUsersMap.remove(key)
+                reconcileStaffRequests()
 
                 _state.value = _state.value.copy(successMessage = "Staff '${request.displayName}' request rejected.")
             } catch (e: Exception) {
@@ -497,24 +685,54 @@ class MasterControlViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val revokedPerms = if (request.permissions.contains("ACCOUNT_INACTIVE")) request.permissions else "${request.permissions},ACCOUNT_INACTIVE"
-                firestore.collection("users")
-                    .document(request.companyId)
-                    .collection("staff")
-                    .document(request.id)
-                    .set(mapOf(
-                        "status" to "INACTIVE",
-                        "permissions" to revokedPerms
-                    ), com.google.firebase.firestore.SetOptions.merge()).await()
+                val rootPerms = revokedPerms.split(",").filter { it.isNotBlank() }
 
+                // 1. Update staff_requests
+                try {
+                    firestore.collection("staff_requests")
+                        .document(request.id)
+                        .set(mapOf(
+                            "status" to "INACTIVE",
+                            "permissions" to revokedPerms
+                        ), com.google.firebase.firestore.SetOptions.merge()).await()
+                } catch (_: Exception) {}
+
+                // 2. Update company staff sub-collection
+                if (request.companyId.isNotBlank()) {
+                    try {
+                        firestore.collection("users")
+                            .document(request.companyId)
+                            .collection("staff")
+                            .document(request.id)
+                            .set(mapOf(
+                                "status" to "INACTIVE",
+                                "permissions" to revokedPerms
+                            ), com.google.firebase.firestore.SetOptions.merge()).await()
+                    } catch (_: Exception) {}
+                }
+
+                // 3. Update root users
                 if (request.username.isNotBlank()) {
-                    val rootPerms = revokedPerms.split(",").filter { it.isNotBlank() }
+                    val cleanMobile = request.username.replace("[^0-9]".toRegex(), "").takeLast(10)
                     firestore.collection("users")
                         .document(request.username)
                         .set(mapOf(
                             "status" to "INACTIVE",
                             "permissions" to rootPerms
                         ), com.google.firebase.firestore.SetOptions.merge()).await()
+                    if (cleanMobile.isNotBlank() && cleanMobile != request.username) {
+                        firestore.collection("users").document(cleanMobile).set(mapOf(
+                            "status" to "INACTIVE",
+                            "permissions" to rootPerms
+                        ), com.google.firebase.firestore.SetOptions.merge()).await()
+                    }
                 }
+
+                val key = request.username.ifBlank { request.id }
+                staffRequestsMap[key] = request.copy(status = "INACTIVE", permissions = revokedPerms)
+                collectionGroupStaffMap[key] = request.copy(status = "INACTIVE", permissions = revokedPerms)
+                pendingUsersMap.remove(key)
+                reconcileStaffRequests()
 
                 _state.value = _state.value.copy(successMessage = "Staff '${request.displayName}' access revoked.")
             } catch (e: Exception) {
@@ -529,16 +747,23 @@ class MasterControlViewModel @Inject constructor(
                 _state.value = _state.value.copy(isLoading = true)
                 val cleanUsername = request.username.replace("[^0-9]".toRegex(), "").takeLast(10)
 
-                // 1. Delete from company staff sub-collection
+                // 1. Delete from staff_requests
+                try {
+                    firestore.collection("staff_requests").document(request.id).delete().await()
+                } catch (_: Exception) {}
+
+                // 2. Delete from company staff sub-collection
                 if (request.companyId.isNotBlank() && request.id.isNotBlank()) {
-                    firestore.collection("users")
-                        .document(request.companyId)
-                        .collection("staff")
-                        .document(request.id)
-                        .delete().await()
+                    try {
+                        firestore.collection("users")
+                            .document(request.companyId)
+                            .collection("staff")
+                            .document(request.id)
+                            .delete().await()
+                    } catch (_: Exception) {}
                 }
 
-                // 2. Delete from root users collection
+                // 3. Delete from root users collection
                 if (cleanUsername.isNotBlank()) {
                     firestore.collection("users").document(cleanUsername).delete().await()
                     firestore.collection("users").document("+91$cleanUsername").delete().await()
@@ -548,7 +773,7 @@ class MasterControlViewModel @Inject constructor(
                     } catch (_: Exception) {}
                 }
 
-                // 3. Delete from company_users collection
+                // 4. Delete from company_users collection
                 try {
                     val cu1 = firestore.collection("company_users").whereEqualTo("user_id", request.id).get().await()
                     for (d in cu1.documents) { d.reference.delete().await() }
@@ -558,13 +783,19 @@ class MasterControlViewModel @Inject constructor(
                     }
                 } catch (_: Exception) {}
 
-                val updatedStaff = _state.value.staffRequests.filter { it.id != request.id && (cleanUsername.isBlank() || !it.username.contains(cleanUsername)) }
-                val pendingCount = updatedStaff.count { it.status == "PENDING_APPROVAL" || it.permissions.contains("PENDING_MASTER_APPROVAL") }
+                val key = request.username.ifBlank { request.id }
+                staffRequestsMap.remove(key)
+                collectionGroupStaffMap.remove(key)
+                pendingUsersMap.remove(key)
+                if (cleanUsername.isNotBlank()) {
+                    staffRequestsMap.remove(cleanUsername)
+                    collectionGroupStaffMap.remove(cleanUsername)
+                    pendingUsersMap.remove(cleanUsername)
+                }
+                reconcileStaffRequests()
 
                 _state.value = _state.value.copy(
                     isLoading = false,
-                    staffRequests = updatedStaff,
-                    pendingStaffCount = pendingCount,
                     successMessage = "Staff '${request.displayName}' permanently removed from Cloud!"
                 )
             } catch (e: Exception) {
@@ -579,6 +810,9 @@ class MasterControlViewModel @Inject constructor(
         companiesListener?.remove()
         usersListener?.remove()
         staffListener?.remove()
+        staffRequestsListener?.remove()
+        pendingUsersListener?.remove()
         configListener?.remove()
     }
 }
+

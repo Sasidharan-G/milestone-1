@@ -345,7 +345,11 @@ fun RegisterScreenContent(
 
                 Button(
                     onClick = { 
-                        triggerAnimation { viewModel.registerDirectly { onRegisterSuccess() } }
+                        if (activity != null) {
+                            triggerAnimation { viewModel.register(activity) }
+                        } else {
+                            triggerAnimation { viewModel.registerDirectly { onRegisterSuccess() } }
+                        }
                     },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -366,7 +370,7 @@ fun RegisterScreenContent(
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFE40000))
-                            Text("Instant Register Shop", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("Verify Mobile & Register", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
                 }
@@ -381,4 +385,87 @@ fun RegisterScreenContent(
                         .padding(vertical = 4.dp)
                 )
         }
+
+        // OTP Dialog for Registration
+        if (state.showOtpDialog) {
+            androidx.compose.ui.window.Dialog(
+                onDismissRequest = { viewModel.dismissOtpDialog() }
+            ) {
+                Surface(
+                    shape = RoundedCornerShape(24.dp),
+                    color = Color(0xFF0B0F17),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("Verify Mobile Number", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            IconButton(onClick = { viewModel.dismissOtpDialog() }, modifier = Modifier.size(28.dp)) {
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF94A3B8))
+                            }
+                        }
+
+                        HorizontalDivider(color = Color(0xFF1E293B))
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
+                            otpLength = 6,
+                            otpValue = state.otp,
+                            phoneNumber = state.mobileNumber,
+                            onOtpChange = { viewModel.updateOtp(it) },
+                            onVerifyTriggered = {
+                                viewModel.verifyOtpAndCompleteRegistration {
+                                    onRegisterSuccess()
+                                }
+                            },
+                            onResendClick = {
+                                if (activity != null) {
+                                    viewModel.register(activity)
+                                }
+                            },
+                            isLoading = state.loading,
+                            errorMessage = state.error
+                        )
+
+                        Spacer(modifier = Modifier.height(8.dp))
+
+                        Button(
+                            onClick = {
+                                viewModel.verifyOtpAndCompleteRegistration {
+                                    onRegisterSuccess()
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 20.dp)
+                                .height(48.dp),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF5C151A),
+                                contentColor = Color.White
+                            ),
+                            enabled = !state.loading && state.otp.length == 6
+                        ) {
+                            if (state.loading) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
+                            } else {
+                                Text("Verify & Enter Store", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
+

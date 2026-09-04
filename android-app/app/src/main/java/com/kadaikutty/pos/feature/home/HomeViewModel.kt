@@ -37,6 +37,11 @@ class HomeViewModel @Inject constructor(
     private val syncScheduler: SyncScheduler
 ) : ViewModel() {
 
+    init {
+        syncScheduler.schedulePeriodicSync()
+        syncScheduler.request()
+    }
+
     val activeSession: StateFlow<Session?> = sessionStore.activeSession
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 

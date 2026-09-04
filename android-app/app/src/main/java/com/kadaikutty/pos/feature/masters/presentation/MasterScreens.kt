@@ -83,18 +83,15 @@ fun MasterScreens(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
-            // 📊 2x3 Matrix Grid Header for the 6 Master Data Attributes with Unique Semantic Icons
-            val masterTabs = buildList {
-                add(Triple(0, "Categories", Icons.Default.Category))
-                add(Triple(1, "Products", Icons.Default.Inventory2))
-                add(Triple(2, "Customers", Icons.Default.Groups))
-                add(Triple(3, "Suppliers", Icons.Default.LocalShipping))
-                add(Triple(4, "Expenses", Icons.AutoMirrored.Filled.ReceiptLong))
-                add(Triple(5, "Ledger", Icons.AutoMirrored.Filled.MenuBook))
-                if (userSession?.permissions?.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE) == true) {
-                    add(Triple(6, "Staff", Icons.Default.ManageAccounts))
-                }
-            }
+            // 2x3 Matrix Grid Header for the 5 Master Data Attributes with Unique Semantic Icons
+            val masterTabs = listOf(
+                Triple(0, "Categories", Icons.Default.Category),
+                Triple(1, "Products", Icons.Default.Inventory2),
+                Triple(2, "Customers", Icons.Default.Groups),
+                Triple(3, "Suppliers", Icons.Default.LocalShipping),
+                Triple(4, "Expenses", Icons.AutoMirrored.Filled.ReceiptLong),
+                Triple(5, "Ledger", Icons.AutoMirrored.Filled.MenuBook)
+            )
 
             androidx.compose.foundation.lazy.LazyRow(
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -164,7 +161,6 @@ fun MasterScreens(
                     3 -> SupplierTabScreen(supplierVm)
                     4 -> ExpenseTabScreen(expenseVm)
                     5 -> CreditLedgerTabScreen(customerVm, supplierVm)
-                    6 -> StaffTabScreen(settingsVm)
                 }
             }
         }
@@ -515,7 +511,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
             onDismissRequest = { importSummary = null },
             title = {
                 Text(
-                    text = if (s.errorMessage == null) "🎉 Bulk Import Completed" else "❌ Import Error",
+                    text = if (s.errorMessage == null) "Bulk Import Completed" else "Import Error",
                     fontWeight = FontWeight.Bold
                 )
             },
@@ -525,12 +521,12 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         Text(s.errorMessage, color = MaterialTheme.colorScheme.error)
                     } else {
                         Text("Total Lines Read: ${s.totalRead}", fontWeight = FontWeight.SemiBold)
-                        Text("✅ Successfully Added: ${s.importedCount} items", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                        Text("Successfully Added: ${s.importedCount} items", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
                         if (s.updatedCount > 0) {
-                            Text("🔄 Existing Products Updated: ${s.updatedCount} items", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold)
+                            Text("Existing Products Updated: ${s.updatedCount} items", color = Color(0xFF3B82F6), fontWeight = FontWeight.Bold)
                         }
                         if (s.skippedCount > 0) {
-                            Text("⚠️ Skipped / Empty Lines: ${s.skippedCount}", color = Color(0xFFF59E0B))
+                            Text("Skipped / Empty Lines: ${s.skippedCount}", color = Color(0xFFF59E0B))
                         }
                     }
                 }
@@ -599,7 +595,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
             ) {
                 item { LowStockAlertsBanner(lowStockProducts) }
                 
-                // 📁 Bulk Import / Template Export Card
+                // Bulk Import / Template Export Card
                 item {
                     Card(
                         shape = RoundedCornerShape(14.dp),
@@ -621,7 +617,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             ) {
                                 Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("📁 Import CSV / Excel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Import CSV / Excel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
 
                             OutlinedButton(
@@ -633,7 +629,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             ) {
                                 Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.width(4.dp))
-                                Text("📥 Template", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                                Text("Template", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -878,7 +874,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                 Column(modifier = Modifier.weight(1.2f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     LowStockAlertsBanner(lowStockProducts)
                     
-                    // 📁 Bulk Import / Template Export Card (Tablet Layout)
+                    // Bulk Import / Template Export Card (Tablet Layout)
                     Card(
                         shape = RoundedCornerShape(14.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -899,7 +895,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             ) {
                                 Icon(Icons.Default.UploadFile, contentDescription = null, modifier = Modifier.size(16.dp))
                                 Spacer(Modifier.width(6.dp))
-                                Text("📁 Import CSV / Excel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                Text("Import CSV / Excel", fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
 
                             OutlinedButton(
@@ -911,7 +907,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             ) {
                                 Icon(Icons.Default.Download, contentDescription = null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
                                 Spacer(Modifier.width(4.dp))
-                                Text("📥 Template", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
+                                Text("Template", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary)
                             }
                         }
                     }
@@ -3544,7 +3540,7 @@ fun LowStockAlertsBanner(lowStockProducts: List<com.kadaikutty.pos.core.database
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "⚠️ Low Stock Alerts",
+                text = "Low Stock Alerts",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 fontWeight = FontWeight.Bold

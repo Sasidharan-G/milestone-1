@@ -247,7 +247,7 @@ fun BillDetailsDialog(
                         Button(
                             onClick = {
                                 val shareText = buildString {
-                                    appendLine("🧾 INVOICE #${sale.billNumber}")
+                                    appendLine("INVOICE #${sale.billNumber}")
                                     appendLine("Date: $dateStr")
                                     appendLine("Customer: ${billDetail.customerName}")
                                     appendLine("-------------------------")

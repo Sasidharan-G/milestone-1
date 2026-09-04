@@ -94,7 +94,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     }
 
     private val shopNameKey = stringPreferencesKey("shop_name")
-    val shopName: Flow<String> = dataStore.data.map { it[shopNameKey] ?: "My Shop" }
+    val shopName: Flow<String> = dataStore.data.map { it[shopNameKey] ?: "" }
 
     private val ownerNameKey = stringPreferencesKey("owner_name")
     val ownerName: Flow<String> = dataStore.data.map { it[ownerNameKey] ?: "" }
@@ -113,6 +113,18 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
 
     private val shopLogoPathKey = stringPreferencesKey("shop_logo_path")
     val shopLogoPath: Flow<String> = dataStore.data.map { it[shopLogoPathKey] ?: "" }
+
+    suspend fun saveShopName(name: String) {
+        dataStore.edit {
+            it[shopNameKey] = name
+        }
+    }
+
+    suspend fun saveOwnerName(owner: String) {
+        dataStore.edit {
+            it[ownerNameKey] = owner
+        }
+    }
 
     suspend fun saveShopDetails(name: String, owner: String, gst: String, address: String, phone: String, email: String, logoPath: String) {
         dataStore.edit {

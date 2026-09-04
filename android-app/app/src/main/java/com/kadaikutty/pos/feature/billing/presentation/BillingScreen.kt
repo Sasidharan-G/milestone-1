@@ -339,7 +339,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                         }
                         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             if (currentStockUnits <= 0) {
-                                Text("⚠️ Out of Stock (0 available)", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                Text("Out of Stock (0 available)", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
                             } else {
                                 Text("Available in Stock: $formattedStock", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
                             }
@@ -608,7 +608,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                 border = BorderStroke(1.dp, Color(0xFFD97706)),
                                 contentPadding = PaddingValues(vertical = 10.dp, horizontal = 4.dp)
                             ) {
-                                Text("📑 Held ($heldCartsCount)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                Text("Held ($heldCartsCount)", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                             }
                         }
 
@@ -623,7 +623,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                             shape = MaterialTheme.shapes.medium,
                             contentPadding = PaddingValues(vertical = 10.dp, horizontal = 4.dp)
                         ) {
-                            Text("⏸️ Hold", fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                            Text("Hold", fontWeight = FontWeight.Bold, fontSize = 12.sp)
                         }
 
                         OutlinedButton(

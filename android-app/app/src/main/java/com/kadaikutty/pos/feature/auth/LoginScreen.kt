@@ -233,7 +233,7 @@ fun LoginScreenContent(
 
                 HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
 
-                // 🛡️ Super Master Access Button (Logo)
+                // Super Master Access Button (Logo)
                 androidx.compose.foundation.Image(
                     painter = androidx.compose.ui.res.painterResource(id = com.kadaikutty.pos.R.drawable.ic_master_logo),
                     contentDescription = "Master Control",
@@ -247,7 +247,17 @@ fun LoginScreenContent(
                         )
                 )
 
-                if (message.isNotBlank()) {
+                val errorMsg = state.error
+                if (!errorMsg.isNullOrBlank()) {
+                    Text(
+                        text = errorMsg,
+                        color = Color(0xFFFF6B6B),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                } else if (message.isNotBlank()) {
                     Text(
                         text = message,
                         color = Color(0xFF69F0AE),
@@ -271,10 +281,7 @@ fun LoginScreenContent(
                 titleContentColor = Color.White,
                 textContentColor = Color.White.copy(alpha = 0.9f),
                 title = {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("🛡️", fontSize = 18.sp)
-                        Text("Super Master Authentication", fontWeight = FontWeight.Bold, color = Color.White)
-                    }
+                    Text("Super Master Authentication", fontWeight = FontWeight.Bold, color = Color.White)
                 },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -317,7 +324,7 @@ fun LoginScreenContent(
                             )
                         )
 
-                        // 📱 Master Forgot PIN via Firebase SMS OTP
+                        // Master Forgot PIN via Firebase SMS OTP
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End
@@ -402,7 +409,7 @@ fun LoginScreenContent(
                 containerColor = Color(0xFF5C151A), // Maroon Background
                 titleContentColor = Color.White,
                 textContentColor = Color.White.copy(alpha = 0.9f),
-                title = { Text("🛡️ Reset Master Secret PIN", fontWeight = FontWeight.Bold, color = Color.White) },
+                title = { Text("Reset Master Secret PIN", fontWeight = FontWeight.Bold, color = Color.White) },
                 text = {
                     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
                         Text("SMS OTP sent to Master mobile ($masterResetTargetPhone):", fontSize = 12.sp, color = Color.White.copy(alpha = 0.8f))

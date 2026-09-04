@@ -21,6 +21,9 @@ interface LicenseDao {
     @Query("SELECT * FROM company_licenses LIMIT 1")
     suspend fun getActiveLicense(): LicenseEntity?
 
+    @Query("SELECT * FROM company_licenses")
+    suspend fun getAllLicenses(): List<LicenseEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveLicense(license: LicenseEntity)
 

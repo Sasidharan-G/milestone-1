@@ -132,12 +132,12 @@ fun PaymentCheckoutDialog(
                     if (diff > 0) {
                         Text("Remaining Credit: ${Money(diff)}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                         if (selectedCustomerId == null || selectedCustomerId == "online") {
-                            Text("⚠️ Please select a customer first to assign credit.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                            Text("Please select a customer first to assign credit.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                         }
                     } else if (diff < 0) {
                         Text("Change to Return: ${Money(-diff)}", color = androidx.compose.ui.graphics.Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
                     } else {
-                        Text("Fully Paid! \uD83C\uDF89", color = androidx.compose.ui.graphics.Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
+                        Text("Fully Paid", color = androidx.compose.ui.graphics.Color(0xFF4CAF50), fontWeight = FontWeight.Bold)
                     }
                 }
             }

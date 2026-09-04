@@ -28,7 +28,8 @@ class LicenseManager @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: BillingDatabase,
     private val firestore: FirebaseFirestore,
-    private val sessionStore: SessionStore
+    private val sessionStore: SessionStore,
+    private val appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs: SharedPreferences = context.getSharedPreferences("license_prefs", Context.MODE_PRIVATE)
@@ -52,12 +53,34 @@ class LicenseManager @Inject constructor(
             sessionStore.activeSession.collect { session ->
                 if (session != null) {
                     val targetCompanyId = session.companyId
-                    val mobile = session.userId
+                    val userEntity = database.userDao().getUserById(session.userId)
+                    val mobile = userEntity?.username ?: session.userId
                     startRealtimeLicenseSync(targetCompanyId, mobile)
                     if (targetCompanyId.isNotBlank()) {
                         database.licenseDao().getLicenseFlow(targetCompanyId).collect { license ->
                             if (license != null) {
-                                _currentLicense.value = license
+                                val effectiveLicense = if (license.licenseType == "TRIAL_2_DAYS" && license.validUntilEpochMs <= 0L) {
+                                    val now = System.currentTimeMillis()
+                                    val trialUntil = now + (2L * 24 * 60 * 60 * 1000L)
+                                    val healed = license.copy(
+                                        licenseStatus = "TRIAL",
+                                        daysGranted = 2,
+                                        activatedAtEpochMs = now,
+                                        validUntilEpochMs = trialUntil,
+                                        notes = "2-Day Free Trial Activated"
+                                    )
+                                    database.licenseDao().saveLicense(healed)
+                                    healed
+                                } else {
+                                    license
+                                }
+                                _currentLicense.value = effectiveLicense
+                                if (effectiveLicense.businessName.isNotBlank() && effectiveLicense.businessName != "My Shop") {
+                                    appPreferences.saveShopName(effectiveLicense.businessName)
+                                }
+                                if (effectiveLicense.ownerName.isNotBlank()) {
+                                    appPreferences.saveOwnerName(effectiveLicense.ownerName)
+                                }
                             }
                         }
                     }
@@ -72,18 +95,18 @@ class LicenseManager @Inject constructor(
     /**
      * Validates that the device clock has not been rolled backwards.
      */
-    fun validateMonotonicClock(): Boolean {
-        val now = System.currentTimeMillis()
+    private fun validateMonotonicClock() {
+        val currentEpoch = System.currentTimeMillis()
         val highestClock = prefs.getLong("highest_seen_clock_ms", 0L)
-        if (highestClock > 0 && now < (highestClock - 300000L)) { // 5-minute leeway
+
+        // Allow up to 10 minutes of clock drift back, anything more indicates deliberate tampering
+        if (highestClock > 0 && currentEpoch < (highestClock - 10 * 60 * 1000L)) {
             _isClockTampered.value = true
-            return false
         } else {
-            if (now > highestClock) {
-                prefs.edit().putLong("highest_seen_clock_ms", now).apply()
-            }
             _isClockTampered.value = false
-            return true
+            if (currentEpoch > highestClock) {
+                prefs.edit().putLong("highest_seen_clock_ms", currentEpoch).apply()
+            }
         }
     }
 
@@ -100,11 +123,18 @@ class LicenseManager @Inject constructor(
 
     private fun parseSnapshotToLicense(snapshot: com.google.firebase.firestore.DocumentSnapshot, fallbackCompanyId: String): LicenseEntity {
         val docCompanyId = snapshot.getString("companyId") ?: snapshot.id
+        val bizName = snapshot.getString("businessName")
+            ?: snapshot.getString("business_name")
+            ?: snapshot.getString("name")
+            ?: ""
+        val owner = snapshot.getString("ownerName")
+            ?: snapshot.getString("full_name")
+            ?: ""
         return LicenseEntity(
             companyId = if (docCompanyId.isNotBlank()) docCompanyId else fallbackCompanyId,
-            businessName = snapshot.getString("businessName") ?: "My Shop",
-            ownerName = snapshot.getString("ownerName") ?: "",
-            ownerMobile = snapshot.getString("ownerMobile") ?: "",
+            businessName = bizName,
+            ownerName = owner,
+            ownerMobile = snapshot.getString("ownerMobile") ?: snapshot.getString("mobile") ?: "",
             licenseStatus = snapshot.getString("licenseStatus") ?: "ACTIVE_PAID",
             licenseType = snapshot.getString("licenseType") ?: "TRIAL_2_DAYS",
             yearsGranted = snapshot.getLong("yearsGranted")?.toInt() ?: 0,
@@ -133,6 +163,12 @@ class LicenseManager @Inject constructor(
                         scope.launch {
                             database.licenseDao().saveLicense(entity)
                             _currentLicense.value = entity
+                            if (entity.businessName.isNotBlank() && entity.businessName != "My Shop") {
+                                appPreferences.saveShopName(entity.businessName)
+                            }
+                            if (entity.ownerName.isNotBlank()) {
+                                appPreferences.saveOwnerName(entity.ownerName)
+                            }
                         }
                     }
                 }
