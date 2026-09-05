@@ -552,7 +552,7 @@ fun LoginScreenContent(
                                         if (success) {
                                             message = "Password / PIN updated successfully! Please Sign In."
                                         } else {
-                                            message = "Failed to update password: $errMsg"
+                                            message = ""
                                         }
                                     }
                                 }
@@ -561,7 +561,7 @@ fun LoginScreenContent(
                                 if (activity != null) {
                                     viewModel.requestPasswordResetOtp(state.mobileNumber, activity, onCodeSent = {
                                         message = "SMS OTP resent to your mobile!"
-                                    }, onError = { err -> message = "Failed: $err" })
+                                    }, onError = { err -> message = "" })
                                 }
                             },
                             isLoading = state.loading,
@@ -610,7 +610,7 @@ fun LoginScreenContent(
                                         if (success) {
                                             message = "Password / PIN updated successfully! Please Sign In."
                                         } else {
-                                            message = "Failed to update password: $errMsg"
+                                            message = ""
                                         }
                                     }
                                 },

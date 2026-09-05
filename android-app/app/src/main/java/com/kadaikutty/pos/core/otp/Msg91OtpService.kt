@@ -76,8 +76,11 @@ class Msg91OtpService @Inject constructor() {
             val parsedReqId = when {
                 json.has("reqId") -> json.optString("reqId")
                 json.has("requestId") -> json.optString("requestId")
+                json.has("request_id") -> json.optString("request_id")
                 json.has("data") && json.optJSONObject("data")?.has("reqId") == true -> json.optJSONObject("data")?.optString("reqId") ?: ""
-                message.length > 10 && !message.contains(" ") -> message // MSG91 sometimes returns the reqId directly as message string
+                json.has("data") && json.optJSONObject("data")?.has("requestId") == true -> json.optJSONObject("data")?.optString("requestId") ?: ""
+                json.has("data") && json.optString("data").isNotBlank() && json.optJSONObject("data") == null -> json.optString("data")
+                message.length >= 12 && !message.contains(" ") -> message // MSG91 sometimes returns the reqId directly as message string
                 else -> ""
             }
 
@@ -127,57 +130,65 @@ class Msg91OtpService @Inject constructor() {
             val cleanPhone = normalizePhone(mobileNumber)
             val fullPhoneWithCountry = if (cleanPhone.length == 10) "91$cleanPhone" else cleanPhone
             val cleanOtp = otp.trim()
+            val hasValidReqId = !requestId.isNullOrBlank() && requestId != fullPhoneWithCountry && requestId != cleanPhone
 
-            android.util.Log.d("Msg91OtpService", "Verifying OTP for phone=$fullPhoneWithCountry, reqId=$requestId")
+            android.util.Log.d("Msg91OtpService", "Verifying OTP for phone=$fullPhoneWithCountry, hasValidReqId=$hasValidReqId, reqId=$requestId")
 
-            // 1. First attempt: MSG91 Widget verifyOtp endpoint
-            val widgetUrl = "https://control.msg91.com/api/v5/widget/verifyOtp"
-            val jsonBody = JSONObject().apply {
-                put("widgetId", widgetId)
-                put("tokenAuth", tokenAuth)
-                put("otp", cleanOtp)
-                put("identifier", fullPhoneWithCountry)
-                if (!requestId.isNullOrBlank()) {
+            var widgetMessage = ""
+
+            // 1. First attempt: MSG91 Widget verifyOtp endpoint if we have a valid reqId
+            if (hasValidReqId) {
+                val widgetUrl = "https://control.msg91.com/api/v5/widget/verifyOtp"
+                val jsonBody = JSONObject().apply {
+                    put("widgetId", widgetId)
+                    put("tokenAuth", tokenAuth)
+                    put("otp", cleanOtp)
+                    put("identifier", fullPhoneWithCountry)
                     put("reqId", requestId)
                     put("requestId", requestId)
                 }
+
+                val requestBody = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
+                val request = Request.Builder()
+                    .url(widgetUrl)
+                    .post(requestBody)
+                    .addHeader("Content-Type", "application/json")
+                    .addHeader("Accept", "application/json")
+                    .addHeader("authkey", tokenAuth)
+                    .build()
+
+                val response = client.newCall(request).execute()
+                val responseBody = response.body?.string() ?: ""
+                android.util.Log.d("Msg91OtpService", "verifyOtp widget response code=${response.code}, body=$responseBody")
+
+                val json = try { JSONObject(responseBody) } catch (_: Exception) { JSONObject() }
+                val type = json.optString("type", "")
+                widgetMessage = json.optString("message", "")
+
+                val isSuccess = response.isSuccessful && (
+                    type.equals("success", ignoreCase = true) ||
+                    widgetMessage.contains("success", ignoreCase = true) ||
+                    widgetMessage.contains("verified", ignoreCase = true)
+                )
+
+                if (isSuccess) {
+                    return@withContext OtpVerifyResult.Success
+                }
             }
 
-            val requestBody = jsonBody.toString().toRequestBody("application/json; charset=utf-8".toMediaType())
-            val request = Request.Builder()
-                .url(widgetUrl)
-                .post(requestBody)
-                .addHeader("Content-Type", "application/json")
-                .addHeader("Accept", "application/json")
-                .addHeader("authkey", tokenAuth)
-                .build()
-
-            val response = client.newCall(request).execute()
-            val responseBody = response.body?.string() ?: ""
-            android.util.Log.d("Msg91OtpService", "verifyOtp widget response code=${response.code}, body=$responseBody")
-
-            val json = try { JSONObject(responseBody) } catch (_: Exception) { JSONObject() }
-            val type = json.optString("type", "")
-            val message = json.optString("message", "")
-
-            val isSuccess = response.isSuccessful && (
-                type.equals("success", ignoreCase = true) ||
-                message.contains("success", ignoreCase = true) ||
-                message.contains("verified", ignoreCase = true)
-            )
-
-            if (isSuccess) {
-                return@withContext OtpVerifyResult.Success
-            }
-
-            // 2. If widget endpoint returned error (e.g. reqId mismatch), fallback to direct otp/verify GET endpoint
-            android.util.Log.d("Msg91OtpService", "Falling back to direct otp/verify API")
-            val fallbackResult = verifyOtpFallback(fullPhoneWithCountry, cleanOtp, requestId)
+            // 2. Direct otp/verify GET endpoint fallback
+            android.util.Log.d("Msg91OtpService", "Calling direct otp/verify API for phone=$fullPhoneWithCountry")
+            val fallbackResult = verifyOtpFallback(fullPhoneWithCountry, cleanOtp, if (hasValidReqId) requestId else null)
             if (fallbackResult is OtpVerifyResult.Success) {
                 return@withContext OtpVerifyResult.Success
             }
 
-            val finalError = if (message.isNotBlank()) message else "Invalid OTP"
+            val fallbackError = (fallbackResult as? OtpVerifyResult.Failure)?.error
+            val finalError = when {
+                !fallbackError.isNullOrBlank() && !fallbackError.contains("reqId", ignoreCase = true) -> fallbackError
+                widgetMessage.isNotBlank() && !widgetMessage.contains("reqId", ignoreCase = true) -> widgetMessage
+                else -> "Invalid or expired OTP. Please check the code and try again."
+            }
             OtpVerifyResult.Failure(finalError)
         } catch (e: Exception) {
             e.printStackTrace()

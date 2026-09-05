@@ -32,7 +32,7 @@ interface AuthRepository {
 
     // Password Recovery Flow
     fun sendPasswordResetOtp(mobileNumber: String, activity: android.app.Activity, onCodeSent: (String) -> Unit, onVerificationFailed: (String) -> Unit)
-    suspend fun verifyOtpAndResetPassword(verificationId: String, otp: String, newPassword: CharArray): RecoveryResult
+    suspend fun verifyOtpAndResetPassword(verificationId: String, otp: String, newPassword: CharArray, mobileNumber: String = ""): RecoveryResult
     suspend fun handleGoogleSignInSuccess(): GoogleSignInResult
     suspend fun completeGoogleRegistration(ownerName: String, businessName: String): RegisterResult
     suspend fun signInWithGoogle()

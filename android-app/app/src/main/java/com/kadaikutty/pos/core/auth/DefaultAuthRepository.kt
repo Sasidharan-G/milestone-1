@@ -767,80 +767,269 @@ class DefaultAuthRepository(
         onCodeSent: (String) -> Unit,
         onVerificationFailed: (String) -> Unit
     ) {
-        sendRegistrationOtp(mobileNumber, activity, onCodeSent, onVerificationFailed)
+        val cleanPhone = normalizePhone(mobileNumber)
+        if (cleanPhone.length < 10) {
+            onVerificationFailed("Please enter a valid 10-digit mobile number")
+            return
+        }
+
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+            when (val result = msg91OtpService.sendOtp(cleanPhone)) {
+                is com.kadaikutty.pos.core.otp.OtpSendResult.Success -> {
+                    onCodeSent("$cleanPhone||${result.requestId}")
+                }
+                is com.kadaikutty.pos.core.otp.OtpSendResult.Failure -> {
+                    onVerificationFailed(result.error)
+                }
+            }
+        }
     }
 
     override suspend fun verifyOtpAndResetPassword(
         verificationId: String,
         otp: String,
-        newPassword: CharArray
+        newPassword: CharArray,
+        mobileNumber: String
     ): RecoveryResult {
         return try {
-            val cleanPhone = normalizePhone(verificationId)
+            val resolvedPhone = when {
+                mobileNumber.isNotBlank() && normalizePhone(mobileNumber).length >= 10 -> normalizePhone(mobileNumber)
+                verificationId.contains("||") -> normalizePhone(verificationId.substringBefore("||"))
+                else -> normalizePhone(verificationId)
+            }
+            val rawReqId = when {
+                verificationId.contains("||") -> verificationId.substringAfter("||").trim()
+                else -> verificationId.trim()
+            }
+            val resolvedReqId = if (rawReqId != resolvedPhone && rawReqId.length > 5) rawReqId else null
+
+            if (resolvedPhone.length < 10) {
+                newPassword.fill('\u0000')
+                return RecoveryResult.Failure("Invalid mobile number")
+            }
 
             // 1. Verify OTP with MSG91
-            val verifyRes = msg91OtpService.verifyOtp(cleanPhone, otp)
+            val verifyRes = msg91OtpService.verifyOtp(
+                mobileNumber = resolvedPhone,
+                otp = otp,
+                requestId = resolvedReqId
+            )
             if (verifyRes is com.kadaikutty.pos.core.otp.OtpVerifyResult.Failure) {
+                newPassword.fill('\u0000')
                 return RecoveryResult.Failure(verifyRes.error)
             }
 
-            // 2. Fetch or create user UID
-            val localUser = database.userDao().getUserByUsername(cleanPhone, cleanPhone)
-            val userId = localUser?.id ?: ("usr_" + cleanPhone)
+            var localUser = database.userDao().getUserByUsername(resolvedPhone, resolvedPhone)
+            var userId = localUser?.id ?: ""
+            var displayName = localUser?.displayName ?: ""
+            var companyId = localUser?.companyId ?: ""
+            var role = localUser?.role ?: ""
 
-            val offlineCred = verifier.create(cleanPhone, newPassword, userId, cleanPhone)
+            var cloudUserDoc: com.google.firebase.firestore.DocumentSnapshot? = null
+            var staffCompanyId = ""
+
+            // If not found locally, search Firestore (Cloud)
+            if (localUser == null) {
+                try {
+                    val d1 = firestore.collection("users").document(resolvedPhone).get().await()
+                    if (d1.exists()) cloudUserDoc = d1
+                } catch (_: Exception) {}
+
+                if (cloudUserDoc == null) {
+                    try {
+                        val d2 = firestore.collection("users").document("+91$resolvedPhone").get().await()
+                        if (d2.exists()) cloudUserDoc = d2
+                    } catch (_: Exception) {}
+                }
+
+                if (cloudUserDoc == null) {
+                    try {
+                        val q1 = firestore.collection("users").whereEqualTo("mobile", resolvedPhone).get().await()
+                        if (!q1.isEmpty) cloudUserDoc = q1.documents.first()
+                    } catch (_: Exception) {}
+                }
+
+                if (cloudUserDoc == null) {
+                    try {
+                        val q2 = firestore.collection("users").whereEqualTo("username", resolvedPhone).get().await()
+                        if (!q2.isEmpty) cloudUserDoc = q2.documents.first()
+                    } catch (_: Exception) {}
+                }
+
+                if (cloudUserDoc == null) {
+                    try {
+                        val s1 = firestore.collection("staff_requests").document(resolvedPhone).get().await()
+                        if (s1.exists()) cloudUserDoc = s1
+                    } catch (_: Exception) {}
+                }
+
+                if (cloudUserDoc == null) {
+                    try {
+                        val s2 = firestore.collection("staff_requests").whereEqualTo("username", resolvedPhone).get().await()
+                        if (!s2.isEmpty) cloudUserDoc = s2.documents.first()
+                    } catch (_: Exception) {}
+                }
+
+                if (cloudUserDoc == null) {
+                    try {
+                        val cg = firestore.collectionGroup("staff").whereEqualTo("username", resolvedPhone).get().await()
+                        if (!cg.isEmpty) {
+                            cloudUserDoc = cg.documents.first()
+                            staffCompanyId = cloudUserDoc.reference.parent.parent?.id ?: ""
+                        }
+                    } catch (_: Exception) {}
+                }
+
+                if (cloudUserDoc != null) {
+                    userId = cloudUserDoc.getString("user_id") ?: cloudUserDoc.getString("id") ?: ("usr_" + resolvedPhone)
+                    displayName = cloudUserDoc.getString("full_name") ?: cloudUserDoc.getString("displayName") ?: cloudUserDoc.getString("name") ?: resolvedPhone
+                    companyId = cloudUserDoc.getString("company_id") ?: cloudUserDoc.getString("companyId") ?: staffCompanyId
+                    role = cloudUserDoc.getString("role") ?: "ADMIN"
+                }
+            } else {
+                userId = localUser.id
+                displayName = localUser.displayName
+                companyId = localUser.companyId
+                role = localUser.role
+            }
+
+            if (userId.isBlank()) {
+                userId = "usr_$resolvedPhone"
+            }
+            if (displayName.isBlank()) {
+                displayName = resolvedPhone
+            }
+
+            val offlineCred = verifier.create(resolvedPhone, newPassword, userId, displayName)
             val saltStr = java.util.Base64.getEncoder().encodeToString(offlineCred.salt)
             val verifierStr = java.util.Base64.getEncoder().encodeToString(offlineCred.verifier)
+            val nowMs = System.currentTimeMillis()
 
             var updatedAny = false
 
-            // 1. Update in Local SQLite Database (Works for both Admin and Staff/Cashier)
+            // 1. Update or Insert in Local SQLite Room Database
             if (localUser != null) {
                 val perms = localUser.toPermissionsSet().toMutableSet()
                 perms.remove(Permission.REQUIRE_PASSWORD_CHANGE)
                 val newPermsStr = perms.joinToString(",") { it.name }
-                
                 database.userDao().updateUser(localUser.copy(salt = saltStr, verifier = verifierStr, permissions = newPermsStr))
                 updatedAny = true
+            } else if (cloudUserDoc != null) {
+                val permsStr = cloudUserDoc.get("permissions")?.let { p ->
+                    if (p is List<*>) p.filter { it.toString() != "REQUIRE_PASSWORD_CHANGE" }.joinToString(",")
+                    else p.toString()
+                } ?: Permission.ALL_ACTIVE.joinToString(",") { it.name }
 
-                // If Staff, sync to company's staff sub-collection in Firestore
-                if (localUser.companyId.isNotBlank()) {
-                    try {
-                        firestore.collection("users")
-                            .document(localUser.companyId)
-                            .collection("staff")
-                            .document(localUser.id)
-                            .update(mapOf(
-                                "salt" to saltStr,
-                                "verifier" to verifierStr,
-                                "permissions" to newPermsStr
-                            )).await()
-                    } catch (_: Exception) {}
-                }
+                val userEntity = UserEntity(
+                    id = userId,
+                    username = resolvedPhone,
+                    displayName = displayName,
+                    salt = saltStr,
+                    verifier = verifierStr,
+                    permissions = permsStr,
+                    companyId = companyId,
+                    role = role.ifBlank { "ADMIN" },
+                    lastOnlineVerifiedAt = nowMs,
+                    offlineValidUntil = nowMs + 30L * 24 * 60 * 60 * 1000L
+                )
+                database.userDao().insertUser(userEntity)
+                updatedAny = true
             }
 
-            // 2. Update in Root Firestore 'users' collection (For Shop Owner / Admin accounts)
+            // 2. Update in Firestore root users collection
             try {
-                val adminDocRef = firestore.collection("users").document(cleanPhone)
-                val adminDoc = adminDocRef.get().await()
-                if (adminDoc.exists()) {
-                    val currentPerms = adminDoc.get("permissions") as? List<*> ?: emptyList<Any>()
-                    val newPerms = currentPerms.filter { it.toString() != "REQUIRE_PASSWORD_CHANGE" }
-                    adminDocRef.update(mapOf(
+                val u1 = firestore.collection("users").document(resolvedPhone)
+                if (u1.get().await().exists()) {
+                    u1.update(mapOf(
                         "salt" to saltStr,
                         "verifier" to verifierStr,
-                        "permissions" to newPerms
+                        "updatedAt" to nowMs
                     )).await()
                     updatedAny = true
                 }
             } catch (_: Exception) {}
+
+            try {
+                val u2 = firestore.collection("users").document("+91$resolvedPhone")
+                if (u2.get().await().exists()) {
+                    u2.update(mapOf(
+                        "salt" to saltStr,
+                        "verifier" to verifierStr,
+                        "updatedAt" to nowMs
+                    )).await()
+                    updatedAny = true
+                }
+            } catch (_: Exception) {}
+
+            // 3. Update in staff_requests collection (if pending or staff)
+            try {
+                val s1 = firestore.collection("staff_requests").document(resolvedPhone)
+                if (s1.get().await().exists()) {
+                    s1.update(mapOf(
+                        "salt" to saltStr,
+                        "verifier" to verifierStr,
+                        "updatedAt" to nowMs
+                    )).await()
+                    updatedAny = true
+                }
+            } catch (_: Exception) {}
+
+            // 4. Update in company's staff sub-collection
+            val targetCompanyId = companyId.ifBlank { staffCompanyId }
+            if (targetCompanyId.isNotBlank() && userId.isNotBlank()) {
+                try {
+                    val staffRef = firestore.collection("users")
+                        .document(targetCompanyId)
+                        .collection("staff")
+                        .document(userId)
+                    if (staffRef.get().await().exists()) {
+                        staffRef.update(mapOf(
+                            "salt" to saltStr,
+                            "verifier" to verifierStr,
+                            "updatedAt" to nowMs
+                        )).await()
+                        updatedAny = true
+                    }
+                } catch (_: Exception) {}
+            }
+
+            // 5. Fallback auto-provision if verified via OTP
+            if (!updatedAny) {
+                val userEntity = UserEntity(
+                    id = userId,
+                    username = resolvedPhone,
+                    displayName = displayName,
+                    salt = saltStr,
+                    verifier = verifierStr,
+                    permissions = Permission.ALL_ACTIVE.joinToString(",") { it.name },
+                    companyId = companyId.ifBlank { "company_$resolvedPhone" },
+                    role = "ADMIN",
+                    lastOnlineVerifiedAt = nowMs,
+                    offlineValidUntil = nowMs + 30L * 24 * 60 * 60 * 1000L
+                )
+                database.userDao().insertUser(userEntity)
+                try {
+                    firestore.collection("users").document(resolvedPhone).set(mapOf(
+                        "user_id" to userId,
+                        "username" to resolvedPhone,
+                        "displayName" to displayName,
+                        "salt" to saltStr,
+                        "verifier" to verifierStr,
+                        "role" to "ADMIN",
+                        "status" to "ACTIVE",
+                        "permissions" to Permission.ALL_ACTIVE.map { it.name },
+                        "updatedAt" to nowMs
+                    ), com.google.firebase.firestore.SetOptions.merge()).await()
+                } catch (_: Exception) {}
+                updatedAny = true
+            }
 
             newPassword.fill('\u0000')
 
             if (updatedAny) {
                 RecoveryResult.Success
             } else {
-                RecoveryResult.Failure("No user found with mobile number +91 $cleanPhone. Please contact your Store Admin.")
+                RecoveryResult.Failure("Failed to update password for +91 $resolvedPhone.")
             }
         } catch (e: Exception) {
             newPassword.fill('\u0000')

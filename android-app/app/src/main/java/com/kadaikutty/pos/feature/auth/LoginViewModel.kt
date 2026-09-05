@@ -194,11 +194,16 @@ data class LoginUiState(
         viewModelScope.launch {
             mutableState.update { it.copy(loading = true, error = null) }
             val passChars = current.newPasswordString.toCharArray()
-            val res = authRepository.verifyOtpAndResetPassword(verificationId, current.resetOtp, passChars)
+            val res = authRepository.verifyOtpAndResetPassword(
+                verificationId = verificationId,
+                otp = current.resetOtp,
+                newPassword = passChars,
+                mobileNumber = current.mobileNumber
+            )
             passChars.fill('\u0000')
             when (res) {
                 is com.kadaikutty.pos.core.auth.RecoveryResult.Success -> {
-                    mutableState.update { it.copy(loading = false, showResetOtpDialog = false) }
+                    mutableState.update { it.copy(loading = false, showResetOtpDialog = false, resetOtp = "", newPasswordString = "", resetVerificationId = null, error = null) }
                     onResult(true, null)
                 }
                 is com.kadaikutty.pos.core.auth.RecoveryResult.Failure -> {
