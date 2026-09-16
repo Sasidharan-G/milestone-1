@@ -1,6 +1,7 @@
-import { randomUUID } from 'node:crypto';
+import crypto, { randomUUID } from 'node:crypto';
 import { AppError } from '../../core/errors';
-import { CloudRecord, DataStore, LicenseRecord, NewAccountInput, StaffInput, SyncOperation, SyncPage, SyncResult, UserAccount } from '../contracts';
+import { AuditEntry, CloudRecord, DataStore, LicenseRecord, NewAccountInput, StaffInput, SyncOperation, SyncPage, SyncResult, UserAccount } from '../contracts';
+import { newTrialLicense } from '../../core/license';
 import { AtomicJsonStore } from './atomicJsonStore';
 
 const recordKey = (companyId: string, entityType: string, entityId: string) => `${companyId}\u001f${entityType}\u001f${entityId}`;
@@ -22,10 +23,7 @@ export class LocalDataStore implements DataStore {
         businessName: input.businessName, role: 'ADMIN', permissions: [...activePermissions], status: 'ACTIVE',
         createdAtEpochMs: now, updatedAtEpochMs: now
       };
-      const license: LicenseRecord = {
-        companyId, ownerMobile: input.phone, status: 'TRIAL', validUntilEpochMs: now + 172_800_000, updatedAtEpochMs: now,
-        businessName: input.businessName, ownerName: input.displayName
-      };
+      const license: LicenseRecord = newTrialLicense(companyId, input.phone, input.businessName, input.displayName, now);
       state.users[user.userId] = user;
       state.phoneIndex[input.phone] = user.userId;
       state.licenses[companyId] = license;
@@ -52,7 +50,7 @@ export class LocalDataStore implements DataStore {
       const user: UserAccount = {
         userId: randomUUID(), companyId: input.companyId, phone: input.phone, displayName: input.displayName,
         role: 'CASHIER', permissions: input.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE'),
-        status: 'PENDING_APPROVAL', createdAtEpochMs: now, updatedAtEpochMs: now
+        status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now
       };
       state.users[user.userId] = user;
       state.phoneIndex[input.phone] = user.userId;
@@ -197,7 +195,43 @@ export class LocalDataStore implements DataStore {
 
   getMasterConfig() { return this.store.read(state => state.masterConfig); }
 
+  /** The PIN is stored as a PBKDF2 hash; `verifyMasterPin` checks it during master login. */
   updateMasterConfig(changes: { mobile: string; pin: string }) {
-    return this.store.write(state => state.masterConfig = { ...changes, updatedAtEpochMs: Date.now() });
+    return this.store.write(state => state.masterConfig = { mobile: changes.mobile, pin: hashMasterPin(changes.pin), updatedAtEpochMs: Date.now() });
+  }
+
+  appendAudit(entry: Omit<AuditEntry, 'auditId' | 'createdAtEpochMs'>): Promise<AuditEntry> {
+    return this.store.write(state => {
+      const stored: AuditEntry = { ...entry, auditId: randomUUID(), createdAtEpochMs: Date.now() };
+      state.audits.push(stored);
+      if (state.audits.length > 50_000) state.audits.splice(0, state.audits.length - 50_000);
+      return stored;
+    });
+  }
+
+  listAudit(companyId: string, limit: number): Promise<AuditEntry[]> {
+    return this.store.read(state => state.audits.filter(entry => entry.companyId === companyId).slice(-limit).reverse());
   }
 }
+
+const pinIterations = 120_000;
+
+export const hashMasterPin = (pin: string): string => {
+  const salt = crypto.randomBytes(16);
+  const hash = crypto.pbkdf2Sync(pin, salt, pinIterations, 32, 'sha256');
+  return ['pbkdf2', salt.toString('base64'), hash.toString('base64')].join('$');
+};
+
+/** Accepts a hashed PIN or, for env-seeded development state, the plaintext MASTER_ADMIN_PIN. */
+export const verifyMasterPin = (stored: string, supplied: string): boolean => {
+  if (!stored) return false;
+  if (stored.startsWith('pbkdf2$')) {
+    const [, saltBase64, hashBase64] = stored.split('$');
+    const expected = Buffer.from(hashBase64, 'base64');
+    const actual = crypto.pbkdf2Sync(supplied, Buffer.from(saltBase64, 'base64'), pinIterations, 32, 'sha256');
+    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  }
+  const a = Buffer.from(stored);
+  const b = Buffer.from(supplied);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+};

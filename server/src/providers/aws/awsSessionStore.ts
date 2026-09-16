@@ -1,4 +1,4 @@
-import { DynamoDBDocumentClient, GetCommand, PutCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { DynamoDBDocumentClient, GetCommand, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
 import { AppError } from '../../core/errors';
 import { SessionRecord, SessionStore } from '../contracts';
 import { isAwsError, mapAwsError } from './awsErrors';
@@ -48,6 +48,38 @@ export class AwsSessionStore implements SessionStore {
       if (isAwsError(error, 'ConditionalCheckFailedException')) throw new AppError(404, 'SESSION_NOT_FOUND', 'Session was not found');
       throw mapAwsError(error, 'DynamoDB session revocation');
     }
+  }
+
+  async revokeOtherSessions(companyId: string, userId: string, keepSessionId: string): Promise<SessionRecord[]> {
+    const now = Date.now();
+    const revoked: SessionRecord[] = [];
+    try {
+      let ExclusiveStartKey: Record<string, unknown> | undefined;
+      do {
+        const response = await this.client.send(new QueryCommand({
+          TableName: this.tableName, KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+          FilterExpression: '#data.userId = :userId AND #data.revoked = :false AND #data.expiresAtEpochMs > :now',
+          ExpressionAttributeNames: { '#data': 'data' },
+          ExpressionAttributeValues: { ':pk': pk(companyId), ':prefix': 'SESSION#', ':userId': userId, ':false': false, ':now': now },
+          ExclusiveStartKey, ConsistentRead: true
+        }));
+        for (const item of response.Items || []) {
+          const session = item.data as SessionRecord;
+          if (session.sessionId === keepSessionId) continue;
+          await this.client.send(new UpdateCommand({
+            TableName: this.tableName, Key: { pk: pk(companyId), sk: sk(session.sessionId) }, UpdateExpression: 'SET #data.revoked = :true',
+            ExpressionAttributeNames: { '#data': 'data' }, ExpressionAttributeValues: { ':true': true }
+          }));
+          revoked.push({ ...session, revoked: true });
+        }
+        ExclusiveStartKey = response.LastEvaluatedKey;
+      } while (ExclusiveStartKey);
+      return revoked;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB session revocation'); }
+  }
+
+  revokeAllSessions(companyId: string, userId: string): Promise<SessionRecord[]> {
+    return this.revokeOtherSessions(companyId, userId, '');
   }
 
   async validate(companyId: string, userId: string, sessionId: string): Promise<boolean> {

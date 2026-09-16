@@ -6,6 +6,7 @@ import com.kadaikutty.pos.core.auth.AuthRepository
 import com.kadaikutty.pos.core.auth.LoginMode
 import com.kadaikutty.pos.core.auth.LoginResult
 import com.kadaikutty.pos.core.auth.MasterAuthSession
+import com.kadaikutty.pos.core.auth.SessionSecurityManager
 import com.kadaikutty.pos.core.network.BackendApiClient
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,6 +33,7 @@ data class LoginUiState(
 @HiltViewModel class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val backendApiClient: BackendApiClient,
+    private val sessionSecurityManager: SessionSecurityManager,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LoginUiState()); val state = mutableState.asStateFlow()
     fun updateMobileNumber(value: String) = mutableState.update { it.copy(mobileNumber = value, error = null) }
@@ -48,8 +50,14 @@ data class LoginUiState(
                     .getJSONObject("tokens")
                     .getString("accessToken")
             }.getOrNull()
-            if (token != null) MasterAuthSession.save(token)
-            onResult(token != null)
+            // Establishing the device session is required: every master API call now needs the
+            // X-Session-Id it returns, so a PIN check that got a token but no session is a failure.
+            val sessionEstablished = if (token != null) {
+                MasterAuthSession.save(token)
+                sessionSecurityManager.registerMasterSession()
+            } else false
+            if (token != null && !sessionEstablished) MasterAuthSession.clear()
+            onResult(sessionEstablished)
         }
     }
 

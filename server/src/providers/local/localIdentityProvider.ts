@@ -4,6 +4,7 @@ import { AppError } from '../../core/errors';
 import { generateAuthToken } from '../../utils/tokenUtils';
 import { DataStore, IdentityProvider, IdentityTokens, UserAccount, VerifiedIdentity } from '../contracts';
 import { AtomicJsonStore } from './atomicJsonStore';
+import { verifyMasterPin } from './localDataStore';
 import { verifyAuthToken } from '../../utils/tokenUtils';
 
 const derive = promisify(crypto.pbkdf2);
@@ -75,9 +76,8 @@ export class LocalIdentityProvider implements IdentityProvider {
 
   async authenticatePlatform(phone: string, pin: string): Promise<{ tokens: IdentityTokens; mobile: string }> {
     const config = await this.dataStore.getMasterConfig();
-    const supplied = Buffer.from(`${phone}:${pin}`);
-    const expected = Buffer.from(`${config.mobile}:${config.pin}`);
-    if (supplied.length !== expected.length || !crypto.timingSafeEqual(supplied, expected)) throw new AppError(401, 'MASTER_PIN_INVALID', 'Master credentials are invalid');
+    const mobileMatches = config.mobile.length === phone.length && crypto.timingSafeEqual(Buffer.from(config.mobile), Buffer.from(phone));
+    if (!mobileMatches || !verifyMasterPin(config.pin, pin)) throw new AppError(401, 'MASTER_PIN_INVALID', 'Master credentials are invalid');
     return {
       mobile: config.mobile,
       tokens: {

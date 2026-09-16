@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { sendOtp, verifyOtp, retryOtp } from '../controllers/otpController';
-import { limitOtpSend, limitOtpVerify, limitOtpRetry } from '../middleware/rateLimitMiddleware';
+import { sendOtp, verifyOtp } from '../controllers/otpController';
+import { limitOtpSend, limitOtpVerify } from '../middleware/rateLimitMiddleware';
 
 const router = Router();
 

@@ -29,3 +29,6 @@ logcat.txt
 aws-infrastructure/stack-outputs.*.env
 aws-infrastructure/artifacts/
 release.properties
+
+# local env backups
+.env.*.bak

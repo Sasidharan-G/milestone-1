@@ -1,4 +1,4 @@
-export type AccountStatus = 'ACTIVE' | 'INACTIVE' | 'PENDING_APPROVAL';
+export type AccountStatus = 'ACTIVE' | 'INACTIVE' | 'PENDING_APPROVAL' | 'REJECTED';
 
 export interface UserAccount {
   userId: string;
@@ -13,14 +13,35 @@ export interface UserAccount {
   updatedAtEpochMs: number;
 }
 
+export type LicenseStatus = 'PENDING_APPROVAL' | 'TRIAL' | 'ACTIVE_PAID' | 'EXPIRED' | 'REVOKED';
+export type LicenseType = 'TRIAL_2_DAYS' | 'YEARLY' | 'CUSTOM_DAYS';
+
+/** Vocabulary matches the Android `LicenseEntity` so the app can persist it verbatim. */
 export interface LicenseRecord {
   companyId: string;
   ownerMobile: string;
-  status: 'TRIAL' | 'ACTIVE' | 'EXPIRED' | 'SUSPENDED';
+  status: LicenseStatus;
+  licenseType: LicenseType;
+  daysGranted: number;
+  yearsGranted: number;
+  activatedAtEpochMs: number;
   validUntilEpochMs: number;
   updatedAtEpochMs: number;
   businessName?: string;
   ownerName?: string;
+  notes?: string;
+}
+
+export interface AuditEntry {
+  auditId: string;
+  companyId: string;
+  action: string;
+  actorUserId: string;
+  actorRole: string;
+  targetId?: string;
+  details?: Record<string, unknown>;
+  ip?: string;
+  createdAtEpochMs: number;
 }
 
 export interface MasterConfig { mobile: string; pin: string; updatedAtEpochMs: number; }
@@ -93,6 +114,8 @@ export interface DataStore {
   deleteCompany(companyId: string): Promise<void>;
   getMasterConfig(): Promise<MasterConfig>;
   updateMasterConfig(changes: Pick<MasterConfig, 'mobile' | 'pin'>): Promise<MasterConfig>;
+  appendAudit(entry: Omit<AuditEntry, 'auditId' | 'createdAtEpochMs'>): Promise<AuditEntry>;
+  listAudit(companyId: string, limit: number): Promise<AuditEntry[]>;
 }
 
 export interface IdentityTokens {
@@ -126,6 +149,7 @@ export interface SessionRecord {
   companyId: string;
   userId: string;
   deviceId: string;
+  deviceName?: string;
   revoked: boolean;
   lastSeenAtEpochMs: number;
   expiresAtEpochMs: number;
@@ -136,6 +160,14 @@ export interface SessionStore {
   heartbeat(companyId: string, userId: string, sessionId: string): Promise<SessionRecord>;
   revoke(companyId: string, actorUserId: string, sessionId: string): Promise<void>;
   validate(companyId: string, userId: string, sessionId: string): Promise<boolean>;
+  /** Single-device policy: revokes every other live session of the user and returns them. */
+  revokeOtherSessions(companyId: string, userId: string, keepSessionId: string): Promise<SessionRecord[]>;
+  /** Revokes every live session of the user (password reset, deactivation, deletion). */
+  revokeAllSessions(companyId: string, userId: string): Promise<SessionRecord[]>;
+}
+
+export interface SmsSender {
+  sendOtp(phone: string, code: string): Promise<void>;
 }
 
 export interface BackupRecord {

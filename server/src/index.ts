@@ -15,6 +15,8 @@ import sessionRoutes from './routes/sessionRoutes';
 import adminRoutes from './routes/adminRoutes';
 import otpRoutes from './routes/otpRoutes';
 import { providers } from './providers/providerRegistry';
+import { errorHandler, notFoundHandler, requestContext } from './middleware/requestContext';
+import { userRoom } from './core/realtime';
 
 export const app = express();
 const port = process.env.PORT || 3000;
@@ -33,17 +35,24 @@ export const httpServer = createServer(app);
 const io = new Server(httpServer, { cors: corsOptions });
 
 app.set('io', io);
+app.set('trust proxy', process.env.TRUST_PROXY === 'true' ? 1 : false);
 
-// Sockets must present the same bearer token as the REST API; the room a socket may join
-// is derived from the token so a client can never subscribe to another tenant's changes.
+// Sockets present the same bearer token and device session as the REST API. The rooms a socket
+// may join are derived from the token, so a client can never subscribe to another tenant's events.
 io.use(async (socket, next) => {
   try {
     const raw = socket.handshake.auth?.token || socket.handshake.headers.authorization || '';
     const token = String(raw).replace(/^Bearer\s+/i, '').trim();
     if (!token) return next(new Error('AUTH_REQUIRED'));
     const claims = await providers().identityProvider.verifyAccessToken(token);
-    socket.data.companyId = String(claims.companyId || '');
-    socket.data.userId = String(claims.userId || '');
+    const companyId = String(claims.companyId || '');
+    const userId = String(claims.userId || '');
+    if (!companyId || !userId) return next(new Error('AUTH_INVALID_TOKEN'));
+    const sessionId = String(socket.handshake.auth?.sessionId || '');
+    if (sessionId && !await providers().sessionStore.validate(companyId, userId, sessionId)) return next(new Error('SESSION_REVOKED'));
+    socket.data.companyId = companyId;
+    socket.data.userId = userId;
+    socket.data.sessionId = sessionId;
     return next();
   } catch {
     return next(new Error('AUTH_INVALID_TOKEN'));
@@ -51,6 +60,7 @@ io.use(async (socket, next) => {
 });
 
 io.on('connection', (socket) => {
+  socket.join(userRoom(socket.data.userId));
   socket.on('join_company', (companyId) => {
     if (typeof companyId !== 'string' || companyId !== socket.data.companyId) {
       socket.emit('error', { code: 'TENANT_MISMATCH' });
@@ -60,6 +70,8 @@ io.on('connection', (socket) => {
   });
 });
 
+app.disable('x-powered-by');
+app.use(requestContext);
 app.use(helmet());
 app.use(cors(corsOptions));
 app.use(express.json({ limit: '10mb' }));
@@ -72,12 +84,17 @@ app.use('/api/v1/sessions', sessionRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/otp', otpRoutes);
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ status: 'ok', timestamp: new Date().toISOString() });
+app.get('/health', (_req, res) => {
+  res.status(200).json({ status: 'ok', mode: providers().mode, timestamp: new Date().toISOString() });
 });
 
+app.use(notFoundHandler);
+app.use(errorHandler);
+
 if (require.main === module) {
+  // Fail fast on misconfiguration instead of serving requests that would 500 later.
+  providers();
   httpServer.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
+    console.log(`Server is running on port ${port} (provider=${providers().mode}, env=${process.env.NODE_ENV || 'development'})`);
   });
 }

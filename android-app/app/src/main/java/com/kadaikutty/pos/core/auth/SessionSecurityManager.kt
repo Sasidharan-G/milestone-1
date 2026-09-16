@@ -1,6 +1,7 @@
 package com.kadaikutty.pos.core.auth
 
 import com.kadaikutty.pos.core.network.BackendApiClient
+import com.kadaikutty.pos.core.network.BackendApiException
 import com.kadaikutty.pos.core.preferences.AppPreferences
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -11,10 +12,16 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
-import java.util.UUID
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/**
+ * Every authenticated backend call now requires an X-Session-Id issued by POST /sessions/register,
+ * and that same endpoint revokes every other live session of the caller (single active device).
+ * This manager registers the device session right after login, heartbeats it every 60s so a remote
+ * sign-out (another device logging in, a password reset, an account being disabled) is detected
+ * within one heartbeat interval, and tears it down on logout.
+ */
 @Singleton
 class SessionSecurityManager @Inject constructor(
     private val backendApi: BackendApiClient,
@@ -31,7 +38,9 @@ class SessionSecurityManager @Inject constructor(
     private val _masterTerminationReason = MutableStateFlow<String?>(null)
     val masterTerminationReason: StateFlow<String?> = _masterTerminationReason.asStateFlow()
     private var heartbeatJob: Job? = null
+    private var masterHeartbeatJob: Job? = null
 
+    /** Called right after a successful tenant login. Throws if the session cannot be established. */
     suspend fun registerSession(username: String, companyId: String, role: String, sessionToken: String) {
         val active = sessionStore.activeSession.first()
         val accessToken = active?.accessToken ?: error("Online session token is missing")
@@ -55,7 +64,7 @@ class SessionSecurityManager @Inject constructor(
             while (true) {
                 delay(60_000)
                 runCatching { backendApi.heartbeat(accessToken, sessionId) }.onFailure {
-                    if (it is com.kadaikutty.pos.core.network.BackendApiException && it.statusCode == 401) {
+                    if (it is BackendApiException && it.statusCode == 401) {
                         _isSessionTerminated.value = true
                         _terminationReason.value = "Your session expired or was revoked. Please sign in again."
                         return@launch
@@ -77,7 +86,45 @@ class SessionSecurityManager @Inject constructor(
     }
 
     fun resetSessionTermination() { _isSessionTerminated.value = false; _terminationReason.value = null }
-    suspend fun registerMasterSession(): String = UUID.randomUUID().toString()
-    fun clearMasterSession() = Unit
+
+    /** Registers a device session for the just-authenticated master token (see [MasterAuthSession]). */
+    suspend fun registerMasterSession(): Boolean {
+        val accessToken = MasterAuthSession.accessToken ?: return false
+        val response = runCatching { backendApi.registerSession(accessToken, appPreferences.getOrCreateInstallationDeviceId(), "Master Control") }
+            .getOrElse { return false }
+        val sessionId = response.optJSONObject("session")?.optString("sessionId").orEmpty()
+        if (sessionId.isBlank()) return false
+        MasterAuthSession.saveSession(sessionId)
+        startMasterHeartbeat(accessToken, sessionId)
+        return true
+    }
+
+    private fun startMasterHeartbeat(accessToken: String, sessionId: String) {
+        masterHeartbeatJob?.cancel()
+        masterHeartbeatJob = scope.launch {
+            while (true) {
+                delay(60_000)
+                runCatching { backendApi.heartbeat(accessToken, sessionId) }.onFailure {
+                    if (it is BackendApiException && it.statusCode == 401) {
+                        _isMasterSessionTerminated.value = true
+                        _masterTerminationReason.value = "Your master session expired or was revoked. Please sign in again."
+                        return@launch
+                    }
+                }
+            }
+        }
+    }
+
+    fun clearMasterSession() {
+        masterHeartbeatJob?.cancel()
+        masterHeartbeatJob = null
+        val accessToken = MasterAuthSession.accessToken
+        val sessionId = MasterAuthSession.sessionId
+        if (accessToken != null && sessionId != null) {
+            scope.launch { runCatching { backendApi.revokeCurrentSession(accessToken, sessionId) } }
+        }
+        MasterAuthSession.clear()
+    }
+
     fun resetMasterTermination() { _isMasterSessionTerminated.value = false; _masterTerminationReason.value = null }
 }

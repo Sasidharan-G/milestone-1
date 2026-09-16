@@ -47,7 +47,7 @@ class HomeViewModel @Inject constructor(
             sessionStore.activeSession.collect { session ->
                 val token = session?.accessToken
                 if (session != null && token != null && session.companyId.isNotBlank()) {
-                    webSocketManager.connect(session.companyId, token)
+                    webSocketManager.connect(session.companyId, token, session.sessionToken)
                 } else {
                     webSocketManager.disconnect()
                 }

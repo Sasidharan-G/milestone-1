@@ -3,9 +3,9 @@ package com.kadaikutty.pos.feature.mastercontrol.presentation
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kadaikutty.pos.core.auth.MasterAuthSession
+import com.kadaikutty.pos.core.auth.SessionSecurityManager
 import com.kadaikutty.pos.core.license.LicenseEntity
 import com.kadaikutty.pos.core.network.BackendApiClient
-import com.kadaikutty.pos.core.auth.SessionSecurityManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -39,22 +39,25 @@ class MasterControlViewModel @Inject constructor(
     val isMasterSessionTerminated = sessionSecurityManager.isMasterSessionTerminated
     val masterTerminationReason = sessionSecurityManager.masterTerminationReason
     val masterMobile = MutableStateFlow("")
-    val masterPin = MutableStateFlow("")
     private var allLicenses = emptyList<LicenseEntity>()
     private var allStaff = emptyList<StaffApprovalRequest>()
 
-    init { registerMasterSession(); refresh() }
+    init { ensureMasterSession(); refresh() }
 
-    fun registerMasterSession() { viewModelScope.launch { sessionSecurityManager.registerMasterSession() } }
+    /** LoginViewModel already registers the session on PIN entry; this only self-heals a missing one. */
+    private fun ensureMasterSession() {
+        if (MasterAuthSession.sessionId != null) return
+        viewModelScope.launch { sessionSecurityManager.registerMasterSession() }
+    }
+
     fun acknowledgeMasterTermination() { sessionSecurityManager.resetMasterTermination() }
     fun refresh() {
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, errorMessage = null)
             runCatching {
-                val response = backendApi.request("GET", "admin/overview", token())
+                val response = backendApi.request("GET", "admin/overview", token(), sessionId = sessionId())
                 val config = response.optJSONObject("masterConfig")
                 masterMobile.value = config?.optString("mobile").orEmpty()
-                masterPin.value = config?.optString("pin").orEmpty()
                 allLicenses = parseLicenses(response.optJSONArray("licenses") ?: JSONArray())
                 allStaff = parseStaff(response.optJSONArray("users") ?: JSONArray())
                 applyFilters()
@@ -64,30 +67,61 @@ class MasterControlViewModel @Inject constructor(
 
     fun deleteShopRecord(companyId: String, ownerMobile: String, businessName: String) = mutate("DELETE", "admin/companies/$companyId", JSONObject(), "$businessName deleted")
     fun setTab(tab: String) { _state.value = _state.value.copy(currentTab = tab) }
-    fun updateMasterProfile(newMobile: String, newPin: String, onSuccess: () -> Unit = {}, onError: (String) -> Unit = {}) {
+
+    private var masterProfileOtpRequestId: String? = null
+
+    /**
+     * Changing the master's own mobile or PIN is OTP-gated (same requirement as every other
+     * credential change): an OTP is sent to the *current* master mobile before anything changes.
+     * There is no direct "set PIN" endpoint — only POST /auth/master/pin, which demands the proof.
+     */
+    fun sendMasterProfileOtp(onSent: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
-            runCatching { backendApi.request("PATCH", "admin/config", token(), JSONObject().put("mobile", newMobile).put("pin", newPin)) }
-                .onSuccess { masterMobile.value = newMobile.filter(Char::isDigit).takeLast(10); masterPin.value = newPin; onSuccess() }
-                .onFailure { onError(it.message ?: "Master profile update failed") }
+            runCatching { backendApi.sendOtp(masterMobile.value) }
+                .onSuccess { masterProfileOtpRequestId = it.getString("requestId"); onSent() }
+                .onFailure { onError(it.message ?: "Unable to send OTP") }
+        }
+    }
+
+    fun confirmMasterProfileUpdate(otp: String, newMobile: String, newPin: String, onSuccess: () -> Unit, onError: (String) -> Unit) {
+        viewModelScope.launch {
+            runCatching {
+                val requestId = masterProfileOtpRequestId ?: error("Request an OTP first")
+                val resetToken = backendApi.verifyOtp(masterMobile.value, otp, requestId).getString("resetToken")
+                val nextMobile = newMobile.filter(Char::isDigit).takeLast(10)
+                backendApi.changeMasterPin(masterMobile.value, newPin, resetToken, newMobileNumber = nextMobile.takeIf { it != masterMobile.value })
+                nextMobile
+            }.onSuccess { nextMobile ->
+                masterMobile.value = nextMobile
+                masterProfileOtpRequestId = null
+                onSuccess()
+            }.onFailure { onError(it.message ?: "Master profile update failed") }
         }
     }
     fun updateSearchQuery(query: String) { _state.value = _state.value.copy(searchQuery = query); applyFilters() }
     fun updateFilter(filter: String) { _state.value = _state.value.copy(selectedFilter = filter); applyFilters() }
     fun clearMessages() { _state.value = _state.value.copy(errorMessage = null, successMessage = null) }
 
-    fun approve2DayTrial(companyId: String, businessName: String) = license(companyId, "TRIAL", 2, "$businessName trial activated")
-    fun grantYearlyLicense(companyId: String, businessName: String, years: Int) = license(companyId, "ACTIVE", years * 365, "$businessName license activated")
-    fun grantCustomDaysLicense(companyId: String, businessName: String, days: Int) = license(companyId, "ACTIVE", days, "$businessName license activated")
-    fun revokeAccess(companyId: String, businessName: String) = license(companyId, "SUSPENDED", 0, "$businessName access revoked")
+    // Subscription control: exact-expiry TRIAL/day-grant/year-grant/extension/revoke. Server enforces
+    // zero grace period itself; the app only ever describes the *action*, never computes validUntil.
+    fun approve2DayTrial(companyId: String, businessName: String) =
+        licenseAction(companyId, JSONObject().put("action", "TRIAL"), "$businessName trial activated")
+    fun grantYearlyLicense(companyId: String, businessName: String, years: Int) =
+        licenseAction(companyId, JSONObject().put("action", "GRANT_YEARS").put("years", years), "$businessName license activated")
+    fun grantCustomDaysLicense(companyId: String, businessName: String, days: Int) =
+        licenseAction(companyId, JSONObject().put("action", "GRANT_DAYS").put("days", days), "$businessName license activated")
+    fun extendLicense(companyId: String, businessName: String, days: Int) =
+        licenseAction(companyId, JSONObject().put("action", "EXTEND_DAYS").put("days", days), "$businessName license extended")
+    fun revokeAccess(companyId: String, businessName: String) =
+        licenseAction(companyId, JSONObject().put("action", "REVOKE"), "$businessName access revoked")
+
     fun approveStaff(request: StaffApprovalRequest) = staff(request, "ACTIVE", request.permissions, "Staff approved")
-    fun rejectStaff(request: StaffApprovalRequest) = staff(request, "INACTIVE", request.permissions, "Staff rejected")
+    fun rejectStaff(request: StaffApprovalRequest) = staff(request, "REJECTED", "", "Staff request rejected")
     fun revokeStaff(request: StaffApprovalRequest) = staff(request, "INACTIVE", "", "Staff access revoked")
     fun deleteStaffPermanently(request: StaffApprovalRequest) = mutate("DELETE", "admin/staff/${request.id}", JSONObject(), "Staff disabled")
 
-    private fun license(companyId: String, status: String, days: Int, message: String) {
-        val validUntil = if (days > 0) System.currentTimeMillis() + days * 86_400_000L else 0L
-        mutate("PATCH", "admin/licenses/$companyId", JSONObject().put("status", status).put("validUntilEpochMs", validUntil), message)
-    }
+    private fun licenseAction(companyId: String, body: JSONObject, message: String) =
+        mutate("PATCH", "admin/licenses/$companyId", body, message)
 
     private fun staff(request: StaffApprovalRequest, status: String, permissions: String, message: String) {
         val values = permissions.split(',').map(String::trim).filter(String::isNotBlank)
@@ -97,7 +131,7 @@ class MasterControlViewModel @Inject constructor(
     private fun mutate(method: String, path: String, body: JSONObject, message: String) {
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
-            runCatching { backendApi.request(method, path, token(), body) }
+            runCatching { backendApi.request(method, path, token(), body, sessionId = sessionId()) }
                 .onSuccess { _state.value = _state.value.copy(successMessage = message); refresh() }
                 .onFailure { _state.value = _state.value.copy(isLoading = false, errorMessage = it.message ?: "Operation failed") }
         }
@@ -105,8 +139,12 @@ class MasterControlViewModel @Inject constructor(
 
     private fun parseLicenses(array: JSONArray): List<LicenseEntity> = (0 until array.length()).map { index ->
         val item = array.getJSONObject(index)
-        val status = when (item.optString("status")) { "ACTIVE" -> "ACTIVE_PAID"; "SUSPENDED" -> "REVOKED"; else -> item.optString("status") }
-        LicenseEntity(companyId = item.getString("companyId"), businessName = item.optString("businessName"), ownerName = item.optString("ownerName"), ownerMobile = item.optString("ownerMobile"), licenseStatus = status, licenseType = if (status == "TRIAL") "TRIAL_2_DAYS" else "CUSTOM", validUntilEpochMs = item.optLong("validUntilEpochMs"), lastVerifiedAtEpochMs = item.optLong("updatedAtEpochMs"))
+        LicenseEntity(
+            companyId = item.getString("companyId"), businessName = item.optString("businessName"), ownerName = item.optString("ownerName"),
+            ownerMobile = item.optString("ownerMobile"), licenseStatus = item.optString("status", "EXPIRED"), licenseType = item.optString("licenseType", "TRIAL_2_DAYS"),
+            yearsGranted = item.optInt("yearsGranted"), daysGranted = item.optInt("daysGranted"), activatedAtEpochMs = item.optLong("activatedAtEpochMs"),
+            validUntilEpochMs = item.optLong("validUntilEpochMs"), lastVerifiedAtEpochMs = item.optLong("updatedAtEpochMs"), notes = item.optString("notes"),
+        )
     }
 
     private fun parseStaff(array: JSONArray): List<StaffApprovalRequest> = (0 until array.length()).mapNotNull { index ->
@@ -129,5 +167,6 @@ class MasterControlViewModel @Inject constructor(
     }
 
     private fun token(): String = MasterAuthSession.accessToken ?: error("Master session expired. Verify Master PIN again")
-    override fun onCleared() { MasterAuthSession.clear(); sessionSecurityManager.clearMasterSession(); super.onCleared() }
+    private fun sessionId(): String = MasterAuthSession.sessionId ?: error("Master session expired. Verify Master PIN again")
+    override fun onCleared() { sessionSecurityManager.clearMasterSession(); super.onCleared() }
 }

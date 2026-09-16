@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction } from 'express';
 import { normalizePhone } from '../controllers/otpController';
+import { AppError, errorBody } from '../core/errors';
 
 interface RateLimitRecord {
   count: number;
@@ -96,55 +97,45 @@ const otpRetryLimiter = new InMemoryRateLimiter(10 * 60 * 1000, 5, 20 * 1000);
 // 4. Sync API Limiter: Max 120 requests per minute
 const syncLimiter = new InMemoryRateLimiter(60 * 1000, 120, 0);
 
+// 5. Login limiter: 10 attempts per 10 minutes per phone (or IP when no phone is given)
+const loginLimiter = new InMemoryRateLimiter(10 * 60 * 1000, 10, 0);
+
+const tooMany = (res: Response, req: Request, message: string, retryAfterSeconds?: number) => {
+  if (retryAfterSeconds) res.setHeader('Retry-After', String(retryAfterSeconds));
+  return res.status(429).json(errorBody(new AppError(429, 'RATE_LIMITED', message, true, { retryAfterSeconds }), (req as any).id || 'unknown'));
+};
+
 const getClientIp = (req: Request): string => {
   return req.ip || req.socket.remoteAddress || 'unknown';
 };
 
 export const limitOtpSend = (req: Request, res: Response, next: NextFunction) => {
-  const phone = normalizePhone(req.body.mobileNumber || '');
+  const phone = normalizePhone(req.body?.mobileNumber || '');
   const ip = getClientIp(req);
   const key = phone.length >= 10 ? `otp_send_${phone}` : `otp_send_ip_${ip}`;
 
   const result = otpSendLimiter.check(key);
-  if (!result.allowed) {
-    return res.status(429).json({
-      success: false,
-      error: result.reason || 'Too many OTP requests. Please wait before retrying.',
-      retryAfterSeconds: result.retryAfterSeconds
-    });
-  }
+  if (!result.allowed) return tooMany(res, req, result.reason || 'Too many OTP requests. Please wait before retrying.', result.retryAfterSeconds);
   next();
 };
 
 export const limitOtpVerify = (req: Request, res: Response, next: NextFunction) => {
-  const phone = normalizePhone(req.body.mobileNumber || '');
+  const phone = normalizePhone(req.body?.mobileNumber || '');
   const ip = getClientIp(req);
   const key = phone.length >= 10 ? `otp_verify_${phone}` : `otp_verify_ip_${ip}`;
 
   const result = otpVerifyLimiter.check(key);
-  if (!result.allowed) {
-    return res.status(429).json({
-      success: false,
-      error: result.reason || 'Too many invalid verification attempts. Please try again later.',
-      retryAfterSeconds: result.retryAfterSeconds
-    });
-  }
+  if (!result.allowed) return tooMany(res, req, result.reason || 'Too many invalid verification attempts. Please try again later.', result.retryAfterSeconds);
   next();
 };
 
 export const limitOtpRetry = (req: Request, res: Response, next: NextFunction) => {
-  const phone = normalizePhone(req.body.mobileNumber || '');
+  const phone = normalizePhone(req.body?.mobileNumber || '');
   const ip = getClientIp(req);
   const key = phone.length >= 10 ? `otp_retry_${phone}` : `otp_retry_ip_${ip}`;
 
   const result = otpRetryLimiter.check(key);
-  if (!result.allowed) {
-    return res.status(429).json({
-      success: false,
-      error: result.reason || 'Too many retry attempts. Please wait before retrying.',
-      retryAfterSeconds: result.retryAfterSeconds
-    });
-  }
+  if (!result.allowed) return tooMany(res, req, result.reason || 'Too many retry attempts. Please wait before retrying.', result.retryAfterSeconds);
   next();
 };
 
@@ -154,12 +145,14 @@ export const limitSyncRequests = (req: Request, res: Response, next: NextFunctio
   const key = authHeader.length > 20 ? `sync_${authHeader.slice(-20)}` : `sync_ip_${ip}`;
 
   const result = syncLimiter.check(key);
-  if (!result.allowed) {
-    return res.status(429).json({
-      error: 'Rate limit exceeded: Too many sync requests. Please reduce sync frequency.',
-      code: 'RATE_LIMIT_EXCEEDED',
-      retryAfterSeconds: result.retryAfterSeconds
-    });
-  }
+  if (!result.allowed) return tooMany(res, req, 'Too many sync requests. Please reduce sync frequency.', result.retryAfterSeconds);
+  next();
+};
+
+export const limitLogin = (req: Request, res: Response, next: NextFunction) => {
+  const phone = normalizePhone(req.body?.username || req.body?.mobileNumber || '');
+  const key = phone.length >= 10 ? `login_${phone}` : `login_ip_${getClientIp(req)}`;
+  const result = loginLimiter.check(key);
+  if (!result.allowed) return tooMany(res, req, 'Too many sign-in attempts. Please try again later.', result.retryAfterSeconds);
   next();
 };

@@ -12,6 +12,7 @@ import {
 import { AppError } from '../../core/errors';
 import { GetSecretValueCommand, PutSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
 import {
+  AuditEntry,
   CloudRecord,
   DataStore,
   LicenseRecord,
@@ -24,6 +25,7 @@ import {
   UserAccount
 } from '../contracts';
 import { activePermissions } from '../local/localDataStore';
+import { newTrialLicense } from '../../core/license';
 import { isAwsError, mapAwsError } from './awsErrors';
 
 const companyPk = (companyId: string) => `COMPANY#${companyId}`;
@@ -61,10 +63,7 @@ export class AwsDataStore implements DataStore {
       userId: randomUUID(), companyId, phone: input.phone, displayName: input.displayName, businessName: input.businessName,
       role: 'ADMIN', permissions: [...activePermissions], status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now
     };
-    const license: LicenseRecord = {
-      companyId, ownerMobile: input.phone, status: 'TRIAL', validUntilEpochMs: now + 172_800_000,
-      updatedAtEpochMs: now, businessName: input.businessName, ownerName: input.displayName
-    };
+    const license: LicenseRecord = newTrialLicense(companyId, input.phone, input.businessName, input.displayName, now);
     try {
       await this.client.send(new TransactWriteCommand({ TransactItems: [
         { Put: { TableName: this.tableName, Item: this.phoneItem(user), ConditionExpression: 'attribute_not_exists(pk)' } },
@@ -95,7 +94,7 @@ export class AwsDataStore implements DataStore {
     const user: UserAccount = {
       userId: randomUUID(), companyId: input.companyId, phone: input.phone, displayName: input.displayName, role: 'CASHIER',
       permissions: input.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE'),
-      status: 'PENDING_APPROVAL', createdAtEpochMs: now, updatedAtEpochMs: now
+      status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now
     };
     try {
       await this.client.send(new TransactWriteCommand({ TransactItems: [
@@ -247,6 +246,26 @@ export class AwsDataStore implements DataStore {
       await this.client.send(new PutCommand({ TableName: this.tableName, Item: { pk: 'CONFIG', sk: 'MASTER', itemType: 'MASTER_CONFIG', data: { mobile: changes.mobile, updatedAtEpochMs: updated.updatedAtEpochMs } } }));
       return updated;
     } catch (error) { throw mapAwsError(error, 'DynamoDB master configuration update'); }
+  }
+
+  async appendAudit(entry: Omit<AuditEntry, 'auditId' | 'createdAtEpochMs'>): Promise<AuditEntry> {
+    const stored: AuditEntry = { ...entry, auditId: randomUUID(), createdAtEpochMs: Date.now() };
+    const sk = `AUDIT#${String(stored.createdAtEpochMs).padStart(15, '0')}#${stored.auditId}`;
+    try {
+      // Audit rows age out after 400 days via the table TTL attribute.
+      await this.client.send(new PutCommand({ TableName: this.tableName, Item: { ...this.companyItem(entry.companyId, sk, stored), itemType: 'AUDIT', expiresAtEpochSeconds: ttlSeconds(stored.createdAtEpochMs) + 400 * 86_400 } }));
+      return stored;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB audit write'); }
+  }
+
+  async listAudit(companyId: string, limit: number): Promise<AuditEntry[]> {
+    try {
+      const response = await this.client.send(new QueryCommand({
+        TableName: this.tableName, KeyConditionExpression: 'pk = :pk AND begins_with(sk, :prefix)',
+        ExpressionAttributeValues: { ':pk': companyPk(companyId), ':prefix': 'AUDIT#' }, ScanIndexForward: false, Limit: limit
+      }));
+      return (response.Items || []).map(item => (item as StoredItem<AuditEntry>).data);
+    } catch (error) { throw mapAwsError(error, 'DynamoDB audit query'); }
   }
 
   private async applySyncOperation(companyId: string, operation: SyncOperation): Promise<SyncResult> {

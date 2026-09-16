@@ -52,11 +52,14 @@ fun MasterControlScreen(
     var showMasterProfileDialog by remember { mutableStateOf(false) }
 
     val masterMobile by viewModel.masterMobile.collectAsState()
-    val masterPin by viewModel.masterPin.collectAsState()
 
     var editMobileInput by remember(masterMobile) { mutableStateOf(masterMobile) }
-    var editPinInput by remember(masterPin) { mutableStateOf(masterPin) }
+    var editPinInput by remember { mutableStateOf("") }
     var editPinVisible by remember { mutableStateOf(false) }
+    // OTP-gated: an OTP goes to the CURRENT master mobile before any change is accepted.
+    var masterOtpStep by remember { mutableStateOf(false) }
+    var masterOtpInput by remember { mutableStateOf("") }
+    var masterOtpSending by remember { mutableStateOf(false) }
 
     val isMasterSessionTerminated by viewModel.isMasterSessionTerminated.collectAsState()
     val masterTerminationReason by viewModel.masterTerminationReason.collectAsState()
@@ -153,10 +156,12 @@ fun MasterControlScreen(
                     IconButton(onClick = { viewModel.refresh() }) {
                         Icon(Icons.Default.Refresh, contentDescription = "Refresh & Reconcile Cloud", tint = Color(0xFF38BDF8))
                     }
-                    IconButton(onClick = { 
+                    IconButton(onClick = {
                         editMobileInput = masterMobile
-                        editPinInput = masterPin
-                        showMasterProfileDialog = true 
+                        editPinInput = ""
+                        masterOtpStep = false
+                        masterOtpInput = ""
+                        showMasterProfileDialog = true
                     }) {
                         Icon(Icons.Default.Settings, contentDescription = "Master Settings", tint = Color(0xFFF59E0B))
                     }
@@ -737,59 +742,78 @@ fun MasterControlScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Change your official Master Mobile Number and Master PIN. Updates are saved through the secure backend:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (!masterOtpStep) {
+                        Text("Change your official Master Mobile Number and Master PIN. An OTP is sent to your current master mobile ($masterMobile) to confirm this change:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-                    OutlinedTextField(
-                        value = editMobileInput,
-                        onValueChange = { editMobileInput = it.filter { ch -> ch.isDigit() }.take(10) },
-                        label = { Text("Master 10-Digit Mobile Number") },
-                        placeholder = { Text("e.g. 9876543210") },
-                        leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        OutlinedTextField(
+                            value = editMobileInput,
+                            onValueChange = { editMobileInput = it.filter { ch -> ch.isDigit() }.take(10) },
+                            label = { Text("Master 10-Digit Mobile Number") },
+                            placeholder = { Text("e.g. 9876543210") },
+                            leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
 
-                    OutlinedTextField(
-                        value = editPinInput,
-                        onValueChange = { editPinInput = it.filter { ch -> ch.isDigit() }.take(6) },
-                        label = { Text("Master Secret PIN (4-6 Digits)") },
-                        placeholder = { Text("e.g. 9840") },
-                        leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
-                        trailingIcon = {
-                            IconButton(onClick = { editPinVisible = !editPinVisible }) {
-                                Icon(
-                                    imageVector = if (editPinVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                    contentDescription = if (editPinVisible) "Hide PIN" else "Show PIN"
-                                )
-                            }
-                        },
-                        visualTransformation = if (editPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        singleLine = true,
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                        OutlinedTextField(
+                            value = editPinInput,
+                            onValueChange = { editPinInput = it.filter { ch -> ch.isDigit() }.take(12) },
+                            label = { Text("New Master Secret PIN (6-12 Digits)") },
+                            leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                            trailingIcon = {
+                                IconButton(onClick = { editPinVisible = !editPinVisible }) {
+                                    Icon(
+                                        imageVector = if (editPinVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                                        contentDescription = if (editPinVisible) "Hide PIN" else "Show PIN"
+                                    )
+                                }
+                            },
+                            visualTransformation = if (editPinVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    } else {
+                        Text("Enter the OTP sent to $masterMobile to confirm this change.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        OutlinedTextField(
+                            value = masterOtpInput,
+                            onValueChange = { masterOtpInput = it.filter { ch -> ch.isDigit() }.take(6) },
+                            label = { Text("OTP") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
                 }
             },
             confirmButton = {
                 Button(
                     onClick = {
-                        if (editMobileInput.length == 10 && editPinInput.length >= 6) {
-                            viewModel.updateMasterProfile(
-                                newMobile = editMobileInput,
-                                newPin = editPinInput,
-                                onSuccess = { showMasterProfileDialog = false }
+                        if (!masterOtpStep) {
+                            if (editMobileInput.length == 10 && editPinInput.length in 6..12) {
+                                masterOtpSending = true
+                                viewModel.sendMasterProfileOtp(
+                                    onSent = { masterOtpSending = false; masterOtpStep = true },
+                                    onError = { masterOtpSending = false }
+                                )
+                            }
+                        } else if (masterOtpInput.length in 4..6) {
+                            viewModel.confirmMasterProfileUpdate(
+                                otp = masterOtpInput, newMobile = editMobileInput, newPin = editPinInput,
+                                onSuccess = { showMasterProfileDialog = false; masterOtpStep = false },
+                                onError = { masterOtpStep = false }
                             )
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                    enabled = editMobileInput.length == 10 && editPinInput.length >= 6
+                    enabled = if (!masterOtpStep) editMobileInput.length == 10 && editPinInput.length in 6..12 && !masterOtpSending else masterOtpInput.length in 4..6
                 ) {
-                    Text("Save to Cloud", fontWeight = FontWeight.Bold, color = Color.White)
+                    Text(if (!masterOtpStep) "Send OTP" else "Confirm Change", fontWeight = FontWeight.Bold, color = Color.White)
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showMasterProfileDialog = false }) { Text("Cancel") }
+                TextButton(onClick = { showMasterProfileDialog = false; masterOtpStep = false }) { Text("Cancel") }
             }
         )
     }

@@ -28,14 +28,14 @@ class WebSocketManager @Inject constructor() {
     val dataChangedFlow = _dataChangedFlow.asSharedFlow()
 
     @Synchronized
-    fun connect(companyId: String, accessToken: String) {
+    fun connect(companyId: String, accessToken: String, sessionId: String? = null) {
         if (socket?.connected() == true && connectedCompanyId == companyId) return
         disconnect()
         try {
             val options = IO.Options().apply {
                 forceNew = true
                 reconnection = true
-                auth = mapOf("token" to accessToken)
+                auth = if (sessionId.isNullOrBlank()) mapOf("token" to accessToken) else mapOf("token" to accessToken, "sessionId" to sessionId)
             }
             val newSocket = IO.socket(BuildConfig.BACKEND_BASE_URL.trimEnd('/'), options)
             newSocket.on(Socket.EVENT_CONNECT) {

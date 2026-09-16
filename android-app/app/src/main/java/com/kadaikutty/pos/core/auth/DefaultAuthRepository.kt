@@ -24,8 +24,16 @@ class DefaultAuthRepository(
 
     override suspend fun loginOnline(username: String, password: CharArray): LoginResult = try {
         val session = persistOnlineSession(backend.login(normalizePhone(username), password.concatToString()), password)
-        runCatching { sessionSecurityManager.registerSession(session.userId, session.companyId, session.role, "") }
-        LoginResult.Success(session)
+        // Every authenticated call now requires the device session issued here; a login that gets a
+        // token but no session is unusable, so a registration failure fails the login (not silently
+        // swallowed) while leaving the offline credential cache intact for loginOffline() to use later.
+        try {
+            sessionSecurityManager.registerSession(session.userId, session.companyId, session.role, "")
+            LoginResult.Success(session)
+        } catch (e: Exception) {
+            sessions.clear()
+            LoginResult.Failure("Signed in, but could not establish a device session. Check your connection and try again.")
+        }
     } catch (e: Exception) { LoginResult.Failure(e.message ?: "Unable to sign in") }
 
     override suspend fun loginOffline(username: String, password: CharArray): LoginResult {

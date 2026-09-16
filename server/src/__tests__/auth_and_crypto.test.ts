@@ -6,11 +6,20 @@ import { normalizePhone, createResetToken, verifyResetToken, createOtpSession, r
 process.env.RESET_SECRET = 'test-only-secret-never-use-in-production-123456';
 
 test('OTP challenge cannot be used to reset a different phone', () => {
-  const token = createOtpSession('9876543210', 'provider-request-id');
-  assert.equal(readOtpSession('9876543210', token), 'provider-request-id');
+  const token = createOtpSession('9876543210', 'session-id-1', 'commitment-hash');
+  assert.deepEqual(readOtpSession('9876543210', token), { sessionId: 'session-id-1', commitment: 'commitment-hash' });
   assert.equal(readOtpSession('9876543211', token), null);
   assert.equal(readOtpSession('9876543210', 'provider-request-id'), null);
   assert.equal(readOtpSession('9876543210', token + 'x'), null);
+});
+
+test('two OTP sends for the same phone with the same code do not share a nonce', () => {
+  const first = createOtpSession('9876543210', 'session-a', 'same-commitment');
+  const second = createOtpSession('9876543210', 'session-b', 'same-commitment');
+  const a = readOtpSession('9876543210', first)!;
+  const b = readOtpSession('9876543210', second)!;
+  assert.notEqual(a.sessionId, b.sessionId);
+  assert.equal(a.commitment, b.commitment);
 });
 
 test('future-dated and malformed reset tokens are rejected', () => {

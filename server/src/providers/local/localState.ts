@@ -1,4 +1,4 @@
-import { BackupRecord, CloudRecord, LicenseRecord, MasterConfig, SessionRecord, UserAccount } from '../contracts';
+import { AuditEntry, BackupRecord, CloudRecord, LicenseRecord, MasterConfig, SessionRecord, UserAccount } from '../contracts';
 
 export interface StoredCredential {
   saltBase64: string;
@@ -28,6 +28,7 @@ export interface LocalState {
   consumedNonces: Record<string, number>;
   backups: Record<string, BackupRecord>;
   masterConfig: MasterConfig;
+  audits: AuditEntry[];
 }
 
 export const emptyLocalState = (): LocalState => ({
@@ -44,5 +45,6 @@ export const emptyLocalState = (): LocalState => ({
   idempotency: {},
   consumedNonces: {},
   backups: {},
+  audits: [],
   masterConfig: { mobile: process.env.MASTER_SUPPORT_PHONE || '', pin: process.env.MASTER_ADMIN_PIN || '', updatedAtEpochMs: Date.now() }
 });

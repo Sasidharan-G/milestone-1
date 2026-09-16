@@ -32,6 +32,18 @@ export class LocalSessionStore implements SessionStore {
     });
   }
 
+  revokeOtherSessions(companyId: string, userId: string, keepSessionId: string): Promise<SessionRecord[]> {
+    return this.store.write(state => Object.values(state.sessions).filter(session => {
+      if (session.companyId !== companyId || session.userId !== userId || session.sessionId === keepSessionId || session.revoked) return false;
+      session.revoked = true;
+      return true;
+    }));
+  }
+
+  revokeAllSessions(companyId: string, userId: string): Promise<SessionRecord[]> {
+    return this.revokeOtherSessions(companyId, userId, '');
+  }
+
   validate(companyId: string, userId: string, sessionId: string): Promise<boolean> {
     return this.store.read(state => {
       const session = state.sessions[sessionId];

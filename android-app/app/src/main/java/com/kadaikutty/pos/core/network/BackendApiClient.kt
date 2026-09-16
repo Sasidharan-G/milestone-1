@@ -60,14 +60,19 @@ class BackendApiClient @Inject constructor(private val sessionStore: SessionStor
         return getBinary(token, intent.getString("downloadUrl"))
     }
 
-    suspend fun registerSession(token: String, deviceId: String): JSONObject =
-        request("POST", "sessions/register", token, JSONObject().put("deviceId", deviceId))
+    suspend fun registerSession(token: String, deviceId: String, deviceName: String? = null): JSONObject =
+        request("POST", "sessions/register", token, JSONObject().put("deviceId", deviceId).also { obj ->
+            deviceName?.let { obj.put("deviceName", it) }
+        })
 
+    // Every authenticated call now requires X-Session-Id; heartbeat/revoke pass it explicitly
+    // (rather than relying on the tenant SessionStore) so this also works for the master session,
+    // which is held only in memory (MasterAuthSession), not in the tenant DataStore.
     suspend fun heartbeat(token: String, sessionId: String): JSONObject =
-        request("POST", "sessions/heartbeat", token, JSONObject().put("sessionId", sessionId))
+        request("POST", "sessions/heartbeat", token, JSONObject().put("sessionId", sessionId), sessionId = sessionId)
 
     suspend fun revokeCurrentSession(token: String, sessionId: String) {
-        request("DELETE", "sessions/current", token, JSONObject().put("sessionId", sessionId))
+        request("DELETE", "sessions/current", token, JSONObject(), sessionId = sessionId)
     }
 
     suspend fun sendOtp(mobileNumber: String): JSONObject =
@@ -92,9 +97,11 @@ class BackendApiClient @Inject constructor(private val sessionStore: SessionStor
         request("POST", "auth/password/reset", body = JSONObject()
             .put("mobileNumber", mobileNumber).put("password", password).put("resetToken", otpProof))
 
-    suspend fun changeMasterPin(mobileNumber: String, pin: String, otpProof: String): JSONObject =
+    suspend fun changeMasterPin(mobileNumber: String, pin: String, otpProof: String, newMobileNumber: String? = null): JSONObject =
         request("POST", "auth/master/pin", body = JSONObject()
-            .put("mobileNumber", mobileNumber).put("pin", pin).put("resetToken", otpProof))
+            .put("mobileNumber", mobileNumber).put("pin", pin).put("resetToken", otpProof).also { obj ->
+                newMobileNumber?.let { obj.put("newMobileNumber", it) }
+            })
 
     suspend fun createStaff(token: String, mobileNumber: String, displayName: String, password: String, permissions: Collection<String>): JSONObject =
         request("POST", "staff", token, JSONObject().put("mobileNumber", mobileNumber).put("displayName", displayName)
@@ -107,14 +114,20 @@ class BackendApiClient @Inject constructor(private val sessionStore: SessionStor
 
     suspend fun deactivateStaff(token: String, userId: String): JSONObject = request("DELETE", "staff/$userId", token, JSONObject())
 
-    suspend fun request(method: String, path: String, token: String? = null, body: JSONObject? = null, allowConflict: Boolean = false): JSONObject = withContext(Dispatchers.IO) {
+    /**
+     * Every authenticated endpoint requires X-Session-Id. By default it is pulled from the tenant
+     * SessionStore (the normal admin/staff flow); pass [sessionId] explicitly for a principal that
+     * is not in that store, such as the in-memory master session (see [MasterAuthSession]).
+     */
+    suspend fun request(method: String, path: String, token: String? = null, body: JSONObject? = null, allowConflict: Boolean = false, sessionId: String? = null): JSONObject = withContext(Dispatchers.IO) {
         val base = BuildConfig.BACKEND_BASE_URL.trimEnd('/')
         require(base.startsWith("https://") || (BuildConfig.DEBUG && base.startsWith("http://"))) { "Backend server is not configured" }
         val builder = Request.Builder().url("$base/api/v1/$path")
             .header("Accept", "application/json")
             .header("X-Request-Id", java.util.UUID.randomUUID().toString())
         if (!token.isNullOrBlank()) builder.header("Authorization", "Bearer $token")
-        if (!token.isNullOrBlank()) sessionStore.activeSession.first()?.sessionToken?.takeIf { it.isNotBlank() }?.let { builder.header("X-Session-Id", it) }
+        val effectiveSessionId = sessionId ?: sessionStore.activeSession.first()?.sessionToken?.takeIf { it.isNotBlank() }
+        if (!token.isNullOrBlank() && !effectiveSessionId.isNullOrBlank()) builder.header("X-Session-Id", effectiveSessionId)
         when (method) {
             "GET" -> builder.get()
             "DELETE" -> builder.delete((body ?: JSONObject()).toString().toRequestBody(jsonType))
