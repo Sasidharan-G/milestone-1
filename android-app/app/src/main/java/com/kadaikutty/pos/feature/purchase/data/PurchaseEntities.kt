@@ -19,7 +19,8 @@ data class PurchaseEntity(
     val paidCashMinorUnits: Long = 0L,
     val paidUpiMinorUnits: Long = 0L,
     val creditAppliedMinorUnits: Long = 0L,
-    val orderNumber: String? = null
+    val orderNumber: String? = null,
+    @androidx.room.ColumnInfo(defaultValue = "0") val revision: Long = 0L
 )
 
 @Entity(tableName = "purchase_items", primaryKeys = ["purchaseId", "productId"], indices = [Index("companyId"), Index(value = ["companyId", "purchaseId"])])
@@ -29,6 +30,7 @@ data class PurchaseItemEntity(
     val productId: String,
     val quantity: Long,
     val unitValueMinorUnits: Long,
-    val lineTotalMinorUnits: Long
+    val lineTotalMinorUnits: Long,
+    val unitType: String? = null
 )
 

@@ -11,6 +11,21 @@ class CsvExcelExporter : ExcelExporter {
         val bos = ByteArrayOutputStream()
         val writer = OutputStreamWriter(bos, StandardCharsets.UTF_8)
         
+        val dateFormat = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault())
+        val generatedStr = "Generated on: ${dateFormat.format(java.util.Date(data.generatedAtEpochMs))}"
+        val periodStr = if (data.fromEpochMs != null || data.toEpochMs != null) {
+            val fromStr = data.fromEpochMs?.let { dateFormat.format(java.util.Date(it)) } ?: "Beginning"
+            val toStr = data.toEpochMs?.let { dateFormat.format(java.util.Date(it)) } ?: "Now"
+            "Period: $fromStr to $toStr"
+        } else {
+            "Period: All Time"
+        }
+
+        // Write title & metadata header lines
+        writer.write(escapeCsv(data.title) + "\r\n")
+        writer.write(escapeCsv(periodStr) + "\r\n")
+        writer.write(escapeCsv(generatedStr) + "\r\n\r\n")
+
         // Write headers
         writer.write(data.columns.joinToString(",") { escapeCsv(it) })
         writer.write("\r\n")

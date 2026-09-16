@@ -5,6 +5,8 @@ import androidx.lifecycle.viewModelScope
 import com.kadaikutty.pos.core.auth.AuthRepository
 import com.kadaikutty.pos.core.auth.LoginMode
 import com.kadaikutty.pos.core.auth.LoginResult
+import com.kadaikutty.pos.core.auth.MasterAuthSession
+import com.kadaikutty.pos.core.network.BackendApiClient
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,9 +14,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.SetOptions
-import kotlinx.coroutines.tasks.await
+import com.kadaikutty.pos.BuildConfig
 
 data class LoginUiState(
     val mobileNumber: String = "", 
@@ -31,7 +31,7 @@ data class LoginUiState(
 )
 @HiltViewModel class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
-    private val firestore: FirebaseFirestore
+    private val backendApiClient: BackendApiClient,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LoginUiState()); val state = mutableState.asStateFlow()
     fun updateMobileNumber(value: String) = mutableState.update { it.copy(mobileNumber = value, error = null) }
@@ -43,23 +43,13 @@ data class LoginUiState(
     
     fun validateMasterPin(pin: String, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            try {
-                val doc = firestore.collection("master_admin").document("config").get().await()
-                val cloudPin = doc.getString("masterPin")
-                if (!cloudPin.isNullOrBlank()) {
-                    onResult(pin == cloudPin)
-                } else {
-                    // Seed initial master config in Firestore
-                    firestore.collection("master_admin").document("config").set(mapOf(
-                        "masterPin" to "9840",
-                        "masterMobile" to "9840000000",
-                        "updatedAt" to System.currentTimeMillis()
-                    ), SetOptions.merge()).await()
-                    onResult(pin == "9840")
-                }
-            } catch (_: Exception) {
-                onResult(pin == "9840")
-            }
+            val token = runCatching {
+                backendApiClient.loginMaster(BuildConfig.MASTER_SUPPORT_PHONE, pin)
+                    .getJSONObject("tokens")
+                    .getString("accessToken")
+            }.getOrNull()
+            if (token != null) MasterAuthSession.save(token)
+            onResult(token != null)
         }
     }
 
@@ -72,8 +62,7 @@ data class LoginUiState(
         viewModelScope.launch {
             try {
                 mutableState.update { it.copy(loading = true, error = null) }
-                val doc = firestore.collection("master_admin").document("config").get().await()
-                val phone = customMobile?.ifBlank { null } ?: doc.getString("masterMobile") ?: "9840000000"
+                val phone = customMobile?.ifBlank { null } ?: BuildConfig.MASTER_SUPPORT_PHONE
                 val clean = phone.replace("[^0-9]".toRegex(), "").takeLast(10)
                 val phoneWithCode = "+91$clean"
 
@@ -104,17 +93,16 @@ data class LoginUiState(
         viewModelScope.launch {
             try {
                 mutableState.update { it.copy(loading = true, error = null) }
-                val credential = com.google.firebase.auth.PhoneAuthProvider.getCredential(verificationId, otp)
-                com.google.firebase.auth.FirebaseAuth.getInstance().signInWithCredential(credential).await()
-
-                // Update Master PIN directly in Firebase Firestore
-                firestore.collection("master_admin").document("config").set(mapOf(
-                    "masterPin" to newPin,
-                    "updatedAt" to System.currentTimeMillis()
-                ), SetOptions.merge()).await()
-
-                mutableState.update { it.copy(loading = false) }
-                onResult(true, null)
+                when (val result = authRepository.changeMasterPin(verificationId, otp, newPin.toCharArray(), BuildConfig.MASTER_SUPPORT_PHONE)) {
+                    is com.kadaikutty.pos.core.auth.RecoveryResult.Success -> {
+                        mutableState.update { it.copy(loading = false) }
+                        onResult(true, null)
+                    }
+                    is com.kadaikutty.pos.core.auth.RecoveryResult.Failure -> {
+                        mutableState.update { it.copy(loading = false, error = result.message) }
+                        onResult(false, result.message)
+                    }
+                }
             } catch (e: Exception) {
                 mutableState.update { it.copy(loading = false, error = e.message) }
                 onResult(false, e.message)
@@ -186,8 +174,8 @@ data class LoginUiState(
             mutableState.update { it.copy(error = "All fields are required") }
             return
         }
-        if (current.newPasswordString.length < 4) {
-            mutableState.update { it.copy(error = "Password / PIN must be at least 4 characters") }
+        if (current.newPasswordString.length < 8) {
+            mutableState.update { it.copy(error = "New password must be at least 8 characters") }
             return
         }
 
@@ -210,42 +198,6 @@ data class LoginUiState(
                     mutableState.update { it.copy(loading = false, error = res.message) }
                     onResult(false, res.message)
                 }
-            }
-        }
-    }
-
-    fun signInWithGoogle() {
-        viewModelScope.launch {
-            mutableState.update { it.copy(loading = true, error = null) }
-            try {
-                authRepository.signInWithGoogle()
-                // Do not clear loading yet, because browser will open
-            } catch (e: Exception) {
-                mutableState.update { it.copy(loading = false, error = e.message) }
-            }
-        }
-    }
-
-    fun handleGoogleSignInSuccess(onResult: (Boolean, String?) -> Unit) {
-        viewModelScope.launch {
-            try {
-                when (val res = authRepository.handleGoogleSignInSuccess()) {
-                    is com.kadaikutty.pos.core.auth.GoogleSignInResult.Success -> {
-                        mutableState.update { it.copy(loading = false, complete = true) }
-                        onResult(true, null)
-                    }
-                    is com.kadaikutty.pos.core.auth.GoogleSignInResult.NewUserNeedsCompanyDetails -> {
-                        mutableState.update { it.copy(loading = false, error = "No business account found for this Google email. Please tap 'New business? Register here'.") }
-                        onResult(false, "No business account found")
-                    }
-                    is com.kadaikutty.pos.core.auth.GoogleSignInResult.Failure -> {
-                        mutableState.update { it.copy(loading = false, error = res.message) }
-                        onResult(false, res.message)
-                    }
-                }
-            } catch (e: Exception) {
-                mutableState.update { it.copy(loading = false, error = e.message) }
-                onResult(false, e.message)
             }
         }
     }

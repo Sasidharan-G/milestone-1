@@ -12,11 +12,8 @@ interface SyncQueueDao {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun enqueue(item: SyncQueueEntity)
 
-    @Query("SELECT * FROM sync_queue WHERE companyId = :companyId AND status IN ('PENDING', 'FAILED') ORDER BY createdAtEpochMs LIMIT :limit")
+    @Query("SELECT * FROM sync_queue WHERE companyId = :companyId AND status = 'PENDING' ORDER BY createdAtEpochMs, id LIMIT :limit")
     suspend fun pending(companyId: String, limit: Int): List<SyncQueueEntity>
-
-    @Query("SELECT * FROM sync_queue WHERE companyId = :companyId AND status IN ('PENDING', 'FAILED') AND createdAtEpochMs > :cursor ORDER BY createdAtEpochMs LIMIT :limit")
-    suspend fun pendingAfterCursor(companyId: String, cursor: Long, limit: Int): List<SyncQueueEntity>
 
     @Query("SELECT * FROM sync_queue WHERE companyId = :companyId AND entityType = :entityType AND entityId = :entityId AND status IN ('PENDING', 'FAILED') LIMIT 1")
     suspend fun findPending(companyId: String, entityType: String, entityId: String): SyncQueueEntity?
@@ -24,14 +21,20 @@ interface SyncQueueDao {
     @Query("UPDATE sync_queue SET status = :status, updatedAtEpochMs = :updatedAtEpochMs, lastError = :error WHERE id = :id")
     suspend fun updateStatus(id: String, status: SyncStatus, updatedAtEpochMs: Long, error: String? = null)
 
-    @Query("UPDATE sync_queue SET operation = :operation, payload = :payload, updatedAtEpochMs = :updatedAtEpochMs WHERE id = :id")
+    @Query("UPDATE sync_queue SET operation = :operation, payload = :payload, status = 'PENDING', attemptCount = 0, lastError = NULL, updatedAtEpochMs = :updatedAtEpochMs WHERE id = :id")
     suspend fun updatePending(id: String, operation: String, payload: String, updatedAtEpochMs: Long)
+
+    @Query("SELECT * FROM sync_queue WHERE companyId = :companyId AND status != 'SYNCED' ORDER BY createdAtEpochMs DESC, id DESC LIMIT :limit")
+    fun unresolved(companyId: String, limit: Int): Flow<List<SyncQueueEntity>>
 
     @Query("UPDATE sync_queue SET lastSyncedAtEpochMs = :lastSyncedAt WHERE id = :id")
     suspend fun updateLastSyncedAt(id: String, lastSyncedAt: Long)
 
     @Query("UPDATE sync_queue SET attemptCount = :attemptCount WHERE id = :id")
     suspend fun updateAttemptCount(id: String, attemptCount: Int)
+
+    @Query("UPDATE sync_queue SET status = 'PENDING', attemptCount = 0, lastError = NULL, updatedAtEpochMs = :updatedAtEpochMs WHERE companyId = :companyId AND status = 'FAILED'")
+    suspend fun retryFailed(companyId: String, updatedAtEpochMs: Long)
 
     @Query("SELECT COUNT(*) FROM sync_queue WHERE companyId = :companyId AND status != 'SYNCED'")
     fun pendingCount(companyId: String): Flow<Int>

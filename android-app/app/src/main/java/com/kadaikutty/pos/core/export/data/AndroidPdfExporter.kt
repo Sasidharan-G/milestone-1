@@ -29,6 +29,11 @@ class AndroidPdfExporter : PdfExporter {
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             color = Color.BLACK
         }
+        val subTitlePaint = TextPaint().apply {
+            textSize = 9f
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            color = Color.DKGRAY
+        }
         val headerPaint = TextPaint().apply {
             textSize = 11f
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
@@ -61,8 +66,20 @@ class AndroidPdfExporter : PdfExporter {
         var y = margin
         
         // Draw title
-        canvas.drawText(data.title, margin, y + 20f, titlePaint)
-        y += 40f
+        canvas.drawText(data.title, margin, y + 16f, titlePaint)
+        y += 24f
+
+        val dateFormat = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault())
+        val generatedStr = "Generated on: ${dateFormat.format(java.util.Date(data.generatedAtEpochMs))}"
+        val periodStr = if (data.fromEpochMs != null || data.toEpochMs != null) {
+            val fromStr = data.fromEpochMs?.let { dateFormat.format(java.util.Date(it)) } ?: "Beginning"
+            val toStr = data.toEpochMs?.let { dateFormat.format(java.util.Date(it)) } ?: "Now"
+            "Period: $fromStr  to  $toStr"
+        } else {
+            "Period: All Time"
+        }
+        canvas.drawText("$periodStr  |  $generatedStr", margin, y + 10f, subTitlePaint)
+        y += 22f
 
         val columnsCount = data.columns.size
         val usableWidth = pageWidth - (margin * 2)
@@ -73,17 +90,20 @@ class AndroidPdfExporter : PdfExporter {
         for (i in 0 until columnsCount) {
             val colName = data.columns[i].lowercase()
             if (colName == "s.no" || colName == "qty" || colName == "unit") {
-                colWidths[i] = 40f
-                fixedWidths += 40f
+                colWidths[i] = 30f
+                fixedWidths += 30f
             } else if (colName == "qty sold") {
-                colWidths[i] = 50f
-                fixedWidths += 50f
+                colWidths[i] = 45f
+                fixedWidths += 45f
+            } else if (colName == "last activity" || colName == "date & time") {
+                colWidths[i] = 80f
+                fixedWidths += 80f
             } else {
                 dynamicCols++
             }
         }
         
-        val dynamicWidth = (usableWidth - fixedWidths) / dynamicCols
+        val dynamicWidth = if (dynamicCols > 0) (usableWidth - fixedWidths) / dynamicCols else 50f
         for (i in 0 until columnsCount) {
             if (colWidths[i] == 0f) {
                 colWidths[i] = dynamicWidth

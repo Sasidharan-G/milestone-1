@@ -16,7 +16,6 @@ sealed interface LoginMode { data object Online : LoginMode; data object Offline
 sealed interface LoginResult { data class Success(val session: Session) : LoginResult; data class Failure(val message: String) : LoginResult }
 sealed interface RegisterResult { data class Success(val companyId: String) : RegisterResult; data class Failure(val message: String) : RegisterResult }
 sealed interface RecoveryResult { data object Success : RecoveryResult; data class Failure(val message: String) : RecoveryResult }
-sealed interface GoogleSignInResult { data class Success(val session: Session) : GoogleSignInResult; data object NewUserNeedsCompanyDetails : GoogleSignInResult; data class Failure(val message: String) : GoogleSignInResult }
 
 interface AuthRepository {
     suspend fun loginOnline(username: String, password: CharArray): LoginResult
@@ -33,7 +32,5 @@ interface AuthRepository {
     // Password Recovery Flow
     fun sendPasswordResetOtp(mobileNumber: String, activity: android.app.Activity, onCodeSent: (String) -> Unit, onVerificationFailed: (String) -> Unit)
     suspend fun verifyOtpAndResetPassword(verificationId: String, otp: String, newPassword: CharArray, mobileNumber: String = ""): RecoveryResult
-    suspend fun handleGoogleSignInSuccess(): GoogleSignInResult
-    suspend fun completeGoogleRegistration(ownerName: String, businessName: String): RegisterResult
-    suspend fun signInWithGoogle()
+    suspend fun changeMasterPin(verificationId: String, otp: String, newPin: CharArray, mobileNumber: String): RecoveryResult
 }

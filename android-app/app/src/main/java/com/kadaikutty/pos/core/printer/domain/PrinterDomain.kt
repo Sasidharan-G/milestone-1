@@ -17,7 +17,8 @@ data class PrintLine(
     val name: String,
     val quantity: Long,
     val price: String,
-    val total: String
+    val total: String,
+    val quantityText: String = quantity.toString()
 )
 
 data class PrintDocument(
@@ -25,7 +26,9 @@ data class PrintDocument(
     val headers: List<String>,
     val lines: List<PrintLine>,
     val totals: List<Pair<String, String>>,
-    val footer: String
+    val footer: String,
+    val paperWidth: Int = 32,
+    val cutPaper: Boolean = false
 )
 
 interface PrinterDriver {

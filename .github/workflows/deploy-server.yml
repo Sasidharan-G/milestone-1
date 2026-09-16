@@ -1,0 +1,72 @@
+name: Deploy Backend to AWS App Runner
+
+# Builds the server image in GitHub Actions (no local Docker needed), pushes it to ECR and
+# lets App Runner auto-deploy the new :latest tag. Requires these repository secrets, all
+# printed by aws-infrastructure/setup-aws-resources.(ps1|sh):
+#   AWS_REGION, AWS_DEPLOY_ROLE_ARN, ECR_REPOSITORY_URI
+
+on:
+  push:
+    branches: [ "main" ]
+    paths: [ "server/**", ".github/workflows/deploy-server.yml" ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-server
+  cancel-in-progress: false
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./server
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22.x'
+          cache: 'npm'
+          cache-dependency-path: './server/package-lock.json'
+
+      - name: Test before deploy
+        run: |
+          npm ci
+          npm run check:legacy
+          npm test
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          IMAGE: ${{ secrets.ECR_REPOSITORY_URI }}
+        run: |
+          docker build -t "$IMAGE:${GITHUB_SHA::12}" -t "$IMAGE:latest" .
+          docker push "$IMAGE:${GITHUB_SHA::12}"
+          docker push "$IMAGE:latest"
+
+      - name: Trigger App Runner deployment (if the service exists)
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          ARN=$(aws apprunner list-services --query "ServiceSummaryList[?ends_with(ServiceName, '-api')].ServiceArn | [0]" --output text)
+          if [ -n "$ARN" ] && [ "$ARN" != "None" ]; then
+            aws apprunner start-deployment --service-arn "$ARN"
+            echo "Deployment started for $ARN"
+          else
+            echo "No App Runner service yet - run setup-aws-resources with CreateAppRunnerService to create it."
+          fi

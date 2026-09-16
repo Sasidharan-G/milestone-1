@@ -43,8 +43,13 @@ class BluetoothPrinterDriver(private val context: Context) : PrinterDriver {
             disconnect() // Ensure old connection is closed
 
             val socketConnection = device.createRfcommSocketToServiceRecord(SPP_UUID)
-            socketConnection.connect()
-            socket = socketConnection
+            try {
+                PrinterIoDeadline.run(socketConnection, 10) { socketConnection.connect() }
+                socket = socketConnection
+            } catch (e: Exception) {
+                try { socketConnection.close() } catch (_: IOException) { }
+                throw e
+            }
             PrinterResult.Success
         } catch (se: SecurityException) {
             PrinterResult.Failure(PrinterError.ConnectionFailed("Bluetooth permission denied (BLUETOOTH_CONNECT)"))
@@ -58,9 +63,13 @@ class BluetoothPrinterDriver(private val context: Context) : PrinterDriver {
             ?: return@withContext PrinterResult.Failure(PrinterError.ConnectionFailed("Printer not connected"))
 
         try {
-            val formattedBytes = escPosFormatter.format(document)
-            activeSocket.outputStream.write(formattedBytes)
-            activeSocket.outputStream.flush()
+            val formattedBytes = ReceiptEncoder.encode(document)
+            PrinterIoDeadline.run(activeSocket, 60) {
+                for (offset in formattedBytes.indices step 1024) {
+                    activeSocket.outputStream.write(formattedBytes, offset, minOf(1024, formattedBytes.size - offset))
+                }
+                activeSocket.outputStream.flush()
+            }
             PrinterResult.Success
         } catch (e: IOException) {
             PrinterResult.Failure(PrinterError.WriteFailed("Failed to write print payload: ${e.message}"))

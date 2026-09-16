@@ -10,12 +10,8 @@ data class SaleLine(
     val unitType: String = "PIECE",
     val discount: Money = Money.Zero
 ) {
-    init { require(quantity > 0) }
-    val lineTotal: Money get() = if (unitType == "KG" || unitType == "LITER") {
-        Money(maxOf(0L, ((unitPrice.minorUnits * quantity) / 1000) - discount.minorUnits))
-    } else {
-        Money(maxOf(0L, (unitPrice * quantity).minorUnits - discount.minorUnits))
-    }
+    init { require(quantity in 1..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY); require(unitPrice.minorUnits in 0..com.kadaikutty.pos.core.common.CheckoutMath.MAX_AMOUNT); require(discount.minorUnits >= 0) }
+    val lineTotal: Money get() = Money(maxOf(0L, com.kadaikutty.pos.core.common.CheckoutMath.lineTotal(unitPrice.minorUnits, quantity, unitType) - discount.minorUnits))
 }
 data class SaleDraft(
     val lines: List<SaleLine>,
@@ -24,13 +20,14 @@ data class SaleDraft(
     val paidCash: Money = Money.Zero,
     val paidUpi: Money = Money.Zero,
     val creditApplied: Money = Money.Zero,
-    val globalDiscount: Money = Money.Zero
+    val globalDiscount: Money = Money.Zero,
+    val requestId: String = com.kadaikutty.pos.core.common.newRecordId(),
+    val editingSaleId: String? = null,
+    val expectedRevision: Long? = null,
+    val previousDue: Long = 0L,
+    val nextCartRequestId: String = com.kadaikutty.pos.core.common.newRecordId()
 ) {
     init { require(lines.isNotEmpty()) }
     val subtotal: Money get() = lines.fold(Money.Zero) { total, line -> total + line.lineTotal }
     val total: Money get() = Money(maxOf(0L, subtotal.minorUnits - globalDiscount.minorUnits))
 }
-/** REQUIRES_CLIENT_CONFIRMATION: tax, discounts, rounding, and payment rules. */
-interface SalePricingPolicy { fun total(draft: SaleDraft): Money }
-object LineTotalOnlyPricing : SalePricingPolicy { override fun total(draft: SaleDraft): Money = draft.total }
-interface BillNumberStrategy { fun nextNumber(): String }

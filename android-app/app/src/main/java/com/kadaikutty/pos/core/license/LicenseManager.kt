@@ -2,21 +2,22 @@ package com.kadaikutty.pos.core.license
 
 import android.content.Context
 import android.content.SharedPreferences
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.ListenerRegistration
 import com.kadaikutty.pos.core.auth.SessionStore
 import com.kadaikutty.pos.core.database.BillingDatabase
+import com.kadaikutty.pos.core.network.BackendApiClient
+import com.kadaikutty.pos.core.preferences.AppPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -25,220 +26,104 @@ import javax.inject.Singleton
 
 @Singleton
 class LicenseManager @Inject constructor(
-    @ApplicationContext private val context: Context,
+    @ApplicationContext context: Context,
     private val database: BillingDatabase,
-    private val firestore: FirebaseFirestore,
+    private val backendApi: BackendApiClient,
     private val sessionStore: SessionStore,
-    private val appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences
+    private val appPreferences: AppPreferences,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs: SharedPreferences = context.getSharedPreferences("license_prefs", Context.MODE_PRIVATE)
-
     private val _currentLicense = MutableStateFlow<LicenseEntity?>(null)
     val currentLicense: StateFlow<LicenseEntity?> = _currentLicense.asStateFlow()
-
     private val _isClockTampered = MutableStateFlow(false)
     val isClockTampered: StateFlow<Boolean> = _isClockTampered.asStateFlow()
-
-    private var firestoreListener: ListenerRegistration? = null
+    private var refreshJob: Job? = null
 
     init {
-        scope.launch {
-            // Check Monotonic Clock integrity
-            validateMonotonicClock()
-        }
-
-        // Start real-time Firestore sync & local flow whenever active session is ready
+        validateMonotonicClock()
         scope.launch {
             sessionStore.activeSession.collect { session ->
-                if (session != null) {
-                    val targetCompanyId = session.companyId
-                    val userEntity = database.userDao().getUserById(session.userId)
-                    val mobile = userEntity?.username ?: session.userId
-                    startRealtimeLicenseSync(targetCompanyId, mobile)
-                    if (targetCompanyId.isNotBlank()) {
-                        database.licenseDao().getLicenseFlow(targetCompanyId).collect { license ->
-                            if (license != null) {
-                                val effectiveLicense = if (license.licenseType == "TRIAL_2_DAYS" && license.validUntilEpochMs <= 0L) {
-                                    val now = System.currentTimeMillis()
-                                    val trialUntil = now + (2L * 24 * 60 * 60 * 1000L)
-                                    val healed = license.copy(
-                                        licenseStatus = "TRIAL",
-                                        daysGranted = 2,
-                                        activatedAtEpochMs = now,
-                                        validUntilEpochMs = trialUntil,
-                                        notes = "2-Day Free Trial Activated"
-                                    )
-                                    database.licenseDao().saveLicense(healed)
-                                    healed
-                                } else {
-                                    license
-                                }
-                                _currentLicense.value = effectiveLicense
-                                if (effectiveLicense.businessName.isNotBlank() && effectiveLicense.businessName != "My Shop") {
-                                    appPreferences.saveShopName(effectiveLicense.businessName)
-                                }
-                                if (effectiveLicense.ownerName.isNotBlank()) {
-                                    appPreferences.saveOwnerName(effectiveLicense.ownerName)
-                                }
-                            }
+                refreshJob?.cancel()
+                if (session == null) {
+                    _currentLicense.value = null
+                } else {
+                    refreshJob = launch {
+                        database.licenseDao().getLicenseFlow(session.companyId).collect { local ->
+                            if (local != null) _currentLicense.value = local
                         }
                     }
-                } else {
-                    stopRealtimeLicenseSync()
-                    _currentLicense.value = null
+                    launch {
+                        while (true) {
+                            refreshFromBackend(session.companyId, session.accessToken)
+                            delay(15 * 60 * 1000L)
+                        }
+                    }
                 }
             }
         }
     }
 
-    /**
-     * Validates that the device clock has not been rolled backwards.
-     */
-    private fun validateMonotonicClock() {
-        val currentEpoch = System.currentTimeMillis()
-        val highestClock = prefs.getLong("highest_seen_clock_ms", 0L)
-
-        // Allow up to 10 minutes of clock drift back, anything more indicates deliberate tampering
-        if (highestClock > 0 && currentEpoch < (highestClock - 10 * 60 * 1000L)) {
-            _isClockTampered.value = true
-        } else {
-            _isClockTampered.value = false
-            if (currentEpoch > highestClock) {
-                prefs.edit().putLong("highest_seen_clock_ms", currentEpoch).apply()
-            }
+    private suspend fun refreshFromBackend(companyId: String, token: String?) {
+        if (token.isNullOrBlank()) return
+        runCatching {
+            val raw = backendApi.currentLicense(token).getJSONObject("license")
+            val existing = database.licenseDao().getLicense(companyId)
+            val status = raw.optString("status", "EXPIRED")
+            val now = System.currentTimeMillis()
+            val entity = LicenseEntity(
+                companyId = companyId,
+                businessName = existing?.businessName.orEmpty(), ownerName = existing?.ownerName.orEmpty(),
+                ownerMobile = raw.optString("ownerMobile", existing?.ownerMobile.orEmpty()),
+                licenseStatus = if (status == "ACTIVE") "ACTIVE_PAID" else status,
+                licenseType = existing?.licenseType ?: if (status == "TRIAL") "TRIAL_2_DAYS" else "YEARLY",
+                yearsGranted = existing?.yearsGranted ?: 0, daysGranted = existing?.daysGranted ?: 0,
+                activatedAtEpochMs = existing?.activatedAtEpochMs ?: now,
+                validUntilEpochMs = raw.optLong("validUntilEpochMs"), lastVerifiedAtEpochMs = now,
+                highestSeenClockEpochMs = maxOf(now, existing?.highestSeenClockEpochMs ?: 0L),
+                renewalCount = existing?.renewalCount ?: 0, notes = existing?.notes.orEmpty(),
+            )
+            database.licenseDao().saveLicense(entity)
+            _currentLicense.value = entity
+            recordServerOrActivityTimestamp(raw.optLong("updatedAtEpochMs", now))
         }
     }
 
-    /**
-     * Records any high-water mark timestamp (e.g. from invoices or server response).
-     */
+    private fun validateMonotonicClock() {
+        val current = System.currentTimeMillis()
+        val highest = prefs.getLong("highest_seen_clock_ms", 0L)
+        _isClockTampered.value = highest > 0 && current < highest - 10 * 60 * 1000L
+        if (!_isClockTampered.value && current > highest) prefs.edit().putLong("highest_seen_clock_ms", current).apply()
+    }
+
     fun recordServerOrActivityTimestamp(timestampMs: Long) {
-        val highestClock = prefs.getLong("highest_seen_clock_ms", 0L)
-        if (timestampMs > highestClock) {
-            prefs.edit().putLong("highest_seen_clock_ms", timestampMs).apply()
-        }
+        if (timestampMs > prefs.getLong("highest_seen_clock_ms", 0L)) prefs.edit().putLong("highest_seen_clock_ms", timestampMs).apply()
         validateMonotonicClock()
     }
 
-    private fun parseSnapshotToLicense(snapshot: com.google.firebase.firestore.DocumentSnapshot, fallbackCompanyId: String): LicenseEntity {
-        val docCompanyId = snapshot.getString("companyId") ?: snapshot.id
-        val bizName = snapshot.getString("businessName")
-            ?: snapshot.getString("business_name")
-            ?: snapshot.getString("name")
-            ?: ""
-        val owner = snapshot.getString("ownerName")
-            ?: snapshot.getString("full_name")
-            ?: ""
-        return LicenseEntity(
-            companyId = if (docCompanyId.isNotBlank()) docCompanyId else fallbackCompanyId,
-            businessName = bizName,
-            ownerName = owner,
-            ownerMobile = snapshot.getString("ownerMobile") ?: snapshot.getString("mobile") ?: "",
-            licenseStatus = snapshot.getString("licenseStatus") ?: "ACTIVE_PAID",
-            licenseType = snapshot.getString("licenseType") ?: "TRIAL_2_DAYS",
-            yearsGranted = snapshot.getLong("yearsGranted")?.toInt() ?: 0,
-            daysGranted = snapshot.getLong("daysGranted")?.toInt() ?: 0,
-            activatedAtEpochMs = snapshot.getLong("activatedAtEpochMs") ?: 0L,
-            validUntilEpochMs = snapshot.getLong("validUntilEpochMs") ?: 0L,
-            lastVerifiedAtEpochMs = System.currentTimeMillis(),
-            highestSeenClockEpochMs = System.currentTimeMillis(),
-            renewalCount = snapshot.getLong("renewalCount")?.toInt() ?: 0,
-            notes = snapshot.getString("notes") ?: ""
-        )
-    }
-
-    /**
-     * Starts listening to Firestore license document for immediate remote grant/cut-off.
-     */
     fun startRealtimeLicenseSync(companyId: String, ownerMobile: String? = null) {
-        firestoreListener?.remove()
-
-        if (companyId.isNotBlank()) {
-            firestoreListener = firestore.collection("licenses").document(companyId)
-                .addSnapshotListener { snapshot, error ->
-                    if (error != null) return@addSnapshotListener
-                    if (snapshot != null && snapshot.exists()) {
-                        val entity = parseSnapshotToLicense(snapshot, companyId)
-                        scope.launch {
-                            database.licenseDao().saveLicense(entity)
-                            _currentLicense.value = entity
-                            if (entity.businessName.isNotBlank() && entity.businessName != "My Shop") {
-                                appPreferences.saveShopName(entity.businessName)
-                            }
-                            if (entity.ownerName.isNotBlank()) {
-                                appPreferences.saveOwnerName(entity.ownerName)
-                            }
-                        }
-                    }
-                }
-        }
-
-        // Secondary real-time check by owner mobile to handle multi-license / re-registration
-        scope.launch {
-            try {
-                val cleanMobile = ownerMobile?.filter { it.isDigit() }?.takeLast(10)
-                if (!cleanMobile.isNullOrBlank()) {
-                    var docList = firestore.collection("licenses").whereEqualTo("ownerMobile", cleanMobile).get().await().documents
-                    if (docList.isEmpty()) {
-                        docList = firestore.collection("licenses").whereEqualTo("ownerMobile", "+91$cleanMobile").get().await().documents
-                    }
-                    val activeDoc = docList.maxByOrNull { it.getLong("validUntilEpochMs") ?: 0L }
-                    if (activeDoc != null && activeDoc.exists()) {
-                        val activeEntity = parseSnapshotToLicense(activeDoc, companyId)
-                        database.licenseDao().saveLicense(activeEntity)
-                        if (companyId.isNotBlank() && activeEntity.companyId != companyId) {
-                            database.licenseDao().saveLicense(activeEntity.copy(companyId = companyId))
-                        }
-                        _currentLicense.value = activeEntity
-                    }
-                }
-            } catch (_: Exception) {}
-        }
+        scope.launch { refreshFromBackend(companyId, sessionStore.activeSession.valueOrNull()?.accessToken) }
     }
 
-    fun stopRealtimeLicenseSync() {
-        firestoreListener?.remove()
-        firestoreListener = null
-    }
+    fun stopRealtimeLicenseSync() { refreshJob?.cancel(); refreshJob = null }
 
-    /**
-     * Checks if the 7-day renewal popup alert should be shown on app launch.
-     * Guaranteed MAX 2 times per day limit using SharedPreferences tracking.
-     */
     fun shouldShowDailyRenewalAlert(): Boolean {
         val license = _currentLicense.value ?: return false
         if (!license.isExpiringSoon) return false
-
-        val todayDate = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
-        val lastDate = prefs.getString("last_alert_date", "") ?: ""
-        val countToday = if (lastDate == todayDate) prefs.getInt("alert_count_today", 0) else 0
-
-        return countToday < 2
+        val today = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+        return if (prefs.getString("last_alert_date", "") == today) prefs.getInt("alert_count_today", 0) < 2 else true
     }
 
-    /**
-     * Increments the daily renewal popup counter.
-     */
     fun recordRenewalAlertShown() {
-        val todayDate = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
-        val lastDate = prefs.getString("last_alert_date", "") ?: ""
-        val countToday = if (lastDate == todayDate) prefs.getInt("alert_count_today", 0) else 0
-
-        prefs.edit()
-            .putString("last_alert_date", todayDate)
-            .putInt("alert_count_today", countToday + 1)
-            .apply()
+        val today = SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())
+        val count = if (prefs.getString("last_alert_date", "") == today) prefs.getInt("alert_count_today", 0) else 0
+        prefs.edit().putString("last_alert_date", today).putInt("alert_count_today", count + 1).apply()
     }
 
-    /**
-     * Synchronously/Locally verifies if the terminal is currently locked due to expiry or tampering.
-     */
     suspend fun isTerminalLocked(): Boolean = withContext(Dispatchers.IO) {
         validateMonotonicClock()
-        if (_isClockTampered.value) return@withContext true
-
-        val license = database.licenseDao().getActiveLicense() ?: return@withContext false
-        return@withContext license.isExpired
+        _isClockTampered.value || (database.licenseDao().getActiveLicense()?.isExpired == true)
     }
 }
+
+private suspend fun <T> kotlinx.coroutines.flow.Flow<T>.valueOrNull(): T? = firstOrNull()

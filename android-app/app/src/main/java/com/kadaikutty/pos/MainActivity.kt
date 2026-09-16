@@ -1,39 +1,49 @@
 package com.kadaikutty.pos
 
 import android.os.Bundle
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.background
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import com.kadaikutty.pos.core.ui.BillingApp
 import com.kadaikutty.pos.core.security.SecurityShield
-import com.kadaikutty.pos.core.security.BiometricAuthenticator
 import com.kadaikutty.pos.BuildConfig
 import dagger.hilt.android.AndroidEntryPoint
-import javax.inject.Inject
-
 
 @AndroidEntryPoint
 class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        try {
-            // Note: Supabase composeAuth is removed. Firebase Google SignIn to be implemented later.
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
 
         // Runtime Security Check
         if (runSecurityChecks()) {
             return
         }
 
-        setContent {
-            BillingApp()
+        // Enable edge-to-edge layout; system bars appearance will be driven dynamically by theme
+        androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
+
+        setContent { androidx.compose.material3.MaterialTheme { androidx.compose.material3.Text("Opening your shop?") } }
+        lifecycleScope.launch {
+            val failure = withContext(Dispatchers.IO) {
+                try {
+                    val db = dagger.hilt.android.EntryPointAccessors.fromApplication(applicationContext, DatabaseStartup::class.java).database()
+                    db.openHelper.writableDatabase.query("SELECT 1").use { it.moveToFirst() }
+                    null
+                } catch (e: Exception) { e }
+            }
+            if (failure == null) setContent { BillingApp() }
+            else {
+                android.util.Log.e("DatabaseStartup", "Database opening failed; original files preserved", failure)
+                android.app.AlertDialog.Builder(this@MainActivity)
+                    .setTitle("Shop data could not be opened")
+                    .setMessage("Your existing database has been preserved. Free storage and restart the app. If this continues, contact support with your backup. Do not clear app data or reinstall.")
+                    .setCancelable(false)
+                    .setPositiveButton("Close") { _, _ -> finish() }.show()
+            }
         }
     }
 
@@ -50,10 +60,7 @@ class MainActivity : FragmentActivity() {
             }
         }
 
-        if (SecurityShield.isVpnOrProxyActive(this)) {
-            showSecurityFailureAndExit("Access Denied", "Connections via Proxy or VPN are restricted.")
-            return true
-        }
+        // Note: VPN/Proxy check is relaxed to allow legitimate shop network configurations (e.g. Cloudflare WARP, Google One VPN, AdGuard)
 
         if (!SecurityShield.verifyBinaryIntegrity(this)) {
             showSecurityFailureAndExit("Integrity Failure", "App binary verification failed. Reinstall from official source.")
@@ -73,4 +80,10 @@ class MainActivity : FragmentActivity() {
             }
             .show()
     }
+}
+
+@dagger.hilt.EntryPoint
+@dagger.hilt.InstallIn(dagger.hilt.components.SingletonComponent::class)
+interface DatabaseStartup {
+    fun database(): com.kadaikutty.pos.core.database.BillingDatabase
 }

@@ -1,0 +1,523 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  KadaiKutty POS backend infrastructure: Cognito user pool, DynamoDB single table,
+  private S3 backup bucket, Secrets Manager secrets, ECR repository, IAM roles,
+  App Runner service and CloudWatch alarm. Deploy with aws-infrastructure/setup-aws-resources.(ps1|sh).
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: kadaikutty-pos
+    AllowedPattern: '[a-z0-9-]+'
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging]
+  GitHubRepository:
+    Type: String
+    Description: GitHub "owner/repo" allowed to assume the deploy role via OIDC (e.g. myuser/milestone-1)
+  CreateGitHubOidcProvider:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: Set to false if token.actions.githubusercontent.com already exists in this account
+  ImageTag:
+    Type: String
+    Default: latest
+    Description: ECR image tag App Runner should run
+  CreateAppRunnerService:
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
+    Description: Set to true only after the first image has been pushed to ECR
+  AllowedOrigins:
+    Type: String
+    Default: ''
+    Description: Comma-separated browser origins for CORS (Android app needs none)
+  MasterSupportPhone:
+    Type: String
+    Default: ''
+    Description: Optional fallback Super Master mobile (seed script sets the real value)
+  AppRunnerCpu:
+    Type: String
+    Default: '1024'
+  AppRunnerMemory:
+    Type: String
+    Default: '2048'
+
+Conditions:
+  CreateOidc: !Equals [!Ref CreateGitHubOidcProvider, 'true']
+  CreateService: !Equals [!Ref CreateAppRunnerService, 'true']
+
+Resources:
+
+  # ---------------------------------------------------------------- Cognito
+  UserPool:
+    Type: AWS::Cognito::UserPool
+    Properties:
+      UserPoolName: !Sub '${ProjectName}-${Environment}'
+      AdminCreateUserConfig:
+        AllowAdminCreateUserOnly: true
+      UsernameConfiguration:
+        CaseSensitive: false
+      MfaConfiguration: 'OFF'
+      DeletionProtection: ACTIVE
+      Policies:
+        # Cognito's floor is 6; the Super Master PIN is stored as the master-admin password,
+        # so PINs must be 6-12 digits (npm run seed:master enforces this).
+        PasswordPolicy:
+          MinimumLength: 6
+          RequireLowercase: false
+          RequireNumbers: false
+          RequireSymbols: false
+          RequireUppercase: false
+          TemporaryPasswordValidityDays: 7
+      AccountRecoverySetting:
+        RecoveryMechanisms:
+          - Name: admin_only
+            Priority: 1
+      Schema:
+        - Name: phone_number
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+        - Name: name
+          AttributeDataType: String
+          Mutable: true
+          Required: false
+        - Name: user_id
+          AttributeDataType: String
+          Mutable: false
+          StringAttributeConstraints: { MinLength: '1', MaxLength: '128' }
+        - Name: company_id
+          AttributeDataType: String
+          Mutable: false
+          StringAttributeConstraints: { MinLength: '1', MaxLength: '128' }
+        - Name: role
+          AttributeDataType: String
+          Mutable: true
+          StringAttributeConstraints: { MinLength: '1', MaxLength: '32' }
+        - Name: permissions
+          AttributeDataType: String
+          Mutable: true
+          StringAttributeConstraints: { MinLength: '0', MaxLength: '2048' }
+        - Name: status
+          AttributeDataType: String
+          Mutable: true
+          StringAttributeConstraints: { MinLength: '1', MaxLength: '32' }
+      UserPoolTags:
+        Project: !Ref ProjectName
+        Environment: !Ref Environment
+
+  UserPoolClient:
+    Type: AWS::Cognito::UserPoolClient
+    Properties:
+      ClientName: !Sub '${ProjectName}-${Environment}-server'
+      UserPoolId: !Ref UserPool
+      GenerateSecret: false
+      ExplicitAuthFlows:
+        - ALLOW_ADMIN_USER_PASSWORD_AUTH
+        - ALLOW_REFRESH_TOKEN_AUTH
+      PreventUserExistenceErrors: ENABLED
+      AccessTokenValidity: 1
+      IdTokenValidity: 1
+      RefreshTokenValidity: 30
+      TokenValidityUnits:
+        AccessToken: hours
+        IdToken: hours
+        RefreshToken: days
+      ReadAttributes:
+        - phone_number
+        - phone_number_verified
+        - name
+        - custom:user_id
+        - custom:company_id
+        - custom:role
+        - custom:permissions
+        - custom:status
+      WriteAttributes:
+        - phone_number
+        - name
+        - custom:role
+        - custom:permissions
+        - custom:status
+
+  # ---------------------------------------------------------------- DynamoDB
+  DataTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub '${ProjectName}-${Environment}'
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - { AttributeName: pk, AttributeType: S }
+        - { AttributeName: sk, AttributeType: S }
+        - { AttributeName: gsi1pk, AttributeType: S }
+        - { AttributeName: gsi1sk, AttributeType: S }
+      KeySchema:
+        - { AttributeName: pk, KeyType: HASH }
+        - { AttributeName: sk, KeyType: RANGE }
+      GlobalSecondaryIndexes:
+        - IndexName: CompanyUsersIndex
+          KeySchema:
+            - { AttributeName: gsi1pk, KeyType: HASH }
+            - { AttributeName: gsi1sk, KeyType: RANGE }
+          Projection:
+            ProjectionType: ALL
+      TimeToLiveSpecification:
+        AttributeName: expiresAtEpochSeconds
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # ---------------------------------------------------------------- S3 backups
+  BackupBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-backups-${AWS::AccountId}-${AWS::Region}-${Environment}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [GET, PUT, HEAD]
+            AllowedOrigins: ['*']
+            AllowedHeaders: ['*']
+            MaxAge: 3000
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-noncurrent
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 30
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 2
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+        - { Key: Environment, Value: !Ref Environment }
+
+  BackupBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupBucket
+      PolicyDocument:
+        Statement:
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt BackupBucket.Arn
+              - !Sub '${BackupBucket.Arn}/*'
+            Condition:
+              Bool: { 'aws:SecureTransport': 'false' }
+
+  # ---------------------------------------------------------------- Secrets
+  MasterPinSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/master-pin'
+      Description: Super Master PIN (plain digits; managed by npm run seed:master or admin config)
+      GenerateSecretString:
+        PasswordLength: 6
+        ExcludeUppercase: true
+        ExcludeLowercase: true
+        ExcludePunctuation: true
+
+  AppSecrets:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/app-secrets'
+      Description: JWT_SECRET for the Express server (JSON key JWT_SECRET)
+      GenerateSecretString:
+        SecretStringTemplate: '{}'
+        GenerateStringKey: JWT_SECRET
+        PasswordLength: 64
+        ExcludePunctuation: true
+
+  ResetSecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Sub '/${ProjectName}/${Environment}/reset-secret'
+      Description: RESET_SECRET used to sign OTP sessions and reset proofs (plain string)
+      GenerateSecretString:
+        PasswordLength: 64
+        ExcludePunctuation: true
+
+  # ---------------------------------------------------------------- ECR
+  ServerRepository:
+    Type: AWS::ECR::Repository
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      RepositoryName: !Sub '${ProjectName}-server'
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      ImageTagMutability: MUTABLE
+      LifecyclePolicy:
+        LifecyclePolicyText: '{"rules":[{"rulePriority":1,"description":"keep last 10 images","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":10},"action":{"type":"expire"}}]}'
+
+  # ---------------------------------------------------------------- IAM
+  AppRunnerInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-apprunner-instance'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: tasks.apprunner.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: backend-access
+          PolicyDocument:
+            Statement:
+              - Sid: Cognito
+                Effect: Allow
+                Action:
+                  - cognito-idp:AdminCreateUser
+                  - cognito-idp:AdminGetUser
+                  - cognito-idp:AdminUpdateUserAttributes
+                  - cognito-idp:AdminSetUserPassword
+                  - cognito-idp:AdminInitiateAuth
+                  - cognito-idp:AdminUserGlobalSignOut
+                  - cognito-idp:AdminDeleteUser
+                  - cognito-idp:AdminDisableUser
+                  - cognito-idp:AdminEnableUser
+                Resource: !GetAtt UserPool.Arn
+              - Sid: DynamoDB
+                Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:DeleteItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                  - dynamodb:BatchGetItem
+                  - dynamodb:BatchWriteItem
+                  - dynamodb:TransactGetItems
+                  - dynamodb:TransactWriteItems
+                  - dynamodb:ConditionCheckItem
+                Resource:
+                  - !GetAtt DataTable.Arn
+                  - !Sub '${DataTable.Arn}/index/*'
+              - Sid: S3
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                  - s3:GetObjectAttributes
+                  - s3:ListBucket
+                  - s3:AbortMultipartUpload
+                Resource:
+                  - !GetAtt BackupBucket.Arn
+                  - !Sub '${BackupBucket.Arn}/*'
+              - Sid: Secrets
+                Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:PutSecretValue
+                Resource:
+                  - !Ref MasterPinSecret
+                  - !Ref AppSecrets
+                  - !Ref ResetSecret
+              - Sid: SnsSms
+                Effect: Allow
+                Action:
+                  - sns:Publish
+                Resource: '*'
+
+  AppRunnerAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-apprunner-access'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: build.apprunner.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSAppRunnerServicePolicyForECRAccess
+      Policies:
+        - PolicyName: read-secrets
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource:
+                  - !Ref AppSecrets
+                  - !Ref ResetSecret
+
+  GitHubOidcProvider:
+    Type: AWS::IAM::OIDCProvider
+    Condition: CreateOidc
+    Properties:
+      Url: https://token.actions.githubusercontent.com
+      ClientIdList: [sts.amazonaws.com]
+      ThumbprintList: [6938fd4d98bab03faadb97b34396831e3780aea1]
+
+  GitHubDeployRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-github-deploy'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Federated: !If
+                - CreateOidc
+                - !Ref GitHubOidcProvider
+                - !Sub 'arn:aws:iam::${AWS::AccountId}:oidc-provider/token.actions.githubusercontent.com'
+            Action: sts:AssumeRoleWithWebIdentity
+            Condition:
+              StringEquals: { 'token.actions.githubusercontent.com:aud': sts.amazonaws.com }
+              StringLike: { 'token.actions.githubusercontent.com:sub': !Sub 'repo:${GitHubRepository}:*' }
+      Policies:
+        - PolicyName: push-and-deploy
+          PolicyDocument:
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:DescribeImages
+                Resource: !GetAtt ServerRepository.Arn
+              - Effect: Allow
+                Action:
+                  - apprunner:StartDeployment
+                  - apprunner:DescribeService
+                  - apprunner:ListServices
+                  - apprunner:ListOperations
+                Resource: '*'
+
+  # ---------------------------------------------------------------- App Runner
+  ServerAutoScaling:
+    Type: AWS::AppRunner::AutoScalingConfiguration
+    Condition: CreateService
+    Properties:
+      AutoScalingConfigurationName: !Sub '${ProjectName}-${Environment}'
+      MinSize: 1
+      MaxSize: 3
+      MaxConcurrency: 100
+
+  ServerService:
+    Type: AWS::AppRunner::Service
+    Condition: CreateService
+    Properties:
+      ServiceName: !Sub '${ProjectName}-${Environment}-api'
+      AutoScalingConfigurationArn: !GetAtt ServerAutoScaling.AutoScalingConfigurationArn
+      SourceConfiguration:
+        AutoDeploymentsEnabled: true
+        AuthenticationConfiguration:
+          AccessRoleArn: !GetAtt AppRunnerAccessRole.Arn
+        ImageRepository:
+          ImageRepositoryType: ECR
+          ImageIdentifier: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ServerRepository}:${ImageTag}'
+          ImageConfiguration:
+            Port: '3000'
+            RuntimeEnvironmentVariables:
+              - { Name: NODE_ENV, Value: production }
+              - { Name: PORT, Value: '3000' }
+              - { Name: PROVIDER_MODE, Value: aws }
+              - { Name: ALLOWED_ORIGINS, Value: !Ref AllowedOrigins }
+              - { Name: MASTER_SUPPORT_PHONE, Value: !Ref MasterSupportPhone }
+              - { Name: AWS_REGION, Value: !Ref 'AWS::Region' }
+              - { Name: AWS_COGNITO_USER_POOL_ID, Value: !Ref UserPool }
+              - { Name: AWS_COGNITO_CLIENT_ID, Value: !Ref UserPoolClient }
+              - { Name: AWS_COGNITO_PHONE_COUNTRY_CODE, Value: '+91' }
+              - { Name: AWS_DYNAMODB_TABLE, Value: !Ref DataTable }
+              - { Name: AWS_S3_BACKUP_BUCKET, Value: !Ref BackupBucket }
+              - { Name: AWS_PRESIGNED_URL_SECONDS, Value: '300' }
+              - { Name: AWS_MASTER_PIN_SECRET_ARN, Value: !Ref MasterPinSecret }
+            RuntimeEnvironmentSecrets:
+              - { Name: JWT_SECRET, Value: !Sub '${AppSecrets}:JWT_SECRET::' }
+              - { Name: RESET_SECRET, Value: !Ref ResetSecret }
+      InstanceConfiguration:
+        Cpu: !Ref AppRunnerCpu
+        Memory: !Ref AppRunnerMemory
+        InstanceRoleArn: !GetAtt AppRunnerInstanceRole.Arn
+      HealthCheckConfiguration:
+        Protocol: HTTP
+        Path: /health
+        Interval: 10
+        Timeout: 5
+        HealthyThreshold: 1
+        UnhealthyThreshold: 5
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+        - { Key: Environment, Value: !Ref Environment }
+
+  # ---------------------------------------------------------------- Monitoring
+  Server5xxAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Condition: CreateService
+    Properties:
+      AlarmName: !Sub '${ProjectName}-${Environment}-api-5xx'
+      Namespace: AWS/AppRunner
+      MetricName: 5xxStatusResponses
+      Dimensions:
+        - Name: ServiceName
+          Value: !Sub '${ProjectName}-${Environment}-api'
+        - Name: ServiceID
+          Value: !GetAtt ServerService.ServiceId
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  AwsRegion:
+    Value: !Ref 'AWS::Region'
+  AwsCognitoUserPoolId:
+    Value: !Ref UserPool
+  AwsCognitoClientId:
+    Value: !Ref UserPoolClient
+  AwsDynamoDbTable:
+    Value: !Ref DataTable
+  AwsS3BackupBucket:
+    Value: !Ref BackupBucket
+  AwsMasterPinSecretArn:
+    Value: !Ref MasterPinSecret
+  AppSecretsArn:
+    Value: !Ref AppSecrets
+  ResetSecretArn:
+    Value: !Ref ResetSecret
+  EcrRepositoryUri:
+    Value: !Sub '${AWS::AccountId}.dkr.ecr.${AWS::Region}.amazonaws.com/${ServerRepository}'
+  GitHubDeployRoleArn:
+    Value: !GetAtt GitHubDeployRole.Arn
+  AppRunnerServiceUrl:
+    Condition: CreateService
+    Value: !Sub 'https://${ServerService.ServiceUrl}/'
+  AppRunnerServiceArn:
+    Condition: CreateService
+    Value: !GetAtt ServerService.ServiceArn

@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.kadaikutty.pos.core.auth.Session
 import com.kadaikutty.pos.core.auth.SessionStore
 import com.kadaikutty.pos.core.database.BillingDatabase
+import com.kadaikutty.pos.core.network.WebSocketManager
 import com.kadaikutty.pos.core.sync.SyncScheduler
 import com.kadaikutty.pos.feature.billing.data.SaleEntity
 import com.kadaikutty.pos.feature.billing.data.ShiftEntity
@@ -34,12 +35,32 @@ data class HomeDashboardUiState(
 class HomeViewModel @Inject constructor(
     private val sessionStore: SessionStore,
     private val database: BillingDatabase,
-    private val syncScheduler: SyncScheduler
+    private val syncScheduler: SyncScheduler,
+    private val webSocketManager: WebSocketManager
 ) : ViewModel() {
 
     init {
         syncScheduler.schedulePeriodicSync()
-        syncScheduler.request()
+        // Keep a realtime channel open while an online session exists; any data_changed
+        // event from the backend schedules an immediate pull instead of waiting 15 minutes.
+        viewModelScope.launch {
+            sessionStore.activeSession.collect { session ->
+                val token = session?.accessToken
+                if (session != null && token != null && session.companyId.isNotBlank()) {
+                    webSocketManager.connect(session.companyId, token)
+                } else {
+                    webSocketManager.disconnect()
+                }
+            }
+        }
+        viewModelScope.launch {
+            webSocketManager.dataChangedFlow.collect { syncScheduler.requestPull() }
+        }
+    }
+
+    override fun onCleared() {
+        webSocketManager.disconnect()
+        super.onCleared()
     }
 
     val activeSession: StateFlow<Session?> = sessionStore.activeSession
@@ -140,7 +161,11 @@ class HomeViewModel @Inject constructor(
     }
 
     fun triggerCloudSync() {
-        syncScheduler.request()
+        viewModelScope.launch {
+            val session = sessionStore.activeSession.first() ?: return@launch
+            database.syncQueueDao().retryFailed(session.companyId, System.currentTimeMillis())
+            syncScheduler.request(replaceExisting = true)
+        }
     }
 
     fun logout() {

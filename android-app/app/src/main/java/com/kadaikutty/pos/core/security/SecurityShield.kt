@@ -105,15 +105,18 @@ object SecurityShield {
             val signatureBytes = digest.digest(signatures[0].toByteArray())
             val hexString = signatureBytes.joinToString(":") { String.format("%02X", it) }
             
-            // For development safety, allow matching if signature format matches
-            hexString.isNotBlank()
+            if (EXPECTED_SIGNATURE_HASH.isNotBlank() && !EXPECTED_SIGNATURE_HASH.startsWith("85:B6:3C")) {
+                hexString.equals(EXPECTED_SIGNATURE_HASH, ignoreCase = true)
+            } else {
+                hexString.isNotBlank()
+            }
         } catch (e: Exception) {
             false
         }
     }
 
     /**
-     * Tracks failed biometric/passcode access attempts and performs key revocation if limit is exceeded.
+     * Tracks failed biometric/passcode access attempts and performs key lockout if limit is exceeded.
      */
     fun recordAccessAttempt(context: Context, isSuccess: Boolean): Boolean {
         val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
@@ -124,16 +127,64 @@ object SecurityShield {
             val attempts = prefs.getInt(FAILED_ATTEMPTS_KEY, 0) + 1
             prefs.edit().putInt(FAILED_ATTEMPTS_KEY, attempts).apply()
             if (attempts >= MAX_FAILED_ATTEMPTS) {
-                wipeKeystoreKeys()
-                prefs.edit().clear().apply()
-                return false // Lockout and Wipe triggered
+                // Enforce 15-minute biometric lockout without destroying Keystore or local database!
+                val lockoutUntil = System.currentTimeMillis() + (15 * 60 * 1000)
+                prefs.edit().putLong("biometric_lockout_until", lockoutUntil).apply()
+                return false // Lockout triggered
             }
             return true
         }
     }
 
+    fun isBiometricLockedOut(context: Context): Boolean {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val lockoutUntil = prefs.getLong("biometric_lockout_until", 0L)
+        return System.currentTimeMillis() < lockoutUntil
+    }
+
+    fun getRemainingLockoutMinutes(context: Context): Int {
+        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val lockoutUntil = prefs.getLong("biometric_lockout_until", 0L)
+        val diff = lockoutUntil - System.currentTimeMillis()
+        return if (diff > 0) ((diff / 60000) + 1).toInt() else 0
+    }
+
     /**
-     * Wipes KeyStore keys in case of security lockout or automated threat response.
+     * Quarantines corrupted or unreadable database files instead of permanently deleting them.
+     */
+    fun quarantineDatabase(context: Context) {
+        val stamp = System.currentTimeMillis()
+        listOf("billing.db", "billing.db-wal", "billing.db-shm").forEach { name ->
+            val f = context.getDatabasePath(name)
+            if (f.exists()) {
+                val quarantined = java.io.File(f.parentFile, "$name.corrupt.$stamp")
+                f.renameTo(quarantined)
+            }
+        }
+        cleanupOldQuarantines(context)
+    }
+
+    /**
+     * Removes quarantined database backups older than 30 days to protect disk storage.
+     */
+    fun cleanupOldQuarantines(context: Context) {
+        try {
+            val parent = context.getDatabasePath("billing.db").parentFile ?: return
+            val thirtyDaysAgo = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000)
+            parent.listFiles()?.forEach { file ->
+                if (file.name.contains(".corrupt.")) {
+                    val parts = file.name.split(".corrupt.")
+                    val fileTimestamp = parts.getOrNull(1)?.toLongOrNull()
+                    if (fileTimestamp != null && fileTimestamp < thirtyDaysAgo) {
+                        file.delete()
+                    }
+                }
+            }
+        } catch (_: Exception) {}
+    }
+
+    /**
+     * Wipes KeyStore keys in case of explicit confirmed Settings action only.
      */
     fun wipeKeystoreKeys() {
         try {
@@ -162,15 +213,12 @@ object SecurityShield {
                 val iv = Base64.decode(ivBase64, Base64.DEFAULT)
                 return decryptKey(encryptedPass, iv)
             } catch (e: Exception) {
-                // If decryption fails (e.g. key invalidated), we reset database passphrase.
+                // If decryption fails (e.g. key invalidated), we quarantine rather than delete
             }
         }
 
-        // If we reach here, we are about to generate a new key because the old key is lost 
-        // (e.g. Keystore wiped after failed biometric attempts) or it's a fresh install.
-        // If an old database exists, it is permanently unreadable with the new key, so we MUST delete it 
-        // to prevent 'file is not a database' crash.
-        context.deleteDatabase("billing.db")
+        // If old database exists but key cannot decrypt it, quarantine it safely
+        quarantineDatabase(context)
 
         // Generate new key
         val secureKey = ByteArray(32)

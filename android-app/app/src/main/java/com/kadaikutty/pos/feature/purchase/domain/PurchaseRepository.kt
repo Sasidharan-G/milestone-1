@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.Flow
 
 interface PurchaseRepository {
     suspend fun save(draft: PurchaseDraft): AppResult<String>
+    suspend fun saveBatch(drafts: List<PurchaseDraft>): AppResult<List<String>>
     
     fun getPurchases(companyId: String): Flow<List<PurchaseEntity>>
     

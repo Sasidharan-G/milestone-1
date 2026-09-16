@@ -1,5 +1,6 @@
 package com.kadaikutty.pos.feature.billing.presentation
 
+import androidx.room.withTransaction
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kadaikutty.pos.core.common.AppResult
@@ -15,6 +16,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -38,7 +40,7 @@ import androidx.paging.cachedIn
 
 @HiltViewModel
 class BillingViewModel @Inject constructor(
-    database: BillingDatabase,
+    private val database: BillingDatabase,
     private val saleRepository: SaleRepository,
     private val shareManager: ShareManager,
     private val appPreferences: AppPreferences,
@@ -52,6 +54,23 @@ class BillingViewModel @Inject constructor(
         syncScheduler.request()
     }
 
+    private val _discountInput = MutableStateFlow("")
+    val discountInput = _discountInput.asStateFlow()
+    fun setDiscountInput(value: String) {
+        if (_isSaving.value) return
+        if (com.kadaikutty.pos.core.common.CheckoutMath.parseAmount(value) == null) { _operationError.value = "Enter a valid discount with up to 2 decimals"; return }
+        _discountInput.value = value
+        saveDraftToDb()
+    }
+    private var checkoutId = newRecordId()
+    private var editingSaleId: String? = null
+    private var editingRevision: Long? = null
+    private var originalQuantities: Map<String, Long> = emptyMap()
+    private val _operationError = MutableStateFlow<String?>(null)
+    val operationError = _operationError.asStateFlow()
+    private val errors = kotlinx.coroutines.CoroutineExceptionHandler { _, error ->
+        _operationError.value = error.message ?: "Operation failed. Your saved bills are unchanged."
+    }
     private val masterDao = database.masterDao()
     private val saleDao = database.saleDao()
     private val purchaseDao = database.purchaseDao()
@@ -85,9 +104,11 @@ class BillingViewModel @Inject constructor(
         }.stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), 0)
 
     fun holdCurrentCart(label: String = "") {
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             val companyId = sessionStore.activeSession.first()?.companyId ?: return@launch
-            if (_lines.value.isEmpty()) return@launch
+            if (_isSaving.value || _lines.value.isEmpty()) return@launch
+            saveDraftJob?.cancel()
+            saveDraftJob?.join()
             val parkId = "held_" + System.currentTimeMillis()
             val cleanLabel = if (label.isNotBlank()) label else "Hold #${parkId.takeLast(4)}"
             val now = System.currentTimeMillis()
@@ -101,64 +122,93 @@ class BillingViewModel @Inject constructor(
                     quantity = line.quantity,
                     unitPriceMinorUnits = line.unitPrice.minorUnits,
                     unitType = line.unitType,
+                    customerId = _selectedCustomerId.value,
+                    checkoutId = checkoutId,
+                    editingSaleId = editingSaleId,
+                    editingRevision = editingRevision,
+                    lineDiscountMinorUnits = line.discount.minorUnits,
+                    cartDiscountMinorUnits = com.kadaikutty.pos.core.common.CheckoutMath.parseAmount(_discountInput.value) ?: 0,
                     parkId = parkId,
                     parkLabel = cleanLabel,
                     parkedAtEpochMs = now
                 )
             }
-            draftCartDao.insertItems(entities)
+            database.withTransaction {
+                draftCartDao.insertItems(entities)
+                draftCartDao.clearCart(companyId)
+            }
             _lines.value = emptyList()
             _selectedCustomerId.value = null
-            draftCartDao.clearCart(companyId)
+            editingSaleId = null
+            editingRevision = null
+            originalQuantities = emptyMap()
+            checkoutId = newRecordId()
+            _discountInput.value = ""
         }
     }
 
     fun resumeHeldCart(parkId: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             val companyId = sessionStore.activeSession.first()?.companyId ?: return@launch
+            require(_lines.value.isEmpty()) { "Hold or clear the current cart before resuming another cart" }
+            saveDraftJob?.cancel()
+            saveDraftJob?.join()
             val items = draftCartDao.getItemsByParkId(companyId, parkId)
             if (items.isNotEmpty()) {
                 _lines.value = items.map {
-                    SaleLine(it.productId, it.productName, it.quantity, Money(it.unitPriceMinorUnits), it.unitType)
+                    SaleLine(it.productId, it.productName, it.quantity, Money(it.unitPriceMinorUnits), it.unitType, Money(it.lineDiscountMinorUnits))
                 }
-                draftCartDao.clearCartByParkId(companyId, parkId)
-                saveDraftToDb()
+                restoreCartHeader(companyId, items.first())
+                database.withTransaction {
+                    draftCartDao.replaceActive(companyId, items.map { it.copy(parkId = "active") })
+                    draftCartDao.clearCartByParkId(companyId, parkId)
+                }
             }
         }
     }
 
     fun discardHeldCart(parkId: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             val companyId = sessionStore.activeSession.first()?.companyId ?: return@launch
             draftCartDao.clearCartByParkId(companyId, parkId)
         }
     }
 
     init {
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             val session = sessionStore.activeSession.first()
             val companyId = session?.companyId
             if (companyId != null) {
                 val savedDrafts = draftCartDao.getDraftCart(companyId).first()
                 if (savedDrafts.isNotEmpty()) {
+                    restoreCartHeader(companyId, savedDrafts.first())
                     _lines.value = savedDrafts.map { 
-                        SaleLine(it.productId, it.productName, it.quantity, Money(it.unitPriceMinorUnits), it.unitType) 
+                        SaleLine(it.productId, it.productName, it.quantity, Money(it.unitPriceMinorUnits), it.unitType, Money(it.lineDiscountMinorUnits)) 
                     }
                 }
             }
         }
     }
 
+    private suspend fun restoreCartHeader(company: String, item: com.kadaikutty.pos.feature.billing.data.DraftCartItemEntity) {
+        _discountInput.value = if (item.cartDiscountMinorUnits == 0L) "" else java.math.BigDecimal.valueOf(item.cartDiscountMinorUnits, 2).toPlainString()
+        _selectedCustomerId.value = item.customerId
+        checkoutId = item.checkoutId ?: newRecordId()
+        editingSaleId = item.editingSaleId
+        editingRevision = item.editingRevision
+        originalQuantities = editingSaleId?.let { saleDao.getSaleItemsList(company, it).associate { line -> line.productId to line.quantity } }.orEmpty()
+    }
+
     private var saveDraftJob: kotlinx.coroutines.Job? = null
 
     private fun saveDraftToDb(immediate: Boolean = false) {
         saveDraftJob?.cancel()
-        saveDraftJob = viewModelScope.launch {
+        saveDraftJob = viewModelScope.launch(errors) {
             if (!immediate) {
                 kotlinx.coroutines.delay(200)
             }
             val companyId = sessionStore.activeSession.first()?.companyId ?: return@launch
-            draftCartDao.clearCart(companyId)
+            database.withTransaction {
             if (_lines.value.isNotEmpty()) {
                 val entities = _lines.value.map { line ->
                     com.kadaikutty.pos.feature.billing.data.DraftCartItemEntity(
@@ -168,10 +218,17 @@ class BillingViewModel @Inject constructor(
                         productName = line.productName,
                         quantity = line.quantity,
                         unitPriceMinorUnits = line.unitPrice.minorUnits,
-                        unitType = line.unitType
+                        unitType = line.unitType,
+                        customerId = _selectedCustomerId.value,
+                        checkoutId = checkoutId,
+                        editingSaleId = editingSaleId,
+                        editingRevision = editingRevision,
+                        lineDiscountMinorUnits = line.discount.minorUnits,
+                        cartDiscountMinorUnits = com.kadaikutty.pos.core.common.CheckoutMath.parseAmount(_discountInput.value) ?: 0
                     )
                 }
-                draftCartDao.insertItems(entities)
+                draftCartDao.replaceActive(companyId, entities)
+            } else draftCartDao.clearCart(companyId)
             }
         }
     }
@@ -218,25 +275,37 @@ class BillingViewModel @Inject constructor(
     }
 
     private val _lines = MutableStateFlow<List<SaleLine>>(emptyList())
-    
+    private val _isSaving = MutableStateFlow(false)
+    val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
+
+    private data class BillingStateData(
+        val lines: List<SaleLine>,
+        val customerId: String?,
+        val credit: Long,
+        val isSaving: Boolean
+    )
+
     val uiState: StateFlow<BillingUiState> = combine(
         combine(products, customers, stockBalances) { p, c, st -> 
             BillingUiState(products = p, customers = c, stockBalances = st) 
         },
-        combine(_lines, _selectedCustomerId, selectedCustomerCreditBalance) { l, cid, credit -> 
-            Triple(l, cid, credit) 
+        combine(_lines, _selectedCustomerId, selectedCustomerCreditBalance, _isSaving) { l, cid, credit, saving -> 
+            BillingStateData(l, cid, credit, saving) 
         }
     ) { state1, state2 ->
         state1.copy(
-            lines = state2.first,
-            selectedCustomerId = state2.second,
-            selectedCustomerCreditBalance = state2.third,
+            lines = state2.lines,
+            selectedCustomerId = state2.customerId,
+            selectedCustomerCreditBalance = state2.credit,
+            isSaving = state2.isSaving,
             isLoading = false
         )
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), BillingUiState(isLoading = true))
 
     fun setCustomer(customerId: String?) {
+        if (_isSaving.value) return
         _selectedCustomerId.value = customerId
+        saveDraftToDb()
     }
 
     fun addQuickCustomer(
@@ -247,15 +316,35 @@ class BillingViewModel @Inject constructor(
         onSuccess: (String) -> Unit,
         onError: (Throwable) -> Unit
     ) {
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                val cleanName = name.trim()
+                val cleanPhone = phone?.trim()?.filter { it.isDigit() }?.takeLast(10)?.takeIf { it.isNotBlank() }
+
+                // Check for existing customer to prevent duplicate creation
+                val existingCustomers = masterDao.customers(session.companyId, "").first()
+                if (cleanPhone != null) {
+                    val phoneMatch = existingCustomers.firstOrNull { it.phone?.filter { ch -> ch.isDigit() }?.takeLast(10) == cleanPhone }
+                    if (phoneMatch != null) {
+                        _selectedCustomerId.value = phoneMatch.id
+                        onSuccess(phoneMatch.id)
+                        return@launch
+                    }
+                }
+                val nameMatch = existingCustomers.firstOrNull { it.name.equals(cleanName, ignoreCase = true) }
+                if (nameMatch != null) {
+                    _selectedCustomerId.value = nameMatch.id
+                    onSuccess(nameMatch.id)
+                    return@launch
+                }
+
                 val customerId = newRecordId()
                 val customer = CustomerEntity(
                     id = customerId,
                     companyId = session.companyId,
-                    name = name,
-                    phone = phone?.trim()?.takeIf { it.isNotBlank() },
+                    name = cleanName,
+                    phone = cleanPhone ?: phone?.trim()?.takeIf { it.isNotBlank() },
                     address = address?.trim()?.takeIf { it.isNotBlank() },
                     creditLimitMinorUnits = 0L,
                     createdAtEpochMs = System.currentTimeMillis(),
@@ -287,7 +376,31 @@ class BillingViewModel @Inject constructor(
         }
     }
 
-    fun addLine(productId: String, productName: String, quantity: Long, unitPrice: Money, unitType: String) {
+    private fun formatStock(quantity: Long, unitType: String): String {
+        return if (unitType == "KG" || unitType == "LITER") {
+            val label = if (unitType == "KG") "Kg" else "Ltr"
+            String.format(java.util.Locale.US, "%.3f %s", quantity / 1000.0, label)
+        } else {
+            "$quantity Pcs"
+        }
+    }
+
+    private fun validateStockForCart(productId: String, productName: String, requestedQuantity: Long, unitType: String): String? {
+        val available = (uiState.value.stockBalances[productId] ?: 0L) + (originalQuantities[productId] ?: 0L)
+        val currentInCart = _lines.value.firstOrNull { it.productId == productId }?.quantity ?: 0L
+        val totalRequested = currentInCart + requestedQuantity
+        if (totalRequested > com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) return "Quantity exceeds the supported limit"
+        return when {
+            available <= 0L -> "$productName stock illa. Available: ${formatStock(available, unitType)}"
+            totalRequested > available -> "$productName-ku enough stock illa. Available: ${formatStock(available, unitType)}, Cart request: ${formatStock(totalRequested, unitType)}"
+            else -> null
+        }
+    }
+
+    fun addLine(productId: String, productName: String, quantity: Long, unitPrice: Money, unitType: String): String? {
+        if (_isSaving.value) return "Please wait for checkout to finish"
+        if (quantity !in 1..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY || unitPrice.minorUnits !in 0..com.kadaikutty.pos.core.common.CheckoutMath.MAX_AMOUNT) return "Enter a valid price and quantity"
+        validateStockForCart(productId, productName, quantity, unitType)?.let { return it }
         val current = _lines.value.toMutableList()
         val index = current.indexOfFirst { it.productId == productId }
         if (index >= 0) {
@@ -296,27 +409,40 @@ class BillingViewModel @Inject constructor(
         } else {
             current.add(SaleLine(productId, productName, quantity, unitPrice, unitType))
         }
+        if (runCatching { current.forEach { it.lineTotal } }.isFailure) return "Line amount exceeds the supported limit"
         _lines.value = current
         saveDraftToDb()
+        return null
     }
 
     fun removeLine(productId: String) {
+        if (_isSaving.value) return
         _lines.value = _lines.value.filterNot { it.productId == productId }
         saveDraftToDb()
     }
 
     fun updateQuantity(productId: String, newQty: Long) {
+        if (_isSaving.value || newQty > com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) return
         if (newQty <= 0) {
             removeLine(productId)
             return
         }
-        _lines.value = _lines.value.map {
-            if (it.productId == productId) it.copy(quantity = newQty) else it
-        }
+        _lines.value.firstOrNull { it.productId == productId } ?: return
+        val available = (uiState.value.stockBalances[productId] ?: 0L) + (originalQuantities[productId] ?: 0L)
+        if (available <= 0L || newQty > available) return
+        val updated = _lines.value.map { if (it.productId == productId) it.copy(quantity = newQty) else it }
+        if (runCatching { updated.forEach { it.lineTotal } }.isFailure) { _operationError.value = "Line amount exceeds the supported limit"; return }
+        _lines.value = updated
         saveDraftToDb()
     }
 
-    fun clearDraft() {
+    fun clearDraft(afterSave: Boolean = false) {
+        if (_isSaving.value && !afterSave) return
+        editingSaleId = null
+        editingRevision = null
+        originalQuantities = emptyMap()
+        checkoutId = newRecordId()
+        _discountInput.value = ""
         _lines.value = emptyList()
         _selectedCustomerId.value = null
         saveDraftToDb()
@@ -326,8 +452,12 @@ class BillingViewModel @Inject constructor(
         val product = uiState.value.products.find { it.barcode == barcode }
         if (product != null) {
             val quantity = if (product.unitType == "KG" || product.unitType == "LITER") 1000L else 1L
-            addLine(product.id, product.name, quantity, Money(product.salePriceMinorUnits), product.unitType)
-            onProductFound?.invoke(product)
+            val error = addLine(product.id, product.name, quantity, Money(product.salePriceMinorUnits), product.unitType)
+            if (error == null) {
+                onProductFound?.invoke(product)
+            } else {
+                onProductNotFound()
+            }
         } else {
             onProductNotFound()
         }
@@ -338,7 +468,7 @@ class BillingViewModel @Inject constructor(
         val linesToCheck = selectedLines ?: _lines.value
         val outOfStockNames = mutableListOf<String>()
         for (line in linesToCheck) {
-            val available = currentBalances[line.productId] ?: 0L
+            val available = (currentBalances[line.productId] ?: 0L) + (originalQuantities[line.productId] ?: 0L)
             if (line.quantity > available) {
                 outOfStockNames.add("${line.productName} (Available: $available, Cart: ${line.quantity})")
             }
@@ -357,67 +487,70 @@ class BillingViewModel @Inject constructor(
         onSuccess: (String) -> Unit, 
         onError: (Throwable) -> Unit
     ) {
-        viewModelScope.launch {
-            val session = sessionStore.activeSession.first()
-            if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
-                onError(Exception("You do not have permission to create sales."))
-                return@launch
-            }
-            if (_lines.value.isEmpty()) {
-                onError(Exception("Cannot save empty sale bill"))
-                return@launch
-            }
-            val draft = SaleDraft(
-                lines = _lines.value, 
-                customerId = _selectedCustomerId.value, 
-                paymentMode = paymentMode, 
-                paidCash = paidCash, 
-                paidUpi = paidUpi, 
-                creditApplied = creditApplied,
-                globalDiscount = globalDiscount
-            )
-            when (val result = saleRepository.save(draft)) {
-                is AppResult.Success -> {
-                    val billNum = result.value
-                    settlePreviousCredit(sessionStore.activeSession.first(), _selectedCustomerId.value, settlePreviousCreditMinorUnits, billNum)
-                    
-                    // Auto-print check
-                    if (context != null && appPreferences.autoPrintReceipt.first()) {
-                        printBill(context, billNum)
+        if (_isSaving.value) return
+        _isSaving.value = true
+        viewModelScope.launch(errors) {
+            try {
+                val session = sessionStore.activeSession.first()
+                if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
+                    onError(Exception("You do not have permission to create sales."))
+                    return@launch
+                }
+                if (_lines.value.isEmpty()) {
+                    onError(Exception("Cannot save empty sale bill"))
+                    return@launch
+                }
+                val insufficientStock = getInsufficientStockItems()
+                if (insufficientStock.isNotEmpty()) {
+                    onError(Exception("Stock illa / insufficient stock: ${insufficientStock.joinToString(", ")}"))
+                    return@launch
+                }
+                val draft = SaleDraft(
+                    lines = _lines.value, 
+                    customerId = _selectedCustomerId.value, 
+                    paymentMode = paymentMode, 
+                    paidCash = paidCash, 
+                    paidUpi = paidUpi, 
+                    creditApplied = creditApplied,
+                    globalDiscount = globalDiscount,
+                    requestId = checkoutId,
+                    editingSaleId = editingSaleId,
+                    expectedRevision = editingRevision,
+                    previousDue = settlePreviousCreditMinorUnits
+                )
+                saveDraftJob?.cancel()
+                saveDraftJob?.join()
+                when (val result = saleRepository.save(draft)) {
+                    is AppResult.Success -> {
+                        val billNum = result.value
+
+                        
+                        // Auto-print check
+                        if (context != null && appPreferences.autoPrintReceipt.first()) {
+                            printBill(context, billNum)
+                        }
+
+                        runCatching { analyticsManager.logEvent(
+                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.EVENT_SALE_COMPLETED,
+                            mapOf(
+                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_CART_SIZE to draft.lines.size,
+                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.lines.sumOf { (it.unitPrice.minorUnits * it.quantity) / (if (it.unitType == "KG" || it.unitType == "LITER") 1000 else 1) },
+                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_PAYMENT_METHOD to paymentMode
+                            )
+                        ) }
+
+                        clearDraft(afterSave = true)
+                        onSuccess(billNum)
                     }
-
-                    analyticsManager.logEvent(
-                        com.kadaikutty.pos.core.analytics.AnalyticsEvents.EVENT_SALE_COMPLETED,
-                        mapOf(
-                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_CART_SIZE to draft.lines.size,
-                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.lines.sumOf { (it.unitPrice.minorUnits * it.quantity) / (if (it.unitType == "KG" || it.unitType == "LITER") 1000 else 1) },
-                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_PAYMENT_METHOD to paymentMode
-                        )
-                    )
-
-                    clearDraft()
-                    onSuccess(billNum)
+                    is AppResult.Failure -> {
+                        onError(Exception(result.error.userMessage))
+                    }
                 }
-                is AppResult.Failure -> {
-                    onError(Exception(result.error.userMessage))
-                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e
+            } catch (e: Exception) { onError(e)
+            } finally {
+                _isSaving.value = false
             }
-        }
-    }
-
-    private suspend fun settlePreviousCredit(session: com.kadaikutty.pos.core.auth.Session?, custId: String?, amount: Long, billNum: String) {
-        if (amount > 0L && session != null && !custId.isNullOrBlank() && custId != "online") {
-            val creditSettlement = CustomerCreditEntity(
-                id = newRecordId(),
-                companyId = session.companyId,
-                customerId = custId,
-                amountMinorUnits = -amount,
-                reason = "Previous due settled in Bill $billNum",
-                dateEpochMs = System.currentTimeMillis(),
-                syncStatus = SyncStatus.LOCAL_ONLY
-            )
-            masterDao.insertCustomerCredit(creditSettlement)
-            syncManager.enqueueCustomerCredit(creditSettlement, "INSERT")
         }
     }
 
@@ -432,53 +565,75 @@ class BillingViewModel @Inject constructor(
         onSuccess: (String) -> Unit, 
         onError: (Throwable) -> Unit
     ) {
-        viewModelScope.launch {
-            val session = sessionStore.activeSession.first()
-            if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
-                onError(Exception("You do not have permission to create sales."))
-                return@launch
-            }
-            val selectedLines = _lines.value.filter { it.productId in selectedProductIds }
-            if (selectedLines.isEmpty()) {
-                onError(Exception("No items selected for split checkout"))
-                return@launch
-            }
-            val draft = SaleDraft(
-                lines = selectedLines, 
-                customerId = _selectedCustomerId.value, 
-                paymentMode = paymentMode, 
-                paidCash = paidCash, 
-                paidUpi = paidUpi, 
-                creditApplied = creditApplied,
-                globalDiscount = globalDiscount
-            )
-            when (val result = saleRepository.save(draft)) {
-                is AppResult.Success -> {
-                    val billNum = result.value
-                    settlePreviousCredit(sessionStore.activeSession.first(), _selectedCustomerId.value, settlePreviousCreditMinorUnits, billNum)
-                    
-                    analyticsManager.logEvent(
-                        com.kadaikutty.pos.core.analytics.AnalyticsEvents.EVENT_SALE_COMPLETED,
-                        mapOf(
-                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_CART_SIZE to draft.lines.size,
-                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.lines.sumOf { (it.unitPrice.minorUnits * it.quantity) / (if (it.unitType == "KG" || it.unitType == "LITER") 1000 else 1) },
-                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_PAYMENT_METHOD to paymentMode
-                        )
-                    )
+        if (_isSaving.value) return
+        _isSaving.value = true
+        viewModelScope.launch(errors) {
+            try {
+                val session = sessionStore.activeSession.first()
+                if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
+                    onError(Exception("You do not have permission to create sales."))
+                    return@launch
+                }
+                require(editingSaleId == null) { "Finish editing the whole bill before split checkout" }
+                val selectedLines = _lines.value.filter { it.productId in selectedProductIds }
+                if (selectedLines.isEmpty()) {
+                    onError(Exception("No items selected for split checkout"))
+                    return@launch
+                }
+                val insufficientStock = getInsufficientStockItems(selectedLines)
+                if (insufficientStock.isNotEmpty()) {
+                    onError(Exception("Stock illa / insufficient stock: ${insufficientStock.joinToString(", ")}"))
+                    return@launch
+                }
+                val draft = SaleDraft(
+                    lines = selectedLines, 
+                    customerId = _selectedCustomerId.value, 
+                    paymentMode = paymentMode, 
+                    paidCash = paidCash, 
+                    paidUpi = paidUpi, 
+                    creditApplied = creditApplied,
+                    globalDiscount = globalDiscount,
+                    requestId = checkoutId,
+                    editingSaleId = editingSaleId,
+                    expectedRevision = editingRevision,
+                    previousDue = settlePreviousCreditMinorUnits
+                )
+                saveDraftJob?.cancel()
+                saveDraftJob?.join()
+                when (val result = saleRepository.save(draft)) {
+                    is AppResult.Success -> {
+                        val billNum = result.value
 
-                    _lines.value = _lines.value.filterNot { it.productId in selectedProductIds }
-                    saveDraftToDb()
-                    onSuccess(billNum)
+                        
+                        runCatching { analyticsManager.logEvent(
+                            com.kadaikutty.pos.core.analytics.AnalyticsEvents.EVENT_SALE_COMPLETED,
+                            mapOf(
+                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_CART_SIZE to draft.lines.size,
+                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.lines.sumOf { (it.unitPrice.minorUnits * it.quantity) / (if (it.unitType == "KG" || it.unitType == "LITER") 1000 else 1) },
+                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_PAYMENT_METHOD to paymentMode
+                            )
+                        ) }
+
+                        _discountInput.value = ""
+                        checkoutId = draft.nextCartRequestId
+                        _lines.value = _lines.value.filterNot { it.productId in selectedProductIds }
+                        saveDraftToDb()
+                        onSuccess(billNum)
+                    }
+                    is AppResult.Failure -> {
+                        onError(Exception(result.error.userMessage))
+                    }
                 }
-                is AppResult.Failure -> {
-                    onError(Exception(result.error.userMessage))
-                }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e
+            } catch (e: Exception) { onError(e)
+            } finally {
+                _isSaving.value = false
             }
         }
     }
 
     fun deleteSale(saleId: String, billNumber: String, reason: String = "Cancelled by cashier", onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             val session = sessionStore.activeSession.first()
             if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
                 onError(Exception("You do not have permission to modify sales."))
@@ -488,19 +643,6 @@ class BillingViewModel @Inject constructor(
             val amount = sale?.totalMinorUnits ?: 0L
             when (val result = saleRepository.deleteSale(saleId, billNumber)) {
                 is AppResult.Success -> {
-                    auditLogDao.insertAuditLog(
-                        com.kadaikutty.pos.feature.billing.data.AuditLogEntity(
-                            id = newRecordId(),
-                            companyId = session.companyId,
-                            action = "BILL_CANCEL",
-                            billNumber = billNumber,
-                            amountMinorUnits = amount,
-                            reason = reason.ifBlank { "Bill deleted from POS" },
-                            performedByUserId = session.userId,
-                            performedByUserName = session.displayName,
-                            timestampEpochMs = System.currentTimeMillis()
-                        )
-                    )
                     onSuccess()
                 }
                 is AppResult.Failure -> onError(Exception(result.error.userMessage))
@@ -509,31 +651,39 @@ class BillingViewModel @Inject constructor(
     }
 
     fun loadSaleForEditing(sale: SaleEntity, onSuccess: () -> Unit) {
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             val session = sessionStore.activeSession.first() ?: return@launch
+            require(session.role in listOf("ADMIN", "SUPER_ADMIN")) { "Only an administrator can edit bills" }
+            require(_lines.value.isEmpty()) { "Hold or clear the current cart before editing a bill" }
             val items = saleDao.getSaleItemsList(session.companyId, sale.id)
+            val allocatedDiscount = com.kadaikutty.pos.core.common.CheckoutMath.allocate(sale.discountMinorUnits.coerceAtMost(items.sumOf { it.lineTotalMinorUnits }), items.map { it.lineTotalMinorUnits })
             val allProds = masterDao.products(session.companyId, "").first()
             _selectedCustomerId.value = sale.customerId
-            _lines.value = items.map { item ->
+            _lines.value = items.mapIndexed { index, item ->
                 val prod = allProds.find { it.id == item.productId }
-                val prodName = prod?.name ?: "Product"
-                val uType = prod?.unitType ?: "PIECE"
+                val prodName = item.productName ?: prod?.name ?: "Product"
+                val uType = item.unitType ?: prod?.unitType ?: "PIECE"
                 SaleLine(
                     productId = item.productId,
                     productName = prodName,
                     quantity = item.quantity,
                     unitPrice = Money(item.unitPriceMinorUnits),
-                    unitType = uType
+                    unitType = uType,
+                    discount = Money(item.discountMinorUnits + allocatedDiscount[index])
                 )
             }
-            saleDao.deleteSaleCascade(session.companyId, sale.id, sale.billNumber)
+            _discountInput.value = ""
+            editingSaleId = sale.id
+            editingRevision = sale.revision
+            checkoutId = newRecordId()
+            originalQuantities = items.associate { it.productId to it.quantity }
             saveDraftToDb()
             onSuccess()
         }
     }
 
     fun shareBill(billNumber: String, isWhatsapp: Boolean) {
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             val session = sessionStore.activeSession.first() ?: return@launch
             val companyId = session.companyId
             val sale = saleDao.getSaleByBillNumber(companyId, billNumber) ?: return@launch
@@ -582,7 +732,7 @@ class BillingViewModel @Inject constructor(
     }
 
     fun printBill(context: android.content.Context, billNumber: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(errors) {
             val macAddress = appPreferences.printerDeviceId.first()
             if (macAddress.isNullOrBlank()) return@launch // Printer not configured
 
@@ -615,7 +765,7 @@ class BillingViewModel @Inject constructor(
                     name = p?.name ?: "Unknown",
                     qty = qtyStr,
                     price = Money(item.unitPriceMinorUnits).toString(),
-                    total = Money(item.unitPriceMinorUnits * item.quantity).toString()
+                    total = Money(item.lineTotalMinorUnits).toString()
                 )
             }
 
@@ -635,8 +785,12 @@ class BillingViewModel @Inject constructor(
                 items = printItems,
                 subtotal = subtotal,
                 discount = discount,
-                grandTotal = grandTotal
-            )
+                grandTotal = grandTotal,
+                printerType = appPreferences.printerType.first() ?: "Bluetooth",
+                paperWidth = appPreferences.printerPaperWidth.first()
+            ).onFailure { error ->
+                android.widget.Toast.makeText(context, "Bill saved. Printing failed: ${error.message}", android.widget.Toast.LENGTH_LONG).show()
+            }
         }
     }
 }

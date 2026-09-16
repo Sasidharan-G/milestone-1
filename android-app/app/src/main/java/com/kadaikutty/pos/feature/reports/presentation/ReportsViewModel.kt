@@ -71,6 +71,18 @@ class ReportsViewModel @Inject constructor(
     private val _expensesSum = MutableStateFlow(0L)
     val expensesSum: StateFlow<Long> = _expensesSum.asStateFlow()
 
+    private val _totalStockValue = MutableStateFlow(0L)
+    val totalStockValue: StateFlow<Long> = _totalStockValue.asStateFlow()
+
+    private val _totalStockInward = MutableStateFlow(0.0)
+    val totalStockInward: StateFlow<Double> = _totalStockInward.asStateFlow()
+
+    private val _totalStockOutward = MutableStateFlow(0.0)
+    val totalStockOutward: StateFlow<Double> = _totalStockOutward.asStateFlow()
+
+    private val _totalStockUnits = MutableStateFlow(0.0)
+    val totalStockUnits: StateFlow<Double> = _totalStockUnits.asStateFlow()
+
 
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
@@ -136,6 +148,35 @@ class ReportsViewModel @Inject constructor(
                 _totalPurchasesSum.value = purchasesSum
                 _expensesSum.value = expensesSum
                 _netProfitSum.value = salesSum - totalCogs - expensesSum
+
+                // Compute period-filtered stock KPIs
+                val stockData = database.reportDao().getStockReport(companyId, _fromEpochMs.value, _toEpochMs.value)
+                var stockValSum = 0L
+                var inSum = 0.0
+                var outSum = 0.0
+                var closingSum = 0.0
+
+                for (item in stockData) {
+                    val isWeighted = item.unitType == "KG" || item.unitType == "LITER"
+                    val stockUnits = if (isWeighted) item.currentStock / 1000.0 else item.currentStock.toDouble()
+                    val inUnits = if (isWeighted) item.inwardQty / 1000.0 else item.inwardQty.toDouble()
+                    val outUnits = if (isWeighted) item.outwardQty / 1000.0 else item.outwardQty.toDouble()
+
+                    val v = if (isWeighted) {
+                        ((item.purchasePrice * item.currentStock) / 1000.0).toLong()
+                    } else {
+                        item.purchasePrice * item.currentStock
+                    }
+                    stockValSum += v
+                    inSum += inUnits
+                    outSum += outUnits
+                    closingSum += stockUnits
+                }
+
+                _totalStockValue.value = stockValSum
+                _totalStockInward.value = inSum
+                _totalStockOutward.value = outSum
+                _totalStockUnits.value = closingSum
 
                 val query = ReportQuery(
                     type = _selectedType.value,

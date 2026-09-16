@@ -30,7 +30,7 @@ class UsbPrinterDriver(private val context: Context) : PrinterDriver {
             val device = usbManager.deviceList[deviceId]
                 ?: return@withContext PrinterResult.Failure(PrinterError.DeviceNotFound("USB device $deviceId not found"))
 
-            if (!usbManager.hasPermission(device)) {
+            if (!requestUsbPermission(context, usbManager, device)) {
                 return@withContext PrinterResult.Failure(PrinterError.ConnectionFailed("USB permission not granted for device: $deviceId"))
             }
 
@@ -82,13 +82,19 @@ class UsbPrinterDriver(private val context: Context) : PrinterDriver {
         }
 
         try {
-            val formattedBytes = escPosFormatter.format(document)
-            val result = conn.bulkTransfer(endpoint, formattedBytes, formattedBytes.size, 5000)
-            if (result >= 0) {
-                PrinterResult.Success
-            } else {
-                PrinterResult.Failure(PrinterError.WriteFailed("USB bulk transfer failed with status code: $result"))
+            val formattedBytes = ReceiptEncoder.encode(document)
+            var offset = 0
+            while (offset < formattedBytes.size) {
+                val count = minOf(4096, formattedBytes.size - offset)
+                val result = conn.bulkTransfer(endpoint, formattedBytes, offset, count, 5000)
+                if (result <= 0) {
+                    return@withContext PrinterResult.Failure(PrinterError.WriteFailed(
+                        "USB print interrupted after $offset bytes. Check the receipt before retrying."
+                    ))
+                }
+                offset += result
             }
+            PrinterResult.Success
         } catch (e: Exception) {
             PrinterResult.Failure(PrinterError.WriteFailed("USB print writing failed: ${e.message}"))
         }

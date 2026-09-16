@@ -73,7 +73,6 @@ import com.kadaikutty.pos.core.ui.theme.BillingTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.shadow
-import com.google.firebase.auth.FirebaseAuth
 
 val LocalLayoutMode = staticCompositionLocalOf { "Auto" }
 

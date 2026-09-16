@@ -22,11 +22,6 @@
 -keep class * implements dagger.hilt.internal.GeneratedComponent { *; }
 -keep class * implements dagger.hilt.internal.TestSingletonComponent { *; }
 
-# Firebase & Play Services
--keep class com.google.firebase.** { *; }
--keep class com.google.android.gms.** { *; }
--dontwarn com.google.firebase.**
--dontwarn com.google.android.gms.**
 
 # Jetpack Compose & Material Icons (Shrink 15k unused icons)
 -keep class androidx.compose.material.icons.** { *; }
@@ -42,3 +37,11 @@
     public static int v(...);
     public static int d(...);
 }
+
+# OkHttp & Retrofit Networking
+-dontwarn okhttp3.**
+-dontwarn okio.**
+-keep class okhttp3.** { *; }
+-keep interface okhttp3.** { *; }
+-dontwarn javax.annotation.**
+-keepnames class okhttp3.internal.publicsuffix.PublicSuffixDatabase

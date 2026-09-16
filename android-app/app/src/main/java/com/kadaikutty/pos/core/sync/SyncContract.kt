@@ -1,19 +1,53 @@
 package com.kadaikutty.pos.core.sync
 
 enum class SyncStatus { LOCAL_ONLY, PENDING, SYNCING, SYNCED, FAILED, CONFLICT }
-data class SyncMetadata(val id: String, val status: SyncStatus, val updatedAtEpochMs: Long, val lastError: String? = null)
 
-/**
- * Conflict resolution policy for sync operations.
- * Server-wins strategy: when conflict detected, fetch server version and overwrite local.
- */
-sealed interface ConflictPolicy {
-    data class ServerWins(val notifyUser: Boolean = true) : ConflictPolicy
-    data class LocalWins(val notifyUser: Boolean = true) : ConflictPolicy
-    data class Manual(val conflictData: String) : ConflictPolicy // For future UI resolution
-    
-    companion object {
-        val DEFAULT = ServerWins(notifyUser = true)
+sealed interface SyncNotificationState {
+    data object Idle : SyncNotificationState
+    data object InProgress : SyncNotificationState
+    data class Success(val message: String = "Cloud sync completed") : SyncNotificationState
+    data class Failed(
+        val reason: String,
+        val suggestedNextSteps: String
+    ) : SyncNotificationState
+}
+
+fun categorizeSyncError(e: Throwable): Pair<String, String> {
+    val msg = (e.message ?: "").lowercase()
+    val errorType = when {
+        msg.contains("permission-denied") || msg.contains("unauthenticated") || msg.contains("auth") || msg.contains("unauthorized") -> "AUTH"
+        msg.contains("timeout") || msg.contains("timed out") || msg.contains("deadline_exceeded") || msg.contains("504") -> "TIMEOUT"
+        msg.contains("conflict") || msg.contains("already-exists") || msg.contains("failed-precondition") || msg.contains("aborted") -> "CONFLICT"
+        msg.contains("space") || msg.contains("enospc") || msg.contains("storage") || msg.contains("quota") || msg.contains("resource-exhausted") || msg.contains("disk") -> "STORAGE"
+        e is java.io.IOException || msg.contains("network") || msg.contains("offline") || msg.contains("unable to resolve host") || msg.contains("connection") -> "NETWORK"
+        else -> "UNKNOWN"
+    }
+
+    return when (errorType) {
+        "AUTH" -> Pair(
+            "Authentication failure: Session or tenant permission invalid",
+            "Please log out and log in again to renew your credentials."
+        )
+        "TIMEOUT" -> Pair(
+            "Server timeout: Cloud database response took too long",
+            "Cloud servers are experiencing delays. Please wait a moment and tap Retry."
+        )
+        "CONFLICT" -> Pair(
+            "Data conflict: Record was updated from another device",
+            "Check Sync Diagnostics to review conflicting records or tap Retry to pull latest updates."
+        )
+        "STORAGE" -> Pair(
+            "Insufficient storage: Device or cloud quota exceeded",
+            "Free up storage space on your device or contact administrator to increase quota."
+        )
+        "NETWORK" -> Pair(
+            "Network error: Unable to reach cloud database",
+            "Please check your Wi-Fi or mobile data connection and tap Retry."
+        )
+        else -> Pair(
+            "Cloud sync encountered an issue: ${e.message?.take(60) ?: "Unknown error"}",
+            "Check your internet connection and tap Retry to synchronize."
+        )
     }
 }
 

@@ -42,6 +42,16 @@ class MigrationTest {
         itemsCursor.close()
     }
 
+    @Test
+    fun migrate21To22PreservesExistingData() {
+        val old = helper.createDatabase("migration-21-22", 21)
+        old.execSQL("INSERT INTO categories VALUES ('cat', 'shop', 'General', 0, 0, 'LOCAL_ONLY')")
+        old.close()
+        val upgraded = helper.runMigrationsAndValidate("migration-21-22", 22, true, migration21To22)
+        upgraded.query("SELECT name FROM categories WHERE id = 'cat'").use { assertTrue(it.moveToFirst()); org.junit.Assert.assertEquals("General", it.getString(0)) }
+        upgraded.close()
+    }
+
     companion object {
         private const val TEST_DB = "migration-test"
     }

@@ -12,6 +12,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kadaikutty.pos.core.common.Money
+import com.kadaikutty.pos.core.common.CheckoutMath
 
 @Composable
 fun PaymentCheckoutDialog(
@@ -31,13 +32,22 @@ fun PaymentCheckoutDialog(
     var isSplitMode by remember { mutableStateOf(false) }
     var cashInput by remember { mutableStateOf("") }
     var upiInput by remember { mutableStateOf("") }
+    var isProcessing by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showDialog) {
+        if (showDialog) {
+            isProcessing = false
+        }
+    }
 
     AlertDialog(
         onDismissRequest = { 
-            onDismiss()
-            isSplitMode = false
-            cashInput = ""
-            upiInput = ""
+            if (!isProcessing) {
+                onDismiss()
+                isSplitMode = false
+                cashInput = ""
+                upiInput = ""
+            }
         },
         title = { Text(if (checkoutMode == "SPLIT_CART") "Payment for Split Cart" else "Payment & Checkout", fontWeight = FontWeight.Bold) },
         text = { 
@@ -59,7 +69,8 @@ fun PaymentCheckoutDialog(
                             }
                             Switch(
                                 checked = includePreviousDueInCheckout,
-                                onCheckedChange = onIncludePreviousDueChange
+                                onCheckedChange = onIncludePreviousDueChange,
+                                enabled = !isProcessing
                             )
                         }
                     }
@@ -70,7 +81,10 @@ fun PaymentCheckoutDialog(
                 if (!isSplitMode) {
                     Text("Select Quick Checkout:", fontSize = 14.sp)
                     Button(
+                        enabled = !isProcessing,
                         onClick = {
+                            if (isProcessing) return@Button
+                            isProcessing = true
                             onDismiss()
                             onPerformSave("CASH", finalPayableTotal, Money.Zero, Money.Zero)
                         },
@@ -79,7 +93,10 @@ fun PaymentCheckoutDialog(
                     ) { Text("Full Cash ($finalPayableTotal)") }
                     
                     Button(
+                        enabled = !isProcessing,
                         onClick = {
+                            if (isProcessing) return@Button
+                            isProcessing = true
                             onDismiss()
                             onPerformSave("GPAY", Money.Zero, finalPayableTotal, Money.Zero)
                         },
@@ -88,11 +105,16 @@ fun PaymentCheckoutDialog(
                     ) { Text("Full GPay / UPI ($finalPayableTotal)") }
                     
                     Button(
+                        enabled = !isProcessing,
                         onClick = {
-                            if (selectedCustomerId == null || selectedCustomerId == "online") {
+                            if (isProcessing) return@Button
+                            if (includePreviousDueInCheckout && customerCreditDue > 0) {
+                                onError("Previous dues must be collected by cash or UPI. Turn off previous dues for a credit-only bill.")
+                            } else if (selectedCustomerId == null || selectedCustomerId == "online") {
                                 onDismiss()
                                 onError("Validation Error: Credit can only be given to a registered customer. Please select a customer.")
                             } else {
+                                isProcessing = true
                                 onDismiss()
                                 onPerformSave("CREDIT", Money.Zero, Money.Zero, finalPayableTotal)
                             }
@@ -104,14 +126,15 @@ fun PaymentCheckoutDialog(
                     HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
                     
                     OutlinedButton(
+                        enabled = !isProcessing,
                         onClick = { isSplitMode = true },
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Split / Partial Payment") }
                     
                 } else {
-                    val cInput = cashInput.toDoubleOrNull() ?: 0.0
-                    val uInput = upiInput.toDoubleOrNull() ?: 0.0
-                    val inputTotalMinor = ((cInput + uInput) * 100).toLong()
+                    val cInput = CheckoutMath.parseAmount(cashInput)
+                    val uInput = CheckoutMath.parseAmount(upiInput)
+                    val inputTotalMinor = (cInput ?: 0L) + (uInput ?: 0L)
                     val diff = finalPayableTotal.minorUnits - inputTotalMinor
                     
                     OutlinedTextField(
@@ -119,17 +142,21 @@ fun PaymentCheckoutDialog(
                         onValueChange = { cashInput = it }, 
                         label = { Text("Cash Amount Received") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isProcessing
                     )
                     OutlinedTextField(
                         value = upiInput, 
                         onValueChange = { upiInput = it }, 
                         label = { Text("UPI/GPay Amount Received") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isProcessing
                     )
                     
-                    if (diff > 0) {
+                    if (cInput == null || uInput == null || uInput > finalPayableTotal.minorUnits) {
+                        Text("Enter valid amounts with up to 2 decimal places. UPI cannot exceed the total.", color = MaterialTheme.colorScheme.error)
+                    } else if (diff > 0) {
                         Text("Remaining Credit: ${Money(diff)}", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
                         if (selectedCustomerId == null || selectedCustomerId == "online") {
                             Text("Please select a customer first to assign credit.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
@@ -144,24 +171,27 @@ fun PaymentCheckoutDialog(
         },
         confirmButton = {
             if (isSplitMode) {
-                val cInput = cashInput.toDoubleOrNull() ?: 0.0
-                val uInput = upiInput.toDoubleOrNull() ?: 0.0
-                val inputTotalMinor = ((cInput + uInput) * 100).toLong()
+                val cInput = CheckoutMath.parseAmount(cashInput)
+                val uInput = CheckoutMath.parseAmount(upiInput)
+                val inputTotalMinor = (cInput ?: 0L) + (uInput ?: 0L)
                 val diff = finalPayableTotal.minorUnits - inputTotalMinor
                 val creditAmount = if (diff > 0) diff else 0L
                 
-                val canSubmit = creditAmount == 0L || (selectedCustomerId != null && selectedCustomerId != "online")
+                val canSubmit = cInput != null && uInput != null && uInput <= finalPayableTotal.minorUnits && (creditAmount == 0L || (selectedCustomerId != null && selectedCustomerId != "online")) && !isProcessing
                 
                 Button(
                     enabled = canSubmit,
                     onClick = {
+                        if (isProcessing) return@Button
+                        isProcessing = true
                         onDismiss()
                         isSplitMode = false
                         cashInput = ""
                         upiInput = ""
                         
                         val paymentModeStr = if (creditAmount > 0L) "PARTIAL" else "SPLIT"
-                        onPerformSave(paymentModeStr, Money((cInput * 100).toLong()), Money((uInput * 100).toLong()), Money(creditAmount))
+                        val payment = CheckoutMath.payment(finalPayableTotal.minorUnits, cInput!!, uInput!!, selectedCustomerId != null && selectedCustomerId != "online")
+                        onPerformSave(paymentModeStr, Money(payment.cash), Money(payment.upi), Money(payment.credit))
                     }
                 ) {
                     Text("Confirm Split Payment")
@@ -169,13 +199,16 @@ fun PaymentCheckoutDialog(
             }
         },
         dismissButton = {
-            TextButton(onClick = { 
-                if (isSplitMode) {
-                    isSplitMode = false
-                } else {
-                    onDismiss() 
+            TextButton(
+                enabled = !isProcessing,
+                onClick = { 
+                    if (isSplitMode) {
+                        isSplitMode = false
+                    } else {
+                        onDismiss() 
+                    }
                 }
-            }) {
+            ) {
                 Text(if (isSplitMode) "Back" else "Cancel")
             }
         }

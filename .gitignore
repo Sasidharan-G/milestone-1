@@ -7,6 +7,7 @@ gradle.properties
 .env
 server/coverage/
 server/dist/
+server/.local-data/
 *.keystore
 *.jks
 node_modules/
@@ -25,4 +26,6 @@ __pycache__/
 *.db-shm
 logcat.txt
 *_dump.xml
-*serviceAccountKey*.json
+aws-infrastructure/stack-outputs.*.env
+aws-infrastructure/artifacts/
+release.properties

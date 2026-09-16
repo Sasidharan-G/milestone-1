@@ -1,6 +1,5 @@
 package com.kadaikutty.pos.feature.auth
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,7 +13,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -23,7 +21,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
-import com.kadaikutty.pos.core.presentation.components.LoadingOverlay
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kadaikutty.pos.core.auth.AuthRepository
@@ -65,6 +62,7 @@ class RegisterViewModel @Inject constructor(
     fun dismissOtpDialog() = _state.update { it.copy(showOtpDialog = false, otp = "", verificationId = null) }
 
     fun register(activity: android.app.Activity) {
+        if (state.value.loading) return
         val current = state.value
         if (current.mobileNumber.isBlank() || current.ownerName.isBlank() || current.businessName.isBlank() || current.passwordString.isBlank() || current.confirmPasswordString.isBlank()) {
             _state.update { it.copy(error = "All fields are required") }
@@ -91,7 +89,7 @@ class RegisterViewModel @Inject constructor(
         viewModelScope.launch {
             kotlinx.coroutines.delay(20000L)
             if (_state.value.loading && !_state.value.showOtpDialog) {
-                _state.update { it.copy(loading = false, error = "SMS OTP timed out. You can tap 'Instant Register' below to submit directly to Master Admin.") }
+                _state.update { it.copy(loading = false, error = "OTP timed out. Check your connection and request a new code.") }
             }
         }
 
@@ -102,12 +100,13 @@ class RegisterViewModel @Inject constructor(
                 _state.update { it.copy(loading = false, showOtpDialog = true, verificationId = verificationId) }
             },
             onVerificationFailed = { error ->
-                _state.update { it.copy(loading = false, error = "$error. You can use 'Instant Register' below.") }
+                _state.update { it.copy(loading = false, error = "$error. Please retry OTP verification.") }
             }
         )
     }
 
     fun registerDirectly(onSuccess: (String) -> Unit) {
+        if (state.value.loading) return
         val current = state.value
         if (current.mobileNumber.isBlank() || current.ownerName.isBlank() || current.businessName.isBlank() || current.passwordString.isBlank() || current.confirmPasswordString.isBlank()) {
             _state.update { it.copy(error = "All fields are required") }
@@ -154,6 +153,7 @@ class RegisterViewModel @Inject constructor(
     }
 
     fun verifyOtpAndCompleteRegistration(onSuccess: (String) -> Unit) {
+        if (state.value.loading) return
         val current = state.value
         val verificationId = current.verificationId
         if (verificationId == null || current.otp.isBlank()) {
@@ -389,35 +389,41 @@ fun RegisterScreenContent(
         // OTP Dialog for Registration
         if (state.showOtpDialog) {
             androidx.compose.ui.window.Dialog(
-                onDismissRequest = { viewModel.dismissOtpDialog() }
+                onDismissRequest = { viewModel.dismissOtpDialog() },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
             ) {
                 Surface(
                     shape = RoundedCornerShape(24.dp),
-                    color = Color(0xFF0B0F17),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
-                    modifier = Modifier.fillMaxWidth()
+                    color = Color(0xFF5C151A),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.25f)),
+                    shadowElevation = 16.dp,
+                    modifier = Modifier
+                        .widthIn(max = 460.dp)
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
+                            .verticalScroll(rememberScrollState())
                             .padding(bottom = 16.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(horizontal = 20.dp, vertical = 14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Verify Mobile Number", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text("Mobile Verification", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
                             IconButton(onClick = { viewModel.dismissOtpDialog() }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF94A3B8))
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.8f))
                             }
                         }
 
-                        HorizontalDivider(color = Color(0xFF1E293B))
-                        Spacer(modifier = Modifier.height(8.dp))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
+                        Spacer(modifier = Modifier.height(6.dp))
 
                         com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
                             otpLength = 6,
@@ -437,32 +443,6 @@ fun RegisterScreenContent(
                             isLoading = state.loading,
                             errorMessage = state.error
                         )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Button(
-                            onClick = {
-                                viewModel.verifyOtpAndCompleteRegistration {
-                                    onRegisterSuccess()
-                                }
-                            },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp)
-                                .height(48.dp),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = Color(0xFF5C151A),
-                                contentColor = Color.White
-                            ),
-                            enabled = !state.loading && state.otp.length == 6
-                        ) {
-                            if (state.loading) {
-                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White)
-                            } else {
-                                Text("Verify & Enter Store", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                            }
-                        }
                     }
                 }
             }

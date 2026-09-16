@@ -3,7 +3,6 @@ agp = "8.13.2"
 kotlin = "2.0.21"
 ksp = "2.0.21-1.0.28"
 hilt = "2.52"
-google-services = "4.4.2"
 compose-bom = "2024.12.01"
 core-ktx = "1.15.0"
 lifecycle = "2.8.7"
@@ -23,7 +22,6 @@ junit = "4.13.2"
 mockito = "5.11.0"
 coroutines = "1.9.0"
 generativeai = "0.9.0"
-firebase-bom = "33.7.0"
 kotlinx-serialization-json = "1.7.3"
 paging = "3.3.2"
 
@@ -88,12 +86,6 @@ benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4",
 androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
 
 generativeai = { module = "com.google.ai.client.generativeai:generativeai", version.ref = "generativeai" }
-firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
-firebase-auth = { module = "com.google.firebase:firebase-auth" }
-firebase-firestore = { module = "com.google.firebase:firebase-firestore" }
-firebase-storage = { module = "com.google.firebase:firebase-storage" }
-firebase-appcheck-playintegrity = { module = "com.google.firebase:firebase-appcheck-playintegrity" }
-firebase-appcheck-debug = { module = "com.google.firebase:firebase-appcheck-debug" }
 kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization-json" }
 androidx-paging-runtime = { module = "androidx.paging:paging-runtime", version.ref = "paging" }
 androidx-paging-compose = { module = "androidx.paging:paging-compose", version.ref = "paging" }
@@ -125,6 +117,5 @@ kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "ko
 hilt-android = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
-google-services = { id = "com.google.gms.google-services", version.ref = "google-services" }
 android-test = { id = "com.android.test", version.ref = "agp" }
 baselineprofile = { id = "androidx.baselineprofile", version.ref = "benchmark-macro" }

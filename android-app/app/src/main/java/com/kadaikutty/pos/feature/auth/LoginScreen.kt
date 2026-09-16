@@ -1,13 +1,11 @@
 package com.kadaikutty.pos.feature.auth
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -17,7 +15,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -26,7 +23,6 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kadaikutty.pos.core.auth.LoginMode
-import com.kadaikutty.pos.core.presentation.components.LoadingOverlay
 
 
 @Composable
@@ -324,7 +320,7 @@ fun LoginScreenContent(
                             )
                         )
 
-                        // Master Forgot PIN via Firebase SMS OTP
+                        // Master Forgot PIN via backend SMS OTP
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.End
@@ -383,7 +379,7 @@ fun LoginScreenContent(
                             disabledContainerColor = Color.White.copy(alpha = 0.5f),
                             disabledContentColor = Color(0xFF5C151A).copy(alpha = 0.5f)
                         ),
-                        enabled = enteredMasterPin.length >= 4 && !isCheckingMasterPin
+                        enabled = enteredMasterPin.length >= 6 && !isCheckingMasterPin
                     ) {
                         Text(if (isCheckingMasterPin) "Verifying..." else "Open Control Panel", fontWeight = FontWeight.Bold)
                     }
@@ -480,7 +476,7 @@ fun LoginScreenContent(
                                     masterResetOtp = ""
                                     masterNewPin = ""
                                     masterResetVerificationId = null
-                                    message = "Master PIN successfully updated in Firebase! Opening panel..."
+                                    message = "Master PIN successfully updated! Opening panel..."
                                     onOpenMasterControl()
                                 } else {
                                     message = "Master OTP verification failed: $errMsg"
@@ -493,7 +489,7 @@ fun LoginScreenContent(
                             disabledContainerColor = Color.White.copy(alpha = 0.5f),
                             disabledContentColor = Color(0xFF5C151A).copy(alpha = 0.5f)
                         ),
-                        enabled = masterResetOtp.length == 6 && masterNewPin.length >= 4 && !masterResetLoading
+                        enabled = masterResetOtp.length == 6 && masterNewPin.length >= 6 && !masterResetLoading
                     ) {
                         Text(if (masterResetLoading) "Updating..." else "Verify & Set PIN", fontWeight = FontWeight.Bold)
                     }
@@ -511,34 +507,39 @@ fun LoginScreenContent(
         
         if (state.showResetOtpDialog) {
             androidx.compose.ui.window.Dialog(
-                onDismissRequest = { viewModel.dismissResetDialog() }
+                onDismissRequest = { viewModel.dismissResetDialog() },
+                properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
             ) {
                 Surface(
                     shape = RoundedCornerShape(24.dp),
-                    color = Color(0xFF0B0F17),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF1E293B)),
-                    modifier = Modifier.fillMaxWidth()
+                    color = Color(0xFF5C151A),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.25f)),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .widthIn(max = 460.dp)
+                        .padding(horizontal = 16.dp)
                 ) {
                     Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 16.dp),
+                            .verticalScroll(rememberScrollState())
+                            .padding(bottom = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 16.dp, vertical = 12.dp),
+                                .padding(horizontal = 20.dp, vertical = 14.dp),
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text("Reset Password / PIN", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                             IconButton(onClick = { viewModel.dismissResetDialog() }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color(0xFF94A3B8))
+                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.8f))
                             }
                         }
 
-                        HorizontalDivider(color = Color(0xFF1E293B))
+                        HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
                         Spacer(modifier = Modifier.height(8.dp))
 
                         com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
@@ -546,17 +547,6 @@ fun LoginScreenContent(
                             otpValue = state.resetOtp,
                             phoneNumber = state.mobileNumber,
                             onOtpChange = { viewModel.updateResetOtp(it) },
-                            onVerifyTriggered = {
-                                if (state.newPasswordString.isNotBlank()) {
-                                    viewModel.verifyOtpAndResetPassword { success, errMsg ->
-                                        if (success) {
-                                            message = "Password / PIN updated successfully! Please Sign In."
-                                        } else {
-                                            message = ""
-                                        }
-                                    }
-                                }
-                            },
                             onResendClick = {
                                 if (activity != null) {
                                     viewModel.requestPasswordResetOtp(state.mobileNumber, activity, onCodeSent = {
@@ -565,41 +555,45 @@ fun LoginScreenContent(
                                 }
                             },
                             isLoading = state.loading,
-                            errorMessage = state.error
+                            errorMessage = state.error,
+                            showVerifyButton = false
                         )
+
+                        Spacer(modifier = Modifier.height(12.dp))
 
                         // New Password Field inside the dialog
                         Column(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 20.dp),
-                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                            verticalArrangement = Arrangement.spacedBy(12.dp)
                         ) {
                             OutlinedTextField(
                                 value = state.newPasswordString,
                                 onValueChange = { viewModel.updateNewPassword(it) },
-                                label = { Text("New Password / 4-6 Digit PIN", color = Color(0xFF94A3B8)) },
-                                placeholder = { Text("Enter new password or PIN", color = Color(0xFF64748B)) },
+                                label = { Text("New Password / 4-6 Digit PIN", color = Color.White.copy(alpha = 0.7f)) },
+                                placeholder = { Text("Enter new password or PIN", color = Color.White.copy(alpha = 0.4f)) },
                                 trailingIcon = {
                                     IconButton(onClick = { forgotPasswordVisible = !forgotPasswordVisible }) {
                                         Icon(
                                             imageVector = if (forgotPasswordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                             contentDescription = if (forgotPasswordVisible) "Hide password" else "Show password",
-                                            tint = Color(0xFF94A3B8)
+                                            tint = Color.White.copy(alpha = 0.8f)
                                         )
                                     }
                                 },
                                 visualTransformation = if (forgotPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                                 singleLine = true,
-                                shape = RoundedCornerShape(12.dp),
+                                shape = RoundedCornerShape(percent = 50),
                                 colors = OutlinedTextFieldDefaults.colors(
                                     focusedTextColor = Color.White,
                                     unfocusedTextColor = Color.White,
-                                    focusedContainerColor = Color(0xFF162238),
-                                    unfocusedContainerColor = Color(0xFF162238),
-                                    focusedBorderColor = Color(0xFF2EE6A8),
-                                    unfocusedBorderColor = Color(0xFF334155)
+                                    focusedContainerColor = Color.White.copy(alpha = 0.15f),
+                                    unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
+                                    focusedBorderColor = Color.White,
+                                    unfocusedBorderColor = Color.Transparent,
+                                    cursorColor = Color.White
                                 ),
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -614,12 +608,26 @@ fun LoginScreenContent(
                                         }
                                     }
                                 },
-                                modifier = Modifier.fillMaxWidth().height(48.dp),
-                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2EE6A8)),
-                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth().height(50.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = Color.White,
+                                    contentColor = Color(0xFF5C151A),
+                                    disabledContainerColor = Color.White.copy(alpha = 0.25f),
+                                    disabledContentColor = Color.White.copy(alpha = 0.4f)
+                                ),
+                                shape = RoundedCornerShape(percent = 50),
+                                elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 2.dp),
                                 enabled = !state.loading && state.resetOtp.length == 6 && state.newPasswordString.isNotBlank()
                             ) {
-                                Text("Confirm & Reset Password", color = Color(0xFF0B0F17), fontWeight = FontWeight.Bold)
+                                if (state.loading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(22.dp),
+                                        color = Color(0xFF5C151A),
+                                        strokeWidth = 2.5.dp
+                                    )
+                                } else {
+                                    Text("Confirm & Reset Password", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                                }
                             }
                         }
                     }

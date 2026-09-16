@@ -80,6 +80,7 @@ data class CustomerCreditEntity(
     val amountMinorUnits: Long,
     val reason: String,
     val dateEpochMs: Long,
+    val referenceId: String? = null,
     val syncStatus: SyncStatus
 )
 
@@ -92,5 +93,6 @@ data class SupplierCreditEntity(
     val terms: String,
     val dueDateEpochMs: Long,
     val dateEpochMs: Long,
+    val referenceId: String? = null,
     val syncStatus: SyncStatus
 )

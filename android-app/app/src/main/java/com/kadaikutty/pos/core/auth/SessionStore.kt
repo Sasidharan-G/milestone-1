@@ -15,21 +15,23 @@ class SessionStore(private val store: DataStore<Preferences>) {
     private val companyIdKey = stringPreferencesKey("session_company_id")
     private val roleKey = stringPreferencesKey("session_role")
     private val sessionTokenKey = stringPreferencesKey("session_token")
+    private val accessTokenKey = stringPreferencesKey("session_access_token")
     private val deviceIdKey = stringPreferencesKey("session_device_id")
 
     val activeSession: Flow<Session?> = store.data.map { preferences ->
         val id = preferences[userId] ?: return@map null
         val permsString = preferences[permissionsKey].orEmpty()
-        val perms = if (permsString.isBlank()) Permission.ALL_ACTIVE else permsString.split(",")
+        val perms = if (permsString.isBlank()) emptySet() else permsString.split(",")
             .mapNotNull {
                 try { Permission.valueOf(it.trim()) } catch (e: Exception) { null }
             }.toSet()
         Session(
             userId = id,
             displayName = preferences[displayName]?.ifBlank { "User" } ?: "User",
-            permissions = if (perms.isEmpty()) Permission.ALL_ACTIVE else perms,
+            permissions = perms,
             companyId = preferences[companyIdKey]?.ifBlank { "company_main" } ?: "company_main",
-            role = preferences[roleKey] ?: "ADMIN",
+            role = preferences[roleKey] ?: "CASHIER",
+            accessToken = preferences[accessTokenKey],
             sessionToken = preferences[sessionTokenKey],
             deviceId = preferences[deviceIdKey]
         )
@@ -42,6 +44,7 @@ class SessionStore(private val store: DataStore<Preferences>) {
             it[permissionsKey] = session.permissions.joinToString(",") { it.name }
             it[companyIdKey] = session.companyId
             it[roleKey] = session.role
+            if (session.accessToken != null) it[accessTokenKey] = session.accessToken else it.remove(accessTokenKey)
             if (session.sessionToken != null) {
                 it[sessionTokenKey] = session.sessionToken
             } else {
@@ -55,6 +58,10 @@ class SessionStore(private val store: DataStore<Preferences>) {
         }
     }
 
+    suspend fun updateSessionToken(value: String?) {
+        store.edit { if (value == null) it.remove(sessionTokenKey) else it[sessionTokenKey] = value }
+    }
+
     suspend fun clear() {
         store.edit {
             it.remove(userId)
@@ -63,6 +70,7 @@ class SessionStore(private val store: DataStore<Preferences>) {
             it.remove(companyIdKey)
             it.remove(roleKey)
             it.remove(sessionTokenKey)
+            it.remove(accessTokenKey)
             it.remove(deviceIdKey)
         }
     }

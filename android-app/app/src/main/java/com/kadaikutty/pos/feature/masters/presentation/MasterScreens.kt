@@ -4,6 +4,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.kadaikutty.pos.core.ui.CameraBarcodeScannerDialog
 import com.kadaikutty.pos.core.ui.LocalLayoutMode
+import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.BorderStroke
@@ -173,6 +174,7 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
     var name by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     var editingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
     var deletingCategory by remember { mutableStateOf<CategoryEntity?>(null) }
@@ -231,23 +233,29 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                                 value = name,
                                 onValueChange = { name = it },
                                 label = { Text("Category Name", fontSize = 13.sp) },
+                                singleLine = true,
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth().height(56.dp)
+                                modifier = Modifier.fillMaxWidth()
                             )
                             Button(
                                 onClick = {
-                                    if (name.isNotBlank()) {
+                                    val trimmed = name.trim()
+                                    if (trimmed.isNotBlank() && !isSubmitting) {
+                                        isSubmitting = true
                                         viewModel.addCategory(
-                                            name = name,
+                                            name = trimmed,
                                             onSuccess = {
+                                                isSubmitting = false
                                                 name = ""
                                                 message = "Category added successfully"
                                             }
                                         ) {
+                                            isSubmitting = false
                                             message = "Error: ${it.message}"
                                         }
                                     }
                                 },
+                                enabled = !isSubmitting && name.isNotBlank(),
                                 modifier = Modifier.fillMaxWidth().height(44.dp),
                                 shape = RoundedCornerShape(8.dp),
                             ) {
@@ -266,10 +274,11 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Categories", fontSize = 13.sp) },
+                        label = { Text("Search", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(top = 4.dp),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
                 }
@@ -325,20 +334,26 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                             value = name,
                             onValueChange = { name = it },
                             label = { Text("Category Name", fontSize = 13.sp) },
+                            singleLine = true,
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth().height(56.dp)
+                            modifier = Modifier.fillMaxWidth()
                         )
                         Button(
                             onClick = {
-                                if (name.isNotBlank()) {
-                                    viewModel.addCategory(name, onSuccess = {
+                                val trimmed = name.trim()
+                                if (trimmed.isNotBlank() && !isSubmitting) {
+                                    isSubmitting = true
+                                    viewModel.addCategory(trimmed, onSuccess = {
+                                        isSubmitting = false
                                         name = ""
                                         message = "Category added successfully"
                                     }, onError = {
+                                        isSubmitting = false
                                         message = "Error: ${it.message}"
                                     })
                                 }
                             },
+                            enabled = !isSubmitting && name.isNotBlank(),
                             modifier = Modifier.fillMaxWidth().height(44.dp),
                             shape = RoundedCornerShape(8.dp)
                         ) {
@@ -359,10 +374,11 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Categories", fontSize = 13.sp) },
+                        label = { Text("Search", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(bottom = 8.dp),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
 
@@ -430,7 +446,9 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(value = false) }
+    var expandedProductId by remember { mutableStateOf<String?>(null) }
     var showBarcodeScanner by remember { mutableStateOf(value = false) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     if (showBarcodeScanner) {
         CameraBarcodeScannerDialog(
@@ -649,8 +667,9 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 value = name,
                                 onValueChange = { name = it },
                                 label = { Text("Product Name", fontSize = 13.sp) },
+                                singleLine = true,
                                 shape = RoundedCornerShape(8.dp),
-                                modifier = Modifier.fillMaxWidth().height(56.dp)
+                                modifier = Modifier.fillMaxWidth()
                             )
 
                             val selectedCategoryName = categories.find { it.id == selectedCategoryId }?.name ?: "Select Category"
@@ -689,6 +708,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     value = purchasePrice,
                                     onValueChange = { purchasePrice = it },
                                     label = { Text("Pur. Price (₹)") },
+                                    singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.weight(1f)
@@ -697,6 +717,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     value = salePrice,
                                     onValueChange = { salePrice = it },
                                     label = { Text("Sale Price (₹)") },
+                                    singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.weight(1f)
@@ -735,6 +756,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 value = minStockLevel,
                                 onValueChange = { minStockLevel = it },
                                 label = { Text("Min Stock Level (Alerts)") },
+                                singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
@@ -772,13 +794,16 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                             Button(
                                 onClick = {
-                                    if (name.isBlank()) {
+                                    val trimmed = name.trim()
+                                    if (trimmed.isBlank()) {
                                         android.widget.Toast.makeText(context, "Please enter Product Name", android.widget.Toast.LENGTH_SHORT).show()
-                                    } else {
+                                    } else if (!isSubmitting) {
+                                        isSubmitting = true
                                         val purVal = ((purchasePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                         val saleVal = ((salePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                         val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
-                                        viewModel.addProduct(name, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
+                                        viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
+                                            isSubmitting = false
                                             name = ""
                                             purchasePrice = ""
                                             salePrice = ""
@@ -787,11 +812,13 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                             message = "Product added successfully"
                                             android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                         }, onError = {
+                                            isSubmitting = false
                                             message = "Error: ${it.message}"
                                             android.widget.Toast.makeText(context, "Error: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
                                         })
                                     }
                                 },
+                                enabled = !isSubmitting && name.isNotBlank(),
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -813,10 +840,11 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Products", fontSize = 13.sp) },
+                        label = { Text("Search", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(top = 4.dp),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
                 }
@@ -842,26 +870,75 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         val purText = Money(product.purchasePriceMinorUnits).toString()
                         val saleText = Money(product.salePriceMinorUnits).toString()
                         val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Piece"
+                        val isExpanded = expandedProductId == product.id
                         Card(
-                            modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                            onClick = { expandedProductId = if (isExpanded) null else product.id },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .animateContentSize()
+                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
                             shape = RoundedCornerShape(12.dp),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                         ) {
-                            Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
-                                    Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
-                                    Text("Stock: $curStock $unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+                                        Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
+                                    }
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(saleText, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                                        Text("Stock: $curStock $unitLabel", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = if (curStock.toDouble() <= product.minStockLevel) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
                                 }
-                                Row(verticalAlignment = Alignment.CenterVertically) {
-                                    IconButton(onClick = { adjustingStockProduct = product }) {
-                                        Icon(Icons.Default.Tune, contentDescription = "Adjust Stock", tint = MaterialTheme.colorScheme.secondary)
+
+                                if (isExpanded) {
+                                    HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), modifier = Modifier.padding(vertical = 2.dp))
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text("Purchase: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                        val margin = if (product.salePriceMinorUnits > 0L) {
+                                            ((product.salePriceMinorUnits - product.purchasePriceMinorUnits).toDouble() / product.salePriceMinorUnits * 100).toInt()
+                                        } else 0
+                                        Text("Margin: $margin%", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF059669))
                                     }
-                                    IconButton(onClick = { editingProduct = product }) {
-                                        Icon(Icons.Default.Edit, contentDescription = "Edit Product", tint = MaterialTheme.colorScheme.primary)
+
+                                    if (!product.barcode.isNullOrBlank()) {
+                                        Text("Barcode: ${product.barcode}", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                     }
-                                    IconButton(onClick = { deletingProduct = product }) {
-                                        Icon(Icons.Default.Delete, contentDescription = "Delete Product", tint = MaterialTheme.colorScheme.error)
+
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                                        horizontalArrangement = Arrangement.End,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        FilledTonalIconButton(
+                                            onClick = { adjustingStockProduct = product },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(Icons.Default.Tune, contentDescription = "Adjust Stock", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(18.dp))
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        FilledTonalIconButton(
+                                            onClick = { editingProduct = product },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(Icons.Default.Edit, contentDescription = "Edit Product", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+                                        }
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        FilledTonalIconButton(
+                                            onClick = { deletingProduct = product },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(Icons.Default.Delete, contentDescription = "Delete Product", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                        }
                                     }
                                 }
                             }
@@ -925,8 +1002,9 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             value = name,
                             onValueChange = { name = it },
                             label = { Text("Product Name", fontSize = 13.sp) },
+                            singleLine = true,
                             shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier.fillMaxWidth().height(56.dp)
+                            modifier = Modifier.fillMaxWidth()
                         )
 
                         val selectedCategoryName = categories.find { it.id == selectedCategoryId }?.name ?: "Select Category"
@@ -964,6 +1042,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             value = purchasePrice,
                             onValueChange = { purchasePrice = it },
                             label = { Text("Purchase Price (₹)") },
+                            singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth(),
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
@@ -973,6 +1052,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 value = salePrice,
                                 onValueChange = { salePrice = it },
                                 label = { Text("Sale Price (₹)") },
+                                singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
@@ -982,6 +1062,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 value = barcode,
                                 onValueChange = { barcode = it },
                                 label = { Text("Barcode / EAN (Optional)") },
+                                singleLine = true,
                                 trailingIcon = {
                                     IconButton(onClick = { showBarcodeScanner = true }) {
                                         Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = MaterialTheme.colorScheme.primary)
@@ -995,6 +1076,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 value = minStockLevel,
                                 onValueChange = { minStockLevel = it },
                                 label = { Text("Min Stock Level (Alerts)") },
+                                singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth(),
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
@@ -1032,13 +1114,16 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                         Button(
                             onClick = {
-                                if (name.isBlank()) {
+                                val trimmed = name.trim()
+                                if (trimmed.isBlank()) {
                                     message = "Product name cannot be empty"
-                                } else {
+                                } else if (!isSubmitting) {
+                                    isSubmitting = true
                                     val purVal = ((purchasePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                     val saleVal = ((salePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                     val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
-                                    viewModel.addProduct(name, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
+                                    viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
+                                        isSubmitting = false
                                         name = ""
                                         purchasePrice = ""
                                         salePrice = ""
@@ -1048,11 +1133,13 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         message = "Product added successfully"
                                         android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                     }, onError = {
+                                        isSubmitting = false
                                         message = "Error: ${it.message}"
                                         android.widget.Toast.makeText(context, "Error: ${it.message}", android.widget.Toast.LENGTH_LONG).show()
                                     })
                                 }
                             },
+                            enabled = !isSubmitting && name.isNotBlank(),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -1074,10 +1161,11 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Products", fontSize = 13.sp) },
+                        label = { Text("Search", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(bottom = 12.dp),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
 
@@ -1149,6 +1237,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var selectedCustomerForCredit by remember { mutableStateOf<CustomerEntity?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     var editingCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
     var deletingCustomer by remember { mutableStateOf<CustomerEntity?>(null) }
@@ -1214,6 +1303,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                 value = name,
                                 onValueChange = { name = it },
                                 label = { Text("Customer Name") },
+                                singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -1221,6 +1311,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                 value = phone,
                                 onValueChange = { phone = it },
                                 label = { Text("Phone Number") },
+                                singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
@@ -1229,6 +1320,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                 value = address,
                                 onValueChange = { address = it },
                                 label = { Text("Address (Optional)") },
+                                singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -1236,20 +1328,24 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                 value = initialDebtText,
                                 onValueChange = { initialDebtText = it },
                                 label = { Text("Opening Debt / Balance (₹)") },
+                                singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Button(
                                 onClick = {
-                                    if (name.isNotBlank()) {
+                                    val trimmed = name.trim()
+                                    if (trimmed.isNotBlank() && !isSubmitting) {
+                                        isSubmitting = true
                                         val initialDebtVal = ((initialDebtText.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                         viewModel.addCustomer(
-                                            name = name,
+                                            name = trimmed,
                                             phone = phone.trim().takeIf { it.isNotBlank() },
                                             address = address.trim().takeIf { it.isNotBlank() },
                                             initialDebtMinorUnits = initialDebtVal,
                                             onSuccess = {
+                                                isSubmitting = false
                                                 name = ""
                                                 phone = ""
                                                 address = ""
@@ -1257,11 +1353,13 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                                 message = "Customer added successfully"
                                             },
                                             onError = {
+                                                isSubmitting = false
                                                 message = "Error: ${it.message}"
                                             }
                                         )
                                     }
                                 },
+                                enabled = !isSubmitting && name.isNotBlank(),
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -1283,10 +1381,11 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Customers", fontSize = 13.sp) },
+                        label = { Text("Search", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(top = 8.dp),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
                 }
@@ -1377,6 +1476,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             value = name,
                             onValueChange = { name = it },
                             label = { Text("Customer Name") },
+                            singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -1384,6 +1484,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             value = phone,
                             onValueChange = { phone = it },
                             label = { Text("Phone Number") },
+                            singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -1392,6 +1493,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             value = address,
                             onValueChange = { address = it },
                             label = { Text("Address (Optional)") },
+                            singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -1399,20 +1501,24 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             value = initialDebtText,
                             onValueChange = { initialDebtText = it },
                             label = { Text("Opening Debt / Balance (₹)") },
+                            singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                         Button(
                             onClick = {
-                                if (name.isNotBlank()) {
+                                val trimmed = name.trim()
+                                if (trimmed.isNotBlank() && !isSubmitting) {
+                                    isSubmitting = true
                                     val initialDebtVal = ((initialDebtText.toDoubleOrNull() ?: 0.0) * 100).toLong()
                                     viewModel.addCustomer(
-                                        name = name,
+                                        name = trimmed,
                                         phone = phone.trim().takeIf { it.isNotBlank() },
                                         address = address.trim().takeIf { it.isNotBlank() },
                                         initialDebtMinorUnits = initialDebtVal,
                                         onSuccess = {
+                                            isSubmitting = false
                                             name = ""
                                             phone = ""
                                             address = ""
@@ -1420,11 +1526,13 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                             message = "Customer added successfully"
                                         },
                                         onError = {
+                                            isSubmitting = false
                                             message = "Error: ${it.message}"
                                         }
                                     )
                                 }
                             },
+                            enabled = !isSubmitting && name.isNotBlank(),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -1445,10 +1553,11 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Customers", fontSize = 13.sp) },
+                        label = { Text("Search", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(bottom = 12.dp),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
 
@@ -1542,6 +1651,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var selectedSupplierForCredit by remember { mutableStateOf<SupplierEntity?>(null) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     var editingSupplier by remember { mutableStateOf<SupplierEntity?>(null) }
     var deletingSupplier by remember { mutableStateOf<SupplierEntity?>(null) }
@@ -1607,6 +1717,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                 value = name,
                                 onValueChange = { name = it },
                                 label = { Text("Supplier Name") },
+                                singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -1614,6 +1725,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                 value = phone,
                                 onValueChange = { phone = it },
                                 label = { Text("Phone Number") },
+                                singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
@@ -1622,28 +1734,34 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                                 value = address,
                                 onValueChange = { address = it },
                                 label = { Text("Address") },
+                                singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             Button(
                                 onClick = {
-                                    if (name.isNotBlank()) {
+                                    val trimmed = name.trim()
+                                    if (trimmed.isNotBlank() && !isSubmitting) {
+                                        isSubmitting = true
                                         viewModel.addSupplier(
-                                            name = name,
+                                            name = trimmed,
                                             phone = phone.trim().takeIf { it.isNotBlank() },
                                             address = address.trim().takeIf { it.isNotBlank() },
                                             onSuccess = {
+                                                isSubmitting = false
                                                 name = ""
                                                 phone = ""
                                                 address = ""
                                                 message = "Supplier added successfully"
                                             },
                                             onError = {
+                                                isSubmitting = false
                                                 message = "Error: ${it.message}"
                                             }
                                         )
                                     }
                                 },
+                                enabled = !isSubmitting && name.isNotBlank(),
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -1665,10 +1783,11 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Suppliers", fontSize = 13.sp) },
+                        label = { Text("Search", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(top = 8.dp),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
                 }
@@ -1763,6 +1882,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             value = name,
                             onValueChange = { name = it },
                             label = { Text("Supplier Name") },
+                            singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -1770,6 +1890,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             value = phone,
                             onValueChange = { phone = it },
                             label = { Text("Phone Number") },
+                            singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
@@ -1778,28 +1899,34 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             value = address,
                             onValueChange = { address = it },
                             label = { Text("Address") },
+                            singleLine = true,
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                         Button(
                             onClick = {
-                                if (name.isNotBlank()) {
+                                val trimmed = name.trim()
+                                if (trimmed.isNotBlank() && !isSubmitting) {
+                                    isSubmitting = true
                                     viewModel.addSupplier(
-                                        name = name,
+                                        name = trimmed,
                                         phone = phone.trim().takeIf { it.isNotBlank() },
                                         address = address.trim().takeIf { it.isNotBlank() },
                                         onSuccess = {
+                                            isSubmitting = false
                                             name = ""
                                             phone = ""
                                             address = ""
                                             message = "Supplier added successfully"
                                         },
                                         onError = {
+                                            isSubmitting = false
                                             message = "Error: ${it.message}"
                                         }
                                     )
                                 }
                             },
+                            enabled = !isSubmitting && name.isNotBlank(),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -1820,10 +1947,11 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             search = it
                             viewModel.updateSearch(it)
                         },
-                        label = { Text("Search Suppliers", fontSize = 13.sp) },
+                        label = { Text("Search", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(20.dp)) },
                         shape = RoundedCornerShape(8.dp),
-                        modifier = Modifier.fillMaxWidth().height(52.dp).padding(bottom = 12.dp),
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
                         textStyle = androidx.compose.ui.text.TextStyle(fontSize = 14.sp)
                     )
 
@@ -1918,6 +2046,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
     var description by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     var editingExpense by remember { mutableStateOf<ExpenseEntity?>(null) }
     var deletingExpense by remember { mutableStateOf<ExpenseEntity?>(null) }
@@ -1988,20 +2117,25 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                             )
                             Button(
                                 onClick = {
+                                    val trimmed = description.trim()
                                     val amountDouble = amountText.toDoubleOrNull()
-                                    if (description.isNotBlank() && amountDouble != null) {
+                                    if (trimmed.isNotBlank() && amountDouble != null && !isSubmitting) {
+                                        isSubmitting = true
                                         val minorUnits = (amountDouble * 100).toLong()
-                                        viewModel.addExpense(minorUnits, description, onSuccess = {
+                                        viewModel.addExpense(minorUnits, trimmed, onSuccess = {
+                                            isSubmitting = false
                                             description = ""
                                             amountText = ""
                                             message = "Expense recorded successfully"
                                         }, onError = {
+                                            isSubmitting = false
                                             message = "Error: ${it.message}"
                                         })
-                                    } else {
+                                    } else if (!isSubmitting) {
                                         message = "Invalid amount or description"
                                     }
                                 },
+                                enabled = !isSubmitting && description.isNotBlank(),
                                 modifier = Modifier.fillMaxWidth(),
                                 shape = RoundedCornerShape(12.dp)
                             ) {
@@ -2091,20 +2225,25 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                         )
                         Button(
                             onClick = {
+                                val trimmed = description.trim()
                                 val amountDouble = amountText.toDoubleOrNull()
-                                if (description.isNotBlank() && amountDouble != null) {
+                                if (trimmed.isNotBlank() && amountDouble != null && !isSubmitting) {
+                                    isSubmitting = true
                                     val minorUnits = (amountDouble * 100).toLong()
-                                    viewModel.addExpense(minorUnits, description, onSuccess = {
+                                    viewModel.addExpense(minorUnits, trimmed, onSuccess = {
+                                        isSubmitting = false
                                         description = ""
                                         amountText = ""
                                         message = "Expense recorded successfully"
                                     }, onError = {
+                                        isSubmitting = false
                                         message = "Error: ${it.message}"
                                     })
-                                } else {
+                                } else if (!isSubmitting) {
                                     message = "Invalid amount or description"
                                 }
                             },
+                            enabled = !isSubmitting && description.isNotBlank(),
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -2242,6 +2381,7 @@ fun CustomerCreditDetailDialog(
     
     var auditReportText by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf("") }
+    var isActionSubmitting by remember { mutableStateOf(false) }
 
     if (auditReportText != null) {
         AuditReportDialog(
@@ -2252,7 +2392,9 @@ fun CustomerCreditDetailDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isActionSubmitting) onDismiss()
+        },
         title = {
             Column {
                 Text(customer.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
@@ -2313,32 +2455,44 @@ fun CustomerCreditDetailDialog(
                                 onValueChange = { amountText = it },
                                 label = { Text("Amount") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             OutlinedTextField(
                                 value = reasonText,
                                 onValueChange = { reasonText = it },
                                 label = { Text("Reason / Description") },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(onClick = { showAddCredit = false; amountText = ""; reasonText = "" }) { Text("Cancel") }
+                                TextButton(
+                                    enabled = !isActionSubmitting,
+                                    onClick = { showAddCredit = false; amountText = ""; reasonText = "" }
+                                ) { Text("Cancel") }
                                 Spacer(modifier = Modifier.weight(1f))
-                                Button(onClick = {
-                                    val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
-                                    if (amtMinor != null && amtMinor > 0 && reasonText.isNotBlank()) {
-                                        viewModel.addCustomerCredit(customer.id, amtMinor, reasonText, onSuccess = {
-                                            showAddCredit = false
-                                            amountText = ""
-                                            reasonText = ""
-                                            errorMessage = ""
-                                        }, onError = {
-                                            errorMessage = "Error: ${it.message}"
-                                        })
-                                    } else {
-                                        errorMessage = "Please enter valid amount and description"
+                                Button(
+                                    enabled = !isActionSubmitting,
+                                    onClick = {
+                                        if (isActionSubmitting) return@Button
+                                        val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        if (amtMinor != null && amtMinor > 0 && reasonText.isNotBlank()) {
+                                            isActionSubmitting = true
+                                            viewModel.addCustomerCredit(customer.id, amtMinor, reasonText, onSuccess = {
+                                                isActionSubmitting = false
+                                                showAddCredit = false
+                                                amountText = ""
+                                                reasonText = ""
+                                                errorMessage = ""
+                                            }, onError = {
+                                                isActionSubmitting = false
+                                                errorMessage = "Error: ${it.message}"
+                                            })
+                                        } else {
+                                            errorMessage = "Please enter valid amount and description"
+                                        }
                                     }
-                                }) { Text("Record") }
+                                ) { Text(if (isActionSubmitting) "Recording..." else "Record") }
                             }
                         }
                     }
@@ -2353,33 +2507,45 @@ fun CustomerCreditDetailDialog(
                                 onValueChange = { amountText = it },
                                 label = { Text("Payment Amount") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             OutlinedTextField(
                                 value = reasonText,
                                 onValueChange = { reasonText = it },
                                 label = { Text("Notes (e.g. Receipt No, Cash/UPI)") },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(onClick = { showReceivePayment = false; amountText = ""; reasonText = "" }) { Text("Cancel") }
+                                TextButton(
+                                    enabled = !isActionSubmitting,
+                                    onClick = { showReceivePayment = false; amountText = ""; reasonText = "" }
+                                ) { Text("Cancel") }
                                 Spacer(modifier = Modifier.weight(1f))
-                                Button(onClick = {
-                                    val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
-                                    if (amtMinor != null && amtMinor > 0) {
-                                        val reasonString = "Payment Received" + if (reasonText.isNotBlank()) " - $reasonText" else ""
-                                        viewModel.addCustomerCredit(customer.id, -amtMinor, reasonString, onSuccess = {
-                                            showReceivePayment = false
-                                            amountText = ""
-                                            reasonText = ""
-                                            errorMessage = ""
-                                        }, onError = {
-                                            errorMessage = "Error: ${it.message}"
-                                        })
-                                    } else {
-                                        errorMessage = "Please enter valid payment amount"
+                                Button(
+                                    enabled = !isActionSubmitting,
+                                    onClick = {
+                                        if (isActionSubmitting) return@Button
+                                        val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        if (amtMinor != null && amtMinor > 0) {
+                                            isActionSubmitting = true
+                                            val reasonString = "Payment Received" + if (reasonText.isNotBlank()) " - $reasonText" else ""
+                                            viewModel.addCustomerCredit(customer.id, -amtMinor, reasonString, onSuccess = {
+                                                isActionSubmitting = false
+                                                showReceivePayment = false
+                                                amountText = ""
+                                                reasonText = ""
+                                                errorMessage = ""
+                                            }, onError = {
+                                                isActionSubmitting = false
+                                                errorMessage = "Error: ${it.message}"
+                                            })
+                                        } else {
+                                            errorMessage = "Please enter valid payment amount"
+                                        }
                                     }
-                                }) { Text("Record Settle") }
+                                ) { Text(if (isActionSubmitting) "Recording..." else "Record Settle") }
                             }
                         }
                     }
@@ -2394,25 +2560,36 @@ fun CustomerCreditDetailDialog(
                                 onValueChange = { limitText = it },
                                 label = { Text("Max Credit Limit") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(onClick = { showSetLimit = false; limitText = "" }) { Text("Cancel") }
+                                TextButton(
+                                    enabled = !isActionSubmitting,
+                                    onClick = { showSetLimit = false; limitText = "" }
+                                ) { Text("Cancel") }
                                 Spacer(modifier = Modifier.weight(1f))
-                                Button(onClick = {
-                                    val limitMinor = limitText.toDoubleOrNull()?.let { (it * 100).toLong() }
-                                    if (limitMinor != null && limitMinor >= 0) {
-                                        viewModel.updateCustomerCreditLimit(customer.id, limitMinor, onSuccess = {
-                                            showSetLimit = false
-                                            limitText = ""
-                                            errorMessage = ""
-                                        }, onError = {
-                                            errorMessage = "Error: ${it.message}"
-                                        })
-                                    } else {
-                                        errorMessage = "Please enter a valid credit limit"
+                                Button(
+                                    enabled = !isActionSubmitting,
+                                    onClick = {
+                                        if (isActionSubmitting) return@Button
+                                        val limitMinor = limitText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        if (limitMinor != null && limitMinor >= 0) {
+                                            isActionSubmitting = true
+                                            viewModel.updateCustomerCreditLimit(customer.id, limitMinor, onSuccess = {
+                                                isActionSubmitting = false
+                                                showSetLimit = false
+                                                limitText = ""
+                                                errorMessage = ""
+                                            }, onError = {
+                                                isActionSubmitting = false
+                                                errorMessage = "Error: ${it.message}"
+                                            })
+                                        } else {
+                                            errorMessage = "Please enter a valid credit limit"
+                                        }
                                     }
-                                }) { Text("Save Limit") }
+                                ) { Text(if (isActionSubmitting) "Saving..." else "Save Limit") }
                             }
                         }
                     }
@@ -2538,6 +2715,7 @@ fun SupplierCreditDetailDialog(
     
     var auditReportText by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf("") }
+    var isActionSubmitting by remember { mutableStateOf(false) }
 
     if (auditReportText != null) {
         AuditReportDialog(
@@ -2548,7 +2726,9 @@ fun SupplierCreditDetailDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isActionSubmitting) onDismiss()
+        },
         title = {
             Column {
                 Text(supplier.name, fontWeight = FontWeight.Bold, fontSize = 20.sp)
@@ -2603,42 +2783,55 @@ fun SupplierCreditDetailDialog(
                                 onValueChange = { amountText = it },
                                 label = { Text("Credit Amount") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             OutlinedTextField(
                                 value = termsText,
                                 onValueChange = { termsText = it },
                                 label = { Text("Terms (e.g. Net 30, Cash on Del)") },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             OutlinedTextField(
                                 value = repaymentDaysText,
                                 onValueChange = { repaymentDaysText = it },
                                 label = { Text("Repayment Due Days") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(onClick = { showAddCredit = false; amountText = ""; termsText = "Net 30"; repaymentDaysText = "30" }) { Text("Cancel") }
+                                TextButton(
+                                    enabled = !isActionSubmitting,
+                                    onClick = { showAddCredit = false; amountText = ""; termsText = "Net 30"; repaymentDaysText = "30" }
+                                ) { Text("Cancel") }
                                 Spacer(modifier = Modifier.weight(1f))
-                                Button(onClick = {
-                                    val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
-                                    val days = repaymentDaysText.toLongOrNull() ?: 30L
-                                    if (amtMinor != null && amtMinor > 0 && termsText.isNotBlank()) {
-                                        val dueEpoch = System.currentTimeMillis() + (days * 24 * 60 * 60 * 1000L)
-                                        viewModel.addSupplierCredit(supplier.id, amtMinor, termsText, dueEpoch, onSuccess = {
-                                            showAddCredit = false
-                                            amountText = ""
-                                            termsText = "Net 30"
-                                            repaymentDaysText = "30"
-                                            errorMessage = ""
-                                        }, onError = {
-                                            errorMessage = "Error: ${it.message}"
-                                        })
-                                    } else {
-                                        errorMessage = "Please enter valid amount and terms"
+                                Button(
+                                    enabled = !isActionSubmitting,
+                                    onClick = {
+                                        if (isActionSubmitting) return@Button
+                                        val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        val days = repaymentDaysText.toLongOrNull() ?: 30L
+                                        if (amtMinor != null && amtMinor > 0 && termsText.isNotBlank()) {
+                                            isActionSubmitting = true
+                                            val dueEpoch = System.currentTimeMillis() + (days * 24 * 60 * 60 * 1000L)
+                                            viewModel.addSupplierCredit(supplier.id, amtMinor, termsText, dueEpoch, onSuccess = {
+                                                isActionSubmitting = false
+                                                showAddCredit = false
+                                                amountText = ""
+                                                termsText = "Net 30"
+                                                repaymentDaysText = "30"
+                                                errorMessage = ""
+                                            }, onError = {
+                                                isActionSubmitting = false
+                                                errorMessage = "Error: ${it.message}"
+                                            })
+                                        } else {
+                                            errorMessage = "Please enter valid amount and terms"
+                                        }
                                     }
-                                }) { Text("Record") }
+                                ) { Text(if (isActionSubmitting) "Recording..." else "Record") }
                             }
                         }
                     }
@@ -2653,33 +2846,45 @@ fun SupplierCreditDetailDialog(
                                 onValueChange = { amountText = it },
                                 label = { Text("Payment Amount") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             OutlinedTextField(
                                 value = termsText,
                                 onValueChange = { termsText = it },
                                 label = { Text("Payment Reference / Notes") },
-                                modifier = Modifier.fillMaxWidth()
+                                modifier = Modifier.fillMaxWidth(),
+                                enabled = !isActionSubmitting
                             )
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                TextButton(onClick = { showMakePayment = false; amountText = ""; termsText = "" }) { Text("Cancel") }
+                                TextButton(
+                                    enabled = !isActionSubmitting,
+                                    onClick = { showMakePayment = false; amountText = ""; termsText = "" }
+                                ) { Text("Cancel") }
                                 Spacer(modifier = Modifier.weight(1f))
-                                Button(onClick = {
-                                    val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
-                                    if (amtMinor != null && amtMinor > 0) {
-                                        val termString = "Repayment Paid" + if (termsText.isNotBlank()) " - $termsText" else ""
-                                        viewModel.addSupplierCredit(supplier.id, -amtMinor, termString, 0L, onSuccess = {
-                                            showMakePayment = false
-                                            amountText = ""
-                                            termsText = ""
-                                            errorMessage = ""
-                                        }, onError = {
-                                            errorMessage = "Error: ${it.message}"
-                                        })
-                                    } else {
-                                        errorMessage = "Please enter valid payment amount"
+                                Button(
+                                    enabled = !isActionSubmitting,
+                                    onClick = {
+                                        if (isActionSubmitting) return@Button
+                                        val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        if (amtMinor != null && amtMinor > 0) {
+                                            isActionSubmitting = true
+                                            val termString = "Repayment Paid" + if (termsText.isNotBlank()) " - $termsText" else ""
+                                            viewModel.addSupplierCredit(supplier.id, -amtMinor, termString, 0L, onSuccess = {
+                                                isActionSubmitting = false
+                                                showMakePayment = false
+                                                amountText = ""
+                                                termsText = ""
+                                                errorMessage = ""
+                                            }, onError = {
+                                                isActionSubmitting = false
+                                                errorMessage = "Error: ${it.message}"
+                                            })
+                                        } else {
+                                            errorMessage = "Please enter valid payment amount"
+                                        }
                                     }
-                                }) { Text("Record Payment") }
+                                ) { Text(if (isActionSubmitting) "Recording..." else "Record Payment") }
                             }
                         }
                     }
@@ -2870,7 +3075,7 @@ fun CreditLedgerTabScreen(customerVm: CustomerViewModel, supplierVm: SupplierVie
                     OutlinedTextField(
                         value = search,
                         onValueChange = { search = it },
-                        label = { Text("Search by name", fontSize = 13.sp) },
+                        label = { Text("Search", fontSize = 13.sp) },
                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                         shape = RoundedCornerShape(12.dp),
                         modifier = Modifier.weight(1f)
@@ -3126,6 +3331,7 @@ fun ProductEditDialog(
     var catExpanded by remember { mutableStateOf(false) }
     var unitExpanded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
@@ -3142,7 +3348,9 @@ fun ProductEditDialog(
     }
     
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = { Text("Edit Product", fontWeight = FontWeight.Bold) },
         text = {
             Column(
@@ -3154,12 +3362,13 @@ fun ProductEditDialog(
                     onValueChange = { name = it },
                     label = { Text("Product Name") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 
                 ExposedDropdownMenuBox(
                     expanded = catExpanded,
-                    onExpandedChange = { catExpanded = it }
+                    onExpandedChange = { if (!isSubmitting) catExpanded = it }
                 ) {
                     val currentCatName = categories.find { it.id == selectedCategoryId }?.name ?: "Select Category"
                     OutlinedTextField(
@@ -3168,8 +3377,9 @@ fun ProductEditDialog(
                         readOnly = true,
                         label = { Text("Category") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = catExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = !isSubmitting),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !isSubmitting
                     )
                     ExposedDropdownMenu(
                         expanded = catExpanded,
@@ -3193,7 +3403,8 @@ fun ProductEditDialog(
                     label = { Text("Purchase Price") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 
                 OutlinedTextField(
@@ -3202,7 +3413,8 @@ fun ProductEditDialog(
                     label = { Text("Sale Price") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
 
                 OutlinedTextField(
@@ -3210,12 +3422,16 @@ fun ProductEditDialog(
                     onValueChange = { barcode = it },
                     label = { Text("Barcode / EAN (Optional)") },
                     trailingIcon = {
-                        IconButton(onClick = { showBarcodeScanner = true }) {
+                        IconButton(
+                            enabled = !isSubmitting,
+                            onClick = { showBarcodeScanner = true }
+                        ) {
                             Icon(Icons.Default.QrCodeScanner, contentDescription = "Scan Barcode", tint = MaterialTheme.colorScheme.primary)
                         }
                     },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
 
                 OutlinedTextField(
@@ -3224,12 +3440,13 @@ fun ProductEditDialog(
                     label = { Text("Min Stock Level (Alerts)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 
                 ExposedDropdownMenuBox(
                     expanded = unitExpanded,
-                    onExpandedChange = { unitExpanded = it }
+                    onExpandedChange = { if (!isSubmitting) unitExpanded = it }
                 ) {
                     OutlinedTextField(
                         value = unitType,
@@ -3237,8 +3454,9 @@ fun ProductEditDialog(
                         readOnly = true,
                         label = { Text("Unit Type") },
                         trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = unitExpanded) },
-                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = true),
-                        shape = RoundedCornerShape(12.dp)
+                        modifier = Modifier.fillMaxWidth().menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = !isSubmitting),
+                        shape = RoundedCornerShape(12.dp),
+                        enabled = !isSubmitting
                     )
                     ExposedDropdownMenu(
                         expanded = unitExpanded,
@@ -3263,13 +3481,16 @@ fun ProductEditDialog(
         },
         confirmButton = {
             Button(
+                enabled = !isSubmitting,
                 onClick = {
+                    if (isSubmitting) return@Button
                     val pPrice = purchasePrice.toDoubleOrNull()?.let { (it * 100).toLong() }
                     val sPrice = salePrice.toDoubleOrNull()?.let { (it * 100).toLong() }
                     val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
                     if (name.isBlank() || selectedCategoryId.isBlank() || pPrice == null || sPrice == null) {
                         error = "Please fill in all fields correctly"
                     } else {
+                        isSubmitting = true
                         viewModel.updateProduct(
                             product = product,
                             newName = name,
@@ -3280,10 +3501,12 @@ fun ProductEditDialog(
                             newBarcode = barcode.ifBlank { null },
                             newMinStockLevel = minStockVal,
                             onSuccess = {
+                                isSubmitting = false
                                 android.widget.Toast.makeText(context, "Product updated successfully", android.widget.Toast.LENGTH_SHORT).show()
                                 onDismiss()
                             },
                             onError = {
+                                isSubmitting = false
                                 error = "Error: ${it.message}"
                             }
                         )
@@ -3291,11 +3514,14 @@ fun ProductEditDialog(
                 },
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Update")
+                Text(if (isSubmitting) "Updating..." else "Update")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }
@@ -3312,10 +3538,13 @@ fun CustomerEditDialog(
     var phone by remember { mutableStateOf(customer.phone ?: "") }
     var address by remember { mutableStateOf(customer.address ?: "") }
     var error by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = { Text("Edit Customer", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3324,7 +3553,8 @@ fun CustomerEditDialog(
                     onValueChange = { name = it },
                     label = { Text("Customer Name") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 OutlinedTextField(
                     value = phone,
@@ -3332,14 +3562,16 @@ fun CustomerEditDialog(
                     label = { Text("Phone Number") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 OutlinedTextField(
                     value = address,
                     onValueChange = { address = it },
                     label = { Text("Address") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 if (error.isNotBlank()) {
                     Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
@@ -3348,20 +3580,25 @@ fun CustomerEditDialog(
         },
         confirmButton = {
             Button(
+                enabled = !isSubmitting,
                 onClick = {
+                    if (isSubmitting) return@Button
                     if (name.isBlank()) {
                         error = "Name cannot be empty"
                     } else {
+                        isSubmitting = true
                         viewModel.updateCustomer(
                             customer = customer,
                             newName = name,
                             newPhone = phone.takeIf { it.isNotBlank() },
                             newAddress = address.takeIf { it.isNotBlank() },
                             onSuccess = {
+                                isSubmitting = false
                                 android.widget.Toast.makeText(context, "Customer updated successfully", android.widget.Toast.LENGTH_SHORT).show()
                                 onDismiss()
                             },
                             onError = {
+                                isSubmitting = false
                                 error = "Error: ${it.message}"
                             }
                         )
@@ -3369,11 +3606,14 @@ fun CustomerEditDialog(
                 },
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Update")
+                Text(if (isSubmitting) "Updating..." else "Update")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }
@@ -3390,10 +3630,13 @@ fun SupplierEditDialog(
     var phone by remember { mutableStateOf(supplier.phone ?: "") }
     var address by remember { mutableStateOf(supplier.address ?: "") }
     var error by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = { Text("Edit Supplier", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3402,7 +3645,8 @@ fun SupplierEditDialog(
                     onValueChange = { name = it },
                     label = { Text("Supplier Name") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 OutlinedTextField(
                     value = phone,
@@ -3410,14 +3654,16 @@ fun SupplierEditDialog(
                     label = { Text("Phone Number") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 OutlinedTextField(
                     value = address,
                     onValueChange = { address = it },
                     label = { Text("Address") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 if (error.isNotBlank()) {
                     Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
@@ -3426,20 +3672,25 @@ fun SupplierEditDialog(
         },
         confirmButton = {
             Button(
+                enabled = !isSubmitting,
                 onClick = {
+                    if (isSubmitting) return@Button
                     if (name.isBlank()) {
                         error = "Name cannot be empty"
                     } else {
+                        isSubmitting = true
                         viewModel.updateSupplier(
                             supplier = supplier,
                             newName = name,
                             newPhone = phone.takeIf { it.isNotBlank() },
                             newAddress = address.takeIf { it.isNotBlank() },
                             onSuccess = {
+                                isSubmitting = false
                                 android.widget.Toast.makeText(context, "Supplier updated successfully", android.widget.Toast.LENGTH_SHORT).show()
                                 onDismiss()
                             },
                             onError = {
+                                isSubmitting = false
                                 error = "Error: ${it.message}"
                             }
                         )
@@ -3447,11 +3698,14 @@ fun SupplierEditDialog(
                 },
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Update")
+                Text(if (isSubmitting) "Updating..." else "Update")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }
@@ -3467,10 +3721,13 @@ fun ExpenseEditDialog(
     var amount by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", expense.amountMinorUnits / 100.0)) }
     var description by remember { mutableStateOf(expense.description) }
     var error by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
     
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = { Text("Edit Expense", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -3480,14 +3737,16 @@ fun ExpenseEditDialog(
                     label = { Text("Amount") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 OutlinedTextField(
                     value = description,
                     onValueChange = { description = it },
                     label = { Text("Description") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
                 if (error.isNotBlank()) {
                     Text(error, color = MaterialTheme.colorScheme.error, fontSize = 12.sp)
@@ -3496,20 +3755,25 @@ fun ExpenseEditDialog(
         },
         confirmButton = {
             Button(
+                enabled = !isSubmitting,
                 onClick = {
+                    if (isSubmitting) return@Button
                     val amt = amount.toDoubleOrNull()?.let { (it * 100).toLong() }
                     if (amt == null || description.isBlank()) {
                         error = "Please fill in all fields correctly"
                     } else {
+                        isSubmitting = true
                         viewModel.updateExpense(
                             expense = expense,
                             newAmountMinorUnits = amt,
                             newDescription = description,
                             onSuccess = {
+                                isSubmitting = false
                                 android.widget.Toast.makeText(context, "Expense updated successfully", android.widget.Toast.LENGTH_SHORT).show()
                                 onDismiss()
                             },
                             onError = {
+                                isSubmitting = false
                                 error = "Error: ${it.message}"
                             }
                         )
@@ -3517,11 +3781,14 @@ fun ExpenseEditDialog(
                 },
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Update")
+                Text(if (isSubmitting) "Updating..." else "Update")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }
@@ -3569,12 +3836,15 @@ fun StockAdjustmentDialog(
     var selectedReason by remember { mutableStateOf("Damaged / Expired") }
     var customReason by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val reasons = listOf("Damaged / Expired", "Count Correction", "Lost / Missing", "Found Extra", "Opening Balance Fix")
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = {
             Column {
                 Text("Adjust Stock - ${product.name}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
@@ -3589,7 +3859,8 @@ fun StockAdjustmentDialog(
                     label = { Text("New Physical Stock Count") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
 
                 Text("Adjustment Reason:", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -3598,8 +3869,9 @@ fun StockAdjustmentDialog(
                     reasons.forEach { r ->
                         FilterChip(
                             selected = selectedReason == r,
-                            onClick = { selectedReason = r },
-                            label = { Text(r, fontSize = 11.sp) }
+                            onClick = { if (!isSubmitting) selectedReason = r },
+                            label = { Text(r, fontSize = 11.sp) },
+                            enabled = !isSubmitting
                         )
                     }
                 }
@@ -3609,7 +3881,8 @@ fun StockAdjustmentDialog(
                     onValueChange = { customReason = it },
                     label = { Text("Note / Comment (Optional)") },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(12.dp),
+                    enabled = !isSubmitting
                 )
 
                 if (error.isNotBlank()) {
@@ -3619,21 +3892,26 @@ fun StockAdjustmentDialog(
         },
         confirmButton = {
             Button(
+                enabled = !isSubmitting,
                 onClick = {
+                    if (isSubmitting) return@Button
                     val newCount = newStockText.toLongOrNull()
                     if (newCount == null || newCount < 0) {
                         error = "Please enter a valid non-negative count"
                     } else {
+                        isSubmitting = true
                         val finalReason = if (customReason.isNotBlank()) "$selectedReason - $customReason" else selectedReason
                         viewModel.adjustStock(
                             product = product,
                             newQuantity = newCount,
                             reason = finalReason,
                             onSuccess = {
+                                isSubmitting = false
                                 android.widget.Toast.makeText(context, "Stock adjusted to $newCount successfully", android.widget.Toast.LENGTH_SHORT).show()
                                 onDismiss()
                             },
                             onError = {
+                                isSubmitting = false
                                 error = "Error: ${it.message}"
                             }
                         )
@@ -3641,171 +3919,17 @@ fun StockAdjustmentDialog(
                 },
                 shape = RoundedCornerShape(8.dp)
             ) {
-                Text("Save Adjustment")
+                Text(if (isSubmitting) "Saving..." else "Save Adjustment")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }
     )
-}
-
-
-@Composable
-fun StaffTabScreen(viewModel: com.kadaikutty.pos.feature.settings.presentation.SettingsViewModel) {
-    val users by viewModel.usersList.collectAsState()
-    val session by viewModel.activeSession.collectAsState()
-    
-    var showAddDialog by remember { mutableStateOf(false) }
-    var showEditDialog by remember { mutableStateOf(false) }
-    var selectedUser by remember { mutableStateOf<com.kadaikutty.pos.core.auth.UserEntity?>(null) }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    
-    if (session?.permissions?.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE) != true) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Text("Access Denied. You do not have permission to manage staff.", color = MaterialTheme.colorScheme.error)
-        }
-        return
-    }
-    
-    if (showAddDialog) {
-        com.kadaikutty.pos.feature.settings.presentation.AddUserDialog(
-            onDismiss = { showAddDialog = false },
-            onCreate = { phone, name, pass, role, perms ->
-                viewModel.createUser(phone, name, pass, role, perms) { success, msg ->
-                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                    if (success) showAddDialog = false
-                }
-            }
-        )
-    }
-
-    if (showEditDialog && selectedUser != null) {
-        com.kadaikutty.pos.feature.settings.presentation.EditUserDialog(
-            user = selectedUser!!,
-            onDismiss = { showEditDialog = false },
-            onSave = { name, role, pass, perms ->
-                viewModel.updateUserCredentials(selectedUser!!.id, name, role, pass, perms) { success, msg ->
-                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                    if (success) showEditDialog = false
-                }
-            },
-            onDelete = {
-                viewModel.deleteUser(selectedUser!!.id) { success, msg ->
-                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
-                    if (success) showEditDialog = false
-                }
-            }
-        )
-    }
-
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (users.isEmpty()) {
-            Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(60.dp))
-                Spacer(modifier = Modifier.height(12.dp))
-                Text("No staff users created yet", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text("Click the + button to add staff and cashiers.", fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        } else {
-            LazyColumn(
-                modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 80.dp, top = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                items(users) { user ->
-                    Card(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .border(
-                                width = 1.dp,
-                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
-                                shape = RoundedCornerShape(12.dp)
-                            )
-                            .clickable {
-                                selectedUser = user
-                                showEditDialog = true
-                            },
-                        shape = RoundedCornerShape(12.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp).fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(12.dp),
-                                    color = when (user.role.uppercase()) {
-                                        "STORE_MANAGER" -> Color(0xFFF5F3FF)
-                                        "ADMIN" -> Color(0xFFFEF3C7)
-                                        else -> Color(0xFFEFF6FF)
-                                    },
-                                    modifier = Modifier.size(44.dp)
-                                ) {
-                                    Box(contentAlignment = Alignment.Center) {
-                                        Icon(
-                                            imageVector = Icons.Default.Person,
-                                            contentDescription = null,
-                                            tint = when (user.role.uppercase()) {
-                                                "STORE_MANAGER" -> Color(0xFF7C3AED)
-                                                "ADMIN" -> Color(0xFFD97706)
-                                                else -> Color(0xFF2563EB)
-                                            },
-                                            modifier = Modifier.size(24.dp)
-                                        )
-                                    }
-                                }
-                                Column {
-                                    Text(
-                                        text = user.displayName.ifBlank { "User ${user.username}" },
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 15.sp,
-                                        color = MaterialTheme.colorScheme.onSurface
-                                    )
-                                    Text(
-                                        text = "+91 ${user.username}",
-                                        fontSize = 12.sp,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(20.dp),
-                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                            ) {
-                                Text(
-                                    text = user.role.replace("_", " "),
-                                    fontSize = 11.sp,
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        FloatingActionButton(
-            onClick = { showAddDialog = true },
-            modifier = Modifier.align(Alignment.BottomEnd).padding(16.dp),
-            containerColor = MaterialTheme.colorScheme.primary
-        ) {
-            Icon(Icons.Default.Add, contentDescription = "Add Staff", tint = MaterialTheme.colorScheme.onPrimary)
-        }
-    }
 }
 

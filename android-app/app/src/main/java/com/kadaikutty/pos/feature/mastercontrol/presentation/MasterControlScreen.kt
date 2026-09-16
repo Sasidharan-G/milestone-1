@@ -22,7 +22,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -303,7 +302,7 @@ fun MasterControlScreen(
                 OutlinedTextField(
                     value = state.searchQuery,
                     onValueChange = { viewModel.updateSearchQuery(it) },
-                    placeholder = { Text("Search by Shop Name, Owner, Mobile (+91)...", color = Color(0xFF64748B), fontSize = 13.sp) },
+                    placeholder = { Text("Search", color = Color(0xFF64748B), fontSize = 13.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8)) },
                     trailingIcon = {
                         if (state.searchQuery.isNotBlank()) {
@@ -418,7 +417,7 @@ fun MasterControlScreen(
                 OutlinedTextField(
                     value = state.searchQuery,
                     onValueChange = { viewModel.updateSearchQuery(it) },
-                    placeholder = { Text("Search Staff by Name, Mobile, Shop...", color = Color(0xFF64748B), fontSize = 13.sp) },
+                    placeholder = { Text("Search", color = Color(0xFF64748B), fontSize = 13.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF94A3B8)) },
                     trailingIcon = {
                         if (state.searchQuery.isNotBlank()) {
@@ -671,7 +670,7 @@ fun MasterControlScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Are you sure you want to completely wipe ${shop.businessName} (+91 ${shop.ownerMobile}) from Firebase licenses and companies?", fontSize = 13.sp)
+                    Text("Are you sure you want to completely wipe ${shop.businessName} (+91 ${shop.ownerMobile}) from cloud licenses and companies?", fontSize = 13.sp)
                     Text("This record will be permanently deleted immediately.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -705,7 +704,7 @@ fun MasterControlScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Are you sure you want to completely wipe staff '${staff.displayName}' (+91 ${staff.username}) belonging to '${staff.businessName}' from Firebase Cloud?", fontSize = 13.sp)
+                    Text("Are you sure you want to completely wipe staff '${staff.displayName}' (+91 ${staff.username}) belonging to '${staff.businessName}' from cloud storage?", fontSize = 13.sp)
                     Text("This staff user and their login credentials will be permanently erased from Cloud database immediately.", fontSize = 11.sp, color = MaterialTheme.colorScheme.error)
                 }
             },
@@ -738,7 +737,7 @@ fun MasterControlScreen(
             },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Text("Change your official Master Mobile Number and Master PIN. Updates are saved permanently in Firebase Cloud:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text("Change your official Master Mobile Number and Master PIN. Updates are saved through the secure backend:", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
                     OutlinedTextField(
                         value = editMobileInput,
@@ -775,7 +774,7 @@ fun MasterControlScreen(
             confirmButton = {
                 Button(
                     onClick = {
-                        if (editMobileInput.length == 10 && editPinInput.length >= 4) {
+                        if (editMobileInput.length == 10 && editPinInput.length >= 6) {
                             viewModel.updateMasterProfile(
                                 newMobile = editMobileInput,
                                 newPin = editPinInput,
@@ -784,7 +783,7 @@ fun MasterControlScreen(
                         }
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF10B981)),
-                    enabled = editMobileInput.length == 10 && editPinInput.length >= 4
+                    enabled = editMobileInput.length == 10 && editPinInput.length >= 6
                 ) {
                     Text("Save to Cloud", fontWeight = FontWeight.Bold, color = Color.White)
                 }

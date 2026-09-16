@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.Flow
     @Query("SELECT * FROM customer_credits WHERE companyId = :companyId AND customerId = :customerId ORDER BY dateEpochMs DESC") fun getCustomerCredits(companyId: String, customerId: String): Flow<List<CustomerCreditEntity>>
     @Query("SELECT SUM(amountMinorUnits) FROM customer_credits WHERE companyId = :companyId AND customerId = :customerId") fun getCustomerCreditBalance(companyId: String, customerId: String): Flow<Long?>
     @Query("SELECT SUM(amountMinorUnits) FROM customer_credits WHERE companyId = :companyId") fun getTotalCustomerCreditsReceivable(companyId: String): Flow<Long?>
+    @Query("SELECT * FROM customer_credits WHERE companyId = :companyId") suspend fun getAllCustomerCredits(companyId: String): List<CustomerCreditEntity>
     @Query("UPDATE customers SET creditLimitMinorUnits = :limit WHERE companyId = :companyId AND id = :customerId") suspend fun updateCustomerCreditLimit(companyId: String, customerId: String, limit: Long)
   
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSupplierCredit(item: SupplierCreditEntity)
@@ -65,6 +66,7 @@ import kotlinx.coroutines.flow.Flow
     @Query("SELECT * FROM supplier_credits WHERE companyId = :companyId AND supplierId = :supplierId ORDER BY dateEpochMs DESC") fun getSupplierCredits(companyId: String, supplierId: String): Flow<List<SupplierCreditEntity>>
     @Query("SELECT SUM(amountMinorUnits) FROM supplier_credits WHERE companyId = :companyId AND supplierId = :supplierId") fun getSupplierCreditBalance(companyId: String, supplierId: String): Flow<Long?>
     @Query("SELECT SUM(amountMinorUnits) FROM supplier_credits WHERE companyId = :companyId") fun getTotalSupplierCreditsPayable(companyId: String): Flow<Long?>
+    @Query("SELECT * FROM supplier_credits WHERE companyId = :companyId") suspend fun getAllSupplierCredits(companyId: String): List<SupplierCreditEntity>
   
     @Update suspend fun updateCategory(item: CategoryEntity)
     @Delete suspend fun deleteCategory(item: CategoryEntity)

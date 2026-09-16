@@ -1,0 +1,17 @@
+# KadaKutty POS - Production Release Build Properties
+# Copy this file to release.properties (or pass as environment variables in CI/CD)
+
+# 1. Deployed Backend Base URL (MUST be explicit https:// domain, cannot be 10.0.2.2 or localhost)
+BACKEND_BASE_URL=https://api.kadaikutty.com/
+
+# 2. Master Support Phone in E.164 format (e.g. +91 followed by 10 digits)
+MASTER_SUPPORT_PHONE=+919840000000
+
+# 3. Crash Analytics
+SENTRY_DSN=https://examplePublicKey@o0.ingest.sentry.io/0
+
+# 4. Keystore Signing Configuration (Optional if provided by CI env)
+KADAIKUTTY_KEYSTORE_FILE=kadaikutty.jks
+KADAIKUTTY_KEY_ALIAS=kadaikutty_key
+KADAIKUTTY_STORE_PASSWORD=your_store_password
+KADAIKUTTY_KEY_PASSWORD=your_key_password

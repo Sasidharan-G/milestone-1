@@ -18,6 +18,14 @@ class EscPosFormatter(private val paperWidthChar: Int = 32) {
 
     fun format(doc: PrintDocument): ByteArray {
         val stream = ByteArrayOutputStream()
+        val width = doc.paperWidth.takeIf { it in 24..64 } ?: paperWidthChar
+        fun text(value: String) {
+            ReceiptLayout.wrap(value, width).forEach {
+                stream.write(it.toByteArray(Charsets.UTF_8))
+                stream.write(LINE_FEED)
+            }
+        }
+        val divider = "-".repeat(width)
 
         // Initialize printer
         stream.write(INIT)
@@ -25,23 +33,21 @@ class EscPosFormatter(private val paperWidthChar: Int = 32) {
         // Title
         stream.write(ALIGN_CENTER)
         stream.write(BOLD_ON)
-        stream.write(doc.title.toByteArray())
-        stream.write(LINE_FEED)
+        text(doc.title)
         stream.write(BOLD_OFF)
         stream.write(LINE_FEED)
 
         // Divider
         stream.write(ALIGN_LEFT)
-        stream.write(getDividerLine().toByteArray())
+        stream.write(divider.toByteArray())
         stream.write(LINE_FEED)
 
         // Headers
         if (doc.headers.isNotEmpty()) {
             stream.write(BOLD_ON)
-            stream.write(doc.headers.joinToString("  ").toByteArray())
-            stream.write(LINE_FEED)
+            doc.headers.forEach { text(it) }
             stream.write(BOLD_OFF)
-            stream.write(getDividerLine().toByteArray())
+            stream.write(divider.toByteArray())
             stream.write(LINE_FEED)
         }
 
@@ -49,29 +55,22 @@ class EscPosFormatter(private val paperWidthChar: Int = 32) {
         for (line in doc.lines) {
             // Row 1: Product Name (Bold)
             stream.write(BOLD_ON)
-            stream.write(line.name.toByteArray())
-            stream.write(LINE_FEED)
+            text(line.name)
             stream.write(BOLD_OFF)
 
             // Row 2: "Qty x Price" on left, "Total" on right
-            val leftText = "  ${line.quantity} x ${line.price}"
+            val leftText = "${line.quantityText} x ${line.price}"
             val rightText = line.total
-            val spacesCount = paperWidthChar - leftText.length - rightText.length
-            val spaces = if (spacesCount > 0) " ".repeat(spacesCount) else " "
-            stream.write((leftText + spaces + rightText).toByteArray())
-            stream.write(LINE_FEED)
+            ReceiptLayout.columns(leftText, rightText, width).forEach { text(it) }
         }
 
-        stream.write(getDividerLine().toByteArray())
+        stream.write(divider.toByteArray())
         stream.write(LINE_FEED)
 
         // Totals
         for ((label, value) in doc.totals) {
-            val spacesCount = paperWidthChar - label.length - value.length
-            val spaces = if (spacesCount > 0) " ".repeat(spacesCount) else " "
             stream.write(BOLD_ON)
-            stream.write((label + spaces + value).toByteArray())
-            stream.write(LINE_FEED)
+            ReceiptLayout.columns(label, value, width).forEach { text(it) }
             stream.write(BOLD_OFF)
         }
 
@@ -80,14 +79,13 @@ class EscPosFormatter(private val paperWidthChar: Int = 32) {
         // Footer
         if (doc.footer.isNotBlank()) {
             stream.write(ALIGN_CENTER)
-            stream.write(doc.footer.toByteArray())
-            stream.write(LINE_FEED)
+            text(doc.footer)
         }
 
         // Space and Cut
         stream.write(LINE_FEED)
         stream.write(LINE_FEED)
-        stream.write(FEED_AND_CUT)
+        if (doc.cutPaper) stream.write(FEED_AND_CUT)
 
         return stream.toByteArray()
     }

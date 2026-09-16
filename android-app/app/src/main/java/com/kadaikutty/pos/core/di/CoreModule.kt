@@ -14,6 +14,7 @@ import com.kadaikutty.pos.core.database.migration16To17
 import com.kadaikutty.pos.core.database.migration17To18
 import com.kadaikutty.pos.core.database.migration18To19
 import com.kadaikutty.pos.core.database.migration19To20
+import com.kadaikutty.pos.core.database.migration21To22
 import com.kadaikutty.pos.core.database.migration20To21
 import com.kadaikutty.pos.core.database.migration1To2
 import com.kadaikutty.pos.core.database.migration2To3
@@ -59,10 +60,6 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import javax.inject.Singleton
-import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.storage.FirebaseStorage
-// import com.kadaikutty.pos.core.backup.data.FirebaseBackupManager // To be created
 
 private val Context.billingDataStore by preferencesDataStore("billing_preferences")
 
@@ -73,62 +70,40 @@ object CoreModule {
         val keyBytes = com.kadaikutty.pos.core.security.SecurityShield.getOrCreateDatabaseKey(context)
         val factory = net.sqlcipher.database.SupportFactory(keyBytes)
         
-        var db = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
+        val db = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
             .openHelperFactory(factory)
             .setJournalMode(androidx.room.RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18, migration18To19, migration19To20, migration20To21)
+            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18, migration18To19, migration19To20, migration20To21, migration21To22)
             .build()
             
-        try {
-            // Eagerly verify the database integrity. 
-            // If the key is wrong or the file is corrupted (e.g. bad restore), this throws an exception.
-            db.openHelper.writableDatabase.query("SELECT 1").use { it.moveToFirst() }
-        } catch (e: Exception) {
-            e.printStackTrace()
-            // Delete the corrupted database safely
-            db.close()
-            context.deleteDatabase("billing.db")
-            
-            // Re-build a fresh database instance
-            db = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
-                .openHelperFactory(factory)
-                .setJournalMode(androidx.room.RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-                .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18, migration18To19, migration19To20, migration20To21)
-                .build()
-        }
         return db
     }
     @Provides @Singleton fun preferences(@ApplicationContext context: Context) = AppPreferences(context.billingDataStore)
     @Provides @Singleton fun sessionStore(@ApplicationContext context: Context) = SessionStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialStore(@ApplicationContext context: Context) = OfflineCredentialStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialVerifier() = OfflineCredentialVerifier()
-    @Provides @Singleton fun firebaseAuth(): FirebaseAuth = FirebaseAuth.getInstance()
-    @Provides @Singleton fun firebaseFirestore(): FirebaseFirestore = FirebaseFirestore.getInstance()
-    @Provides @Singleton fun firebaseStorage(): FirebaseStorage = FirebaseStorage.getInstance()
-    
-    @Provides @Singleton fun msg91OtpService(): com.kadaikutty.pos.core.otp.Msg91OtpService = com.kadaikutty.pos.core.otp.Msg91OtpService()
-
-    @Provides @Singleton fun sessionSecurityManager(firestore: FirebaseFirestore, appPreferences: AppPreferences): com.kadaikutty.pos.core.auth.SessionSecurityManager =
-        com.kadaikutty.pos.core.auth.SessionSecurityManager(firestore, appPreferences)
+    @Provides @Singleton fun sessionSecurityManager(
+        backendApi: com.kadaikutty.pos.core.network.BackendApiClient,
+        sessionStore: SessionStore,
+        appPreferences: AppPreferences,
+    ): com.kadaikutty.pos.core.auth.SessionSecurityManager =
+        com.kadaikutty.pos.core.auth.SessionSecurityManager(backendApi, sessionStore, appPreferences)
 
     @Provides @Singleton fun authRepository(
-        firebaseAuth: FirebaseAuth, 
-        firestore: FirebaseFirestore,
         sessions: SessionStore, 
         credentials: OfflineCredentialStore, 
         verifier: OfflineCredentialVerifier, 
         database: BillingDatabase,
-        appPreferences: AppPreferences,
-        msg91OtpService: com.kadaikutty.pos.core.otp.Msg91OtpService,
+        backendApi: com.kadaikutty.pos.core.network.BackendApiClient,
         sessionSecurityManager: com.kadaikutty.pos.core.auth.SessionSecurityManager,
-    ): AuthRepository = DefaultAuthRepository(firebaseAuth, firestore, sessions, credentials, verifier, database, appPreferences, msg91OtpService, sessionSecurityManager)
+    ): AuthRepository = DefaultAuthRepository(sessions, credentials, verifier, database, backendApi, sessionSecurityManager)
     @Provides @Singleton fun logger(): AppLogger = AndroidLogger()
-    @Provides @Singleton fun analyticsManager(@ApplicationContext context: Context) = com.kadaikutty.pos.core.analytics.AnalyticsManager(context)
+    @Provides @Singleton fun analyticsManager() = com.kadaikutty.pos.core.analytics.AnalyticsManager()
     @Provides @Singleton fun syncScheduler(@ApplicationContext context: Context) = SyncScheduler(context)
     @Provides @Singleton fun syncManager(database: BillingDatabase, syncScheduler: SyncScheduler, sessionStore: SessionStore) = SyncManager(database, syncScheduler, sessionStore)
 
-    @Provides @Singleton fun saleRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore, appPreferences: AppPreferences): SaleRepository = SaleRepositoryImpl(database.saleDao(), syncManager, sessionStore, appPreferences)
-    @Provides @Singleton fun purchaseRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore, appPreferences: AppPreferences): PurchaseRepository = PurchaseRepositoryImpl(database.purchaseDao(), syncManager, sessionStore, appPreferences)
+    @Provides @Singleton fun saleRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore, appPreferences: AppPreferences): SaleRepository = SaleRepositoryImpl(database.saleDao(), syncManager, sessionStore, appPreferences, database)
+    @Provides @Singleton fun purchaseRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore, appPreferences: AppPreferences): PurchaseRepository = PurchaseRepositoryImpl(database.purchaseDao(), syncManager, sessionStore, appPreferences, database)
     @Provides @Singleton fun costingStrategy(database: BillingDatabase, sessionStore: SessionStore): CostingStrategy = DefaultCostingStrategy(database.purchaseDao(), database.masterDao(), sessionStore)
     @Provides @Singleton fun reportRepository(database: BillingDatabase, costingStrategy: CostingStrategy, sessionStore: SessionStore): ReportRepository = ReportRepositoryImpl(database.reportDao(), costingStrategy, sessionStore)
     @Provides @Singleton fun reportService(reportRepository: ReportRepository): ReportService = DefaultReportService(reportRepository)
@@ -139,5 +114,4 @@ object CoreModule {
     @Provides @Singleton fun printerManager(btDriver: BluetoothPrinterDriver, usbDriver: UsbPrinterDriver): PrinterManager = PrinterManager(btDriver, usbDriver)
     @Provides @Singleton fun shareManager(@ApplicationContext context: Context) = ShareManager(context)
     @Provides @Singleton fun backupManager(@ApplicationContext context: Context, database: BillingDatabase) = BackupManager(context, database)
-    @Provides @Singleton fun sampleDataGenerator(database: BillingDatabase, firestore: FirebaseFirestore) = com.kadaikutty.pos.core.sample.SampleDataGenerator(database, firestore)
 }

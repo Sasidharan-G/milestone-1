@@ -7,5 +7,12 @@ enum class ReportType {
     PURCHASES 
 }
 data class ReportQuery(val type: ReportType, val fromEpochMs: Long?, val toEpochMs: Long?)
-data class ReportData(val title: String, val columns: List<String>, val rows: List<List<String>>)
+data class ReportData(
+    val title: String, 
+    val columns: List<String>, 
+    val rows: List<List<String>>,
+    val generatedAtEpochMs: Long = System.currentTimeMillis(),
+    val fromEpochMs: Long? = null,
+    val toEpochMs: Long? = null
+)
 interface ReportRepository { suspend fun query(query: ReportQuery): ReportData }

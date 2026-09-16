@@ -24,9 +24,18 @@ fun AddCustomerDialog(
     var newCustPhone by remember { mutableStateOf("") }
     var newCustAddress by remember { mutableStateOf("") }
     var newCustOpeningDue by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
+
+    LaunchedEffect(showDialog) {
+        if (showDialog) {
+            isSubmitting = false
+        }
+    }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = { Text("Add New Customer", fontWeight = FontWeight.Bold) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -64,10 +73,13 @@ fun AddCustomerDialog(
         },
         confirmButton = {
             Button(
+                enabled = !isSubmitting,
                 onClick = {
+                    if (isSubmitting) return@Button
                     if (newCustName.isBlank()) {
                         android.widget.Toast.makeText(context, "Please enter customer name", android.widget.Toast.LENGTH_SHORT).show()
                     } else {
+                        isSubmitting = true
                         val openingDueVal = ((newCustOpeningDue.toDoubleOrNull() ?: 0.0) * 100).toLong()
                         onSaveCustomer(newCustName, newCustPhone, newCustAddress, openingDueVal)
                         newCustName = ""
@@ -77,11 +89,14 @@ fun AddCustomerDialog(
                     }
                 }
             ) {
-                Text("Save & Select")
+                Text(if (isSubmitting) "Saving..." else "Save & Select")
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }

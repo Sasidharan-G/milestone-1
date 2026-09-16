@@ -37,25 +37,39 @@ class ReportRepositoryImpl(
                 ReportData(
                     title = "Sales & Bills Summary",
                     columns = listOf("S.No", "Bill Number", "Date & Time", "Customer", "Amount"),
-                    rows = rows
+                    rows = rows,
+                    fromEpochMs = fromMs,
+                    toEpochMs = toMs
                 )
             }
             ReportType.STOCK -> {
-                val data = reportDao.getStockReport(companyId)
+                val data = reportDao.getStockReport(companyId, fromMs, toMs)
                 val rows = mutableListOf<List<String>>()
                 var totalStockValue = 0L
+                val timeFormat = java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault())
+
                 data.forEachIndexed { index, item ->
-                    val qtyFormatted = if (item.unitType == "KG" || item.unitType == "LITER") {
-                        String.format(java.util.Locale.US, "%.3f", item.currentStock / 1000.0)
-                    } else {
-                        item.currentStock.toString()
+                    fun formatUnit(qty: Long): String {
+                        return if (item.unitType == "KG" || item.unitType == "LITER") {
+                            String.format(java.util.Locale.US, "%.3f", qty / 1000.0)
+                        } else {
+                            qty.toString()
+                        }
                     }
+
+                    val qtyFormatted = formatUnit(item.currentStock)
                     val stockVal = if (item.unitType == "KG" || item.unitType == "LITER") {
                         ((item.purchasePrice * item.currentStock) / 1000.0).toLong()
                     } else {
                         item.purchasePrice * item.currentStock
                     }
                     totalStockValue += stockVal
+
+                    val inwardFormatted = if (item.inwardQty > 0) formatUnit(item.inwardQty) else ""
+                    val outwardFormatted = if (item.outwardQty > 0) formatUnit(item.outwardQty) else ""
+                    val openingFormatted = if (fromMs != null) formatUnit(item.openingStock) else ""
+                    val lastActivity = if (item.lastUpdatedEpochMs > 0) timeFormat.format(java.util.Date(item.lastUpdatedEpochMs)) else "-"
+
                     rows.add(listOf(
                         "${index + 1}",
                         item.productName,
@@ -63,16 +77,22 @@ class ReportRepositoryImpl(
                         item.unitType,
                         qtyFormatted,
                         Money(item.purchasePrice).toString(),
-                        Money(stockVal).toString()
+                        Money(stockVal).toString(),
+                        inwardFormatted,
+                        outwardFormatted,
+                        openingFormatted,
+                        lastActivity
                     ))
                 }
                 if (data.isNotEmpty()) {
-                    rows.add(listOf("", "TOTAL INVENTORY VALUE", "", "", "", "", Money(totalStockValue).toString()))
+                    rows.add(listOf("", "TOTAL INVENTORY VALUE", "", "", "", "", Money(totalStockValue).toString(), "", "", "", ""))
                 }
                 ReportData(
-                    title = "Stock Inventory & Valuation Report",
-                    columns = listOf("S.No", "Product", "Category", "Unit", "Current Stock", "Purchase Price", "Stock Value (Cost)"),
-                    rows = rows
+                    title = if (fromMs != null || toMs != null) "Stock Inventory Valuation (Period Filtered)" else "Stock Inventory & Valuation Report",
+                    columns = listOf("S.No", "Product", "Category", "Unit", "Stock", "Purchase Price", "Stock Value (Cost)", "Inward", "Outward", "Opening", "Last Activity"),
+                    rows = rows,
+                    fromEpochMs = fromMs,
+                    toEpochMs = toMs
                 )
             }
             ReportType.PROFIT -> {
@@ -86,7 +106,7 @@ class ReportRepositoryImpl(
 
                 raw.forEachIndexed { index, item ->
                     val revenue = Money(item.totalRevenue)
-                    val cost = costingStrategy.getProductCost(item.productId, item.totalQty)
+                    val cost = item.recordedCost?.let { Money(it) } ?: costingStrategy.getProductCost(item.productId, item.totalQty)
                     val profit = revenue - cost
 
                     grandTotalRevenue += revenue
@@ -108,7 +128,7 @@ class ReportRepositoryImpl(
                     expenses.forEach { exp ->
                         rows.add(listOf(
                             "",
-                            "   - ${exp.description}",
+                            "   - ${exp.description} (${exp.date})",
                             "",
                             "",
                             "",
@@ -130,9 +150,11 @@ class ReportRepositoryImpl(
                 }
 
                 ReportData(
-                    title = "Profit & Loss Statement (Net Business Health)",
+                    title = if (raw.any { it.recordedCost == null }) "Profit & Loss (legacy costs estimated)" else "Profit & Loss Statement",
                     columns = listOf("S.No", "Item / Description", "Qty Sold", "Sales Revenue", "Purchase Cost", "Profit"),
-                    rows = rows
+                    rows = rows,
+                    fromEpochMs = fromMs,
+                    toEpochMs = toMs
                 )
             }
             ReportType.PURCHASES -> {
@@ -153,7 +175,9 @@ class ReportRepositoryImpl(
                 ReportData(
                     title = "Purchases & Supplier Bills Report",
                     columns = listOf("S.No", "Supplier Inv / ID", "Date & Time", "Supplier", "Payment Mode", "Total Amount"),
-                    rows = rows
+                    rows = rows,
+                    fromEpochMs = fromMs,
+                    toEpochMs = toMs
                 )
             }
         }

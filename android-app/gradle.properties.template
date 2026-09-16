@@ -4,6 +4,8 @@
 # Sentry DSN for crash reporting
 SENTRY_DSN=
 
-# Supabase Configuration
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
+# Deployed HTTPS Express backend. SMS provider secrets belong on the server only.
+BACKEND_BASE_URL=https://your-deployed-backend.example/
+
+# Master Admin renewal/support phone in E.164 format, for example +919876543210
+MASTER_SUPPORT_PHONE=

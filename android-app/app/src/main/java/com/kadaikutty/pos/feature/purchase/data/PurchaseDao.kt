@@ -2,6 +2,7 @@ package com.kadaikutty.pos.feature.purchase.data
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import com.kadaikutty.pos.feature.billing.data.StockMovementEntity
@@ -10,15 +11,25 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface PurchaseDao {
-    @Insert suspend fun insertPurchase(purchase: PurchaseEntity)
-    @Insert suspend fun insertPurchases(items: List<PurchaseEntity>)
-    @Insert fun insertPurchasesSync(items: List<PurchaseEntity>)
+    @Query("SELECT * FROM supplier_credits WHERE companyId = :companyId AND referenceId = :id")
+    suspend fun creditsFor(companyId: String, id: String): List<com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun createPurchase(purchase: PurchaseEntity)
+    @androidx.room.Update suspend fun updatePurchase(purchase: PurchaseEntity)
+    @Query("SELECT * FROM purchases WHERE companyId = :companyId AND id = :id")
+    suspend fun getById(companyId: String, id: String): PurchaseEntity?
+    @Query("SELECT COUNT(*) FROM supplier_credits WHERE companyId = :companyId AND referenceId = :id")
+    suspend fun linkedCreditCount(companyId: String, id: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertPurchase(purchase: PurchaseEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertPurchases(items: List<PurchaseEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertPurchasesSync(items: List<PurchaseEntity>)
     @Query("DELETE FROM purchases WHERE companyId = :companyId") suspend fun deletePurchasesByCompany(companyId: String)
     @Query("DELETE FROM purchases WHERE companyId = :companyId") fun deletePurchasesByCompanySync(companyId: String)
-    @Insert suspend fun insertItems(items: List<PurchaseItemEntity>)
-    @Insert fun insertItemsSync(items: List<PurchaseItemEntity>)
-    @Insert suspend fun insertStockMovements(movements: List<StockMovementEntity>)
-    @Insert suspend fun insertSupplierCredit(credit: com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertItems(items: List<PurchaseItemEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertItemsSync(items: List<PurchaseItemEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStockMovements(movements: List<StockMovementEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSupplierCredit(credit: com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity)
     
     @Transaction suspend fun savePurchase(
         purchase: PurchaseEntity, 
@@ -60,7 +71,7 @@ interface PurchaseDao {
     @Query("SELECT * FROM purchase_items WHERE companyId = :companyId AND purchaseId = :purchaseId")
     fun getPurchaseItems(companyId: String, purchaseId: String): Flow<List<PurchaseItemEntity>>
 
-    @Query("SELECT AVG(unitValueMinorUnits) FROM purchase_items WHERE companyId = :companyId AND productId = :productId")
+    @Query("SELECT SUM(unitValueMinorUnits * 1.0 * quantity) / NULLIF(SUM(quantity), 0) FROM purchase_items WHERE companyId = :companyId AND productId = :productId")
     suspend fun getAveragePurchasePrice(companyId: String, productId: String): Double?
 
     @Query("SELECT * FROM purchases WHERE companyId = :companyId AND supplierId = :supplierId ORDER BY createdAtEpochMs DESC")
@@ -81,7 +92,7 @@ interface PurchaseDao {
     @Query("DELETE FROM stock_movements WHERE companyId = :companyId AND referenceId = :purchaseId")
     suspend fun deletePurchaseStockMovements(companyId: String, purchaseId: String)
 
-    @Query("DELETE FROM supplier_credits WHERE companyId = :companyId AND terms LIKE :termsPattern")
+    @Query("DELETE FROM supplier_credits WHERE companyId = :companyId AND referenceId = :termsPattern")
     suspend fun deleteSupplierCreditsByTerms(companyId: String, termsPattern: String)
 
     @Transaction
@@ -89,7 +100,7 @@ interface PurchaseDao {
         deletePurchaseItems(companyId, purchaseId)
         deletePurchaseStockMovements(companyId, purchaseId)
         if (orderOrInvoice.isNotBlank()) {
-            deleteSupplierCreditsByTerms(companyId, "%$orderOrInvoice%")
+            deleteSupplierCreditsByTerms(companyId, purchaseId)
         }
         deletePurchase(companyId, purchaseId)
     }

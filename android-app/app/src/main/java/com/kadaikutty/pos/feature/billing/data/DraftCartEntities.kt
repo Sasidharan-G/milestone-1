@@ -20,7 +20,13 @@ data class DraftCartItemEntity(
     val unitType: String,
     val parkId: String = "active",
     val parkLabel: String = "",
-    val parkedAtEpochMs: Long = 0L
+    val parkedAtEpochMs: Long = 0L,
+    val customerId: String? = null,
+    val checkoutId: String? = null,
+    val editingSaleId: String? = null,
+    val editingRevision: Long? = null,
+    @androidx.room.ColumnInfo(defaultValue = "0") val lineDiscountMinorUnits: Long = 0L,
+    @androidx.room.ColumnInfo(defaultValue = "0") val cartDiscountMinorUnits: Long = 0L
 )
 
 data class HeldCartSummary(
@@ -33,13 +39,24 @@ data class HeldCartSummary(
 
 @Dao
 interface DraftCartDao {
+    @Query("UPDATE draft_cart_items SET checkoutId = :nextId, cartDiscountMinorUnits = 0 WHERE companyId = :companyId AND parkId = 'active'")
+    suspend fun rekeyActive(companyId: String, nextId: String)
+
+    @androidx.room.Transaction
+    suspend fun replaceActive(companyId: String, items: List<DraftCartItemEntity>) {
+        clearCart(companyId)
+        insertItems(items)
+    }
+    @Query("DELETE FROM draft_cart_items WHERE companyId = :companyId AND parkId = 'active' AND productId IN (:productIds)")
+    suspend fun removePurchased(companyId: String, productIds: List<String>)
+
     @Query("SELECT * FROM draft_cart_items WHERE companyId = :companyId AND parkId = 'active'")
     fun getDraftCart(companyId: String): Flow<List<DraftCartItemEntity>>
 
     @Query("SELECT * FROM draft_cart_items WHERE companyId = :companyId AND parkId = :parkId")
     suspend fun getItemsByParkId(companyId: String, parkId: String): List<DraftCartItemEntity>
 
-    @Query("SELECT parkId, parkLabel, parkedAtEpochMs, COUNT(*) as itemCount, SUM(quantity * unitPriceMinorUnits) as totalAmountMinorUnits FROM draft_cart_items WHERE companyId = :companyId AND parkId != 'active' GROUP BY parkId ORDER BY parkedAtEpochMs DESC")
+    @Query("SELECT parkId, parkLabel, parkedAtEpochMs, COUNT(*) as itemCount, MAX(0, SUM(MAX(0, quantity * unitPriceMinorUnits / CASE WHEN unitType IN ('KG','LITER') THEN 1000 ELSE 1 END - lineDiscountMinorUnits)) - MAX(cartDiscountMinorUnits)) as totalAmountMinorUnits FROM draft_cart_items WHERE companyId = :companyId AND parkId != 'active' GROUP BY parkId ORDER BY parkedAtEpochMs DESC")
     fun getHeldCartsSummary(companyId: String): Flow<List<HeldCartSummary>>
 
     @Query("SELECT COUNT(DISTINCT parkId) FROM draft_cart_items WHERE companyId = :companyId AND parkId != 'active'")

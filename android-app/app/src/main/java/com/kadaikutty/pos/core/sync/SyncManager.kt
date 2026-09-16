@@ -10,10 +10,17 @@ import com.kadaikutty.pos.core.auth.SessionStore
 class SyncManager(
     private val database: BillingDatabase,
     private val syncScheduler: SyncScheduler,
-    private val sessionStore: SessionStore
+    private val sessionStore: SessionStore,
+    private val scheduleEnabled: Boolean = true
 ) {
 
-    private val OPERATION_PRECEDENCE = mapOf("DELETE" to 3, "INSERT" to 2, "UPDATE" to 1)
+    private fun requestSafely() {
+        if (!scheduleEnabled) return
+        try { syncScheduler.request() } catch (e: Exception) {
+            android.util.Log.w("SyncManager", "Pending local operations will retry later", e)
+        }
+    }
+    private val OPERATION_PRECEDENCE = mapOf("DELETE" to 3, "INSERT" to 2, "PARTIAL_UPDATE" to 2, "UPDATE" to 1)
 
     suspend fun enqueueCategory(category: com.kadaikutty.pos.feature.masters.data.CategoryEntity, operation: String) {
         val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
@@ -23,7 +30,9 @@ class SyncManager(
             "companyId" to companyId,
             "name" to category.name,
             "createdAtEpochMs" to category.createdAtEpochMs,
-            "updatedAtEpochMs" to category.updatedAtEpochMs
+            "updatedAtEpochMs" to category.updatedAtEpochMs,
+            "syncStatus" to "SYNCED",
+            "_schemaVersion" to 1
         ))
         enqueueItem(companyId, "Category", category.id, operation, payload)
     }
@@ -42,9 +51,36 @@ class SyncManager(
             "barcode" to product.barcode,
             "minStockLevel" to product.minStockLevel,
             "createdAtEpochMs" to product.createdAtEpochMs,
-            "updatedAtEpochMs" to product.updatedAtEpochMs
+            "updatedAtEpochMs" to product.updatedAtEpochMs,
+            "syncStatus" to "SYNCED",
+            "_schemaVersion" to 1
         ))
         enqueueItem(companyId, "Product", product.id, operation, payload)
+    }
+
+    suspend fun enqueueProducts(products: List<com.kadaikutty.pos.feature.masters.data.ProductEntity>, operation: String) {
+        if (products.isEmpty()) return
+        val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+        val companyId = session.companyId
+        products.forEach { product ->
+            val payload = toJson(mapOf(
+                "id" to product.id,
+                "companyId" to companyId,
+                "name" to product.name,
+                "categoryId" to product.categoryId,
+                "purchasePriceMinorUnits" to product.purchasePriceMinorUnits,
+                "salePriceMinorUnits" to product.salePriceMinorUnits,
+                "unitType" to product.unitType,
+                "barcode" to product.barcode,
+                "minStockLevel" to product.minStockLevel,
+                "createdAtEpochMs" to product.createdAtEpochMs,
+                "updatedAtEpochMs" to product.updatedAtEpochMs,
+                "syncStatus" to "SYNCED",
+                "_schemaVersion" to 1
+            ))
+            enqueueItem(companyId, "Product", product.id, operation, payload, requestSync = false)
+        }
+        requestSafely()
     }
 
     suspend fun enqueueCustomer(customer: com.kadaikutty.pos.feature.masters.data.CustomerEntity, operation: String) {
@@ -58,7 +94,9 @@ class SyncManager(
             "address" to customer.address,
             "creditLimitMinorUnits" to customer.creditLimitMinorUnits,
             "createdAtEpochMs" to customer.createdAtEpochMs,
-            "updatedAtEpochMs" to customer.updatedAtEpochMs
+            "updatedAtEpochMs" to customer.updatedAtEpochMs,
+            "syncStatus" to "SYNCED",
+            "_schemaVersion" to 1
         ))
         enqueueItem(companyId, "Customer", customer.id, operation, payload)
     }
@@ -73,7 +111,9 @@ class SyncManager(
             "phone" to supplier.phone,
             "address" to supplier.address,
             "createdAtEpochMs" to supplier.createdAtEpochMs,
-            "updatedAtEpochMs" to supplier.updatedAtEpochMs
+            "updatedAtEpochMs" to supplier.updatedAtEpochMs,
+            "syncStatus" to "SYNCED",
+            "_schemaVersion" to 1
         ))
         enqueueItem(companyId, "Supplier", supplier.id, operation, payload)
     }
@@ -87,7 +127,8 @@ class SyncManager(
             "amountMinorUnits" to expense.amountMinorUnits,
             "description" to expense.description,
             "createdAtEpochMs" to expense.createdAtEpochMs,
-            "updatedAtEpochMs" to expense.updatedAtEpochMs
+            "updatedAtEpochMs" to expense.updatedAtEpochMs,
+            "_schemaVersion" to 1
         ))
         enqueueItem(companyId, "Expense", expense.id, operation, payload)
     }
@@ -98,17 +139,20 @@ class SyncManager(
         val itemsList = items.map { item ->
             mapOf(
                 "companyId" to companyId,
+                "saleId" to sale.id,
                 "productId" to item.productId,
                 "quantity" to item.quantity,
                 "unitPriceMinorUnits" to item.unitPriceMinorUnits,
                 "lineTotalMinorUnits" to item.lineTotalMinorUnits,
-                "discountMinorUnits" to item.discountMinorUnits
+                "discountMinorUnits" to item.discountMinorUnits,
+                "unitType" to item.unitType, "productName" to item.productName,
+                "costTotalMinorUnits" to item.costTotalMinorUnits, "netRevenueMinorUnits" to item.netRevenueMinorUnits
             )
         }
         val payload = toJson(mapOf(
             "id" to sale.id,
             "companyId" to companyId,
-            "billNumber" to sale.billNumber,
+            "billNumber" to sale.billNumber, "revision" to sale.revision,
             "totalMinorUnits" to sale.totalMinorUnits,
             "createdAtEpochMs" to sale.createdAtEpochMs,
             "customerId" to sale.customerId,
@@ -117,21 +161,24 @@ class SyncManager(
             "paidUpiMinorUnits" to sale.paidUpiMinorUnits,
             "creditAppliedMinorUnits" to sale.creditAppliedMinorUnits,
             "discountMinorUnits" to sale.discountMinorUnits,
+            "syncStatus" to "SYNCED",
+            "_schemaVersion" to 1,
             "items" to itemsList
         ))
         enqueueItem(companyId, "Sale", sale.id, operation, payload)
     }
 
-    suspend fun enqueuePurchase(purchase: com.kadaikutty.pos.feature.purchase.data.PurchaseEntity, items: List<com.kadaikutty.pos.feature.purchase.data.PurchaseItemEntity>) {
+    suspend fun enqueuePurchase(purchase: com.kadaikutty.pos.feature.purchase.data.PurchaseEntity, items: List<com.kadaikutty.pos.feature.purchase.data.PurchaseItemEntity>, operation: String = "INSERT") {
         val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
         val companyId = session.companyId
         val itemsList = items.map { item ->
             mapOf(
                 "companyId" to companyId,
+                "purchaseId" to purchase.id,
                 "productId" to item.productId,
                 "quantity" to item.quantity,
                 "unitValueMinorUnits" to item.unitValueMinorUnits,
-                "lineTotalMinorUnits" to item.lineTotalMinorUnits
+                "lineTotalMinorUnits" to item.lineTotalMinorUnits, "unitType" to item.unitType
             )
         }
         val payload = toJson(mapOf(
@@ -146,10 +193,12 @@ class SyncManager(
             "paidCashMinorUnits" to purchase.paidCashMinorUnits,
             "paidUpiMinorUnits" to purchase.paidUpiMinorUnits,
             "creditAppliedMinorUnits" to purchase.creditAppliedMinorUnits,
-            "orderNumber" to purchase.orderNumber,
+            "orderNumber" to purchase.orderNumber, "revision" to purchase.revision,
+            "syncStatus" to "SYNCED",
+            "_schemaVersion" to 1,
             "items" to itemsList
         ))
-        enqueueItem(companyId, "Purchase", purchase.id, "INSERT", payload)
+        enqueueItem(companyId, "Purchase", purchase.id, operation, payload)
     }
 
     suspend fun enqueueCustomerCredit(credit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity, operation: String) {
@@ -160,8 +209,10 @@ class SyncManager(
             "companyId" to companyId,
             "customerId" to credit.customerId,
             "amountMinorUnits" to credit.amountMinorUnits,
-            "reason" to credit.reason,
-            "dateEpochMs" to credit.dateEpochMs
+            "reason" to credit.reason, "referenceId" to credit.referenceId,
+            "dateEpochMs" to credit.dateEpochMs,
+            "syncStatus" to "SYNCED",
+            "_schemaVersion" to 1
         ))
         enqueueItem(companyId, "CustomerCredit", credit.id, operation, payload)
     }
@@ -174,9 +225,11 @@ class SyncManager(
             "companyId" to companyId,
             "supplierId" to credit.supplierId,
             "amountMinorUnits" to credit.amountMinorUnits,
-            "terms" to credit.terms,
+            "terms" to credit.terms, "referenceId" to credit.referenceId,
             "dueDateEpochMs" to credit.dueDateEpochMs,
-            "dateEpochMs" to credit.dateEpochMs
+            "dateEpochMs" to credit.dateEpochMs,
+            "syncStatus" to "SYNCED",
+            "_schemaVersion" to 1
         ))
         enqueueItem(companyId, "SupplierCredit", credit.id, operation, payload)
     }
@@ -191,7 +244,8 @@ class SyncManager(
             "quantityDelta" to movement.quantityDelta,
             "type" to movement.type,
             "referenceId" to movement.referenceId,
-            "createdAtEpochMs" to movement.createdAtEpochMs
+            "createdAtEpochMs" to movement.createdAtEpochMs,
+            "_schemaVersion" to 1
         ))
         enqueueItem(companyId, "StockMovement", movement.id, operation, payload)
     }
@@ -213,7 +267,8 @@ class SyncManager(
         entityType: String,
         entityId: String,
         operation: String,
-        payloadJson: String
+        payloadJson: String,
+        requestSync: Boolean = true
     ) {
         val existing = database.syncQueueDao().findPending(companyId, entityType, entityId)
         val now = System.currentTimeMillis()
@@ -253,7 +308,7 @@ class SyncManager(
                     database.syncQueueDao().updatePending(existing.id, operation, payloadJson, now)
                 }
             }
-            syncScheduler.request()
+            if (requestSync) requestSafely()
             return
         }
 
@@ -270,7 +325,7 @@ class SyncManager(
             updatedAtEpochMs = now
         )
         database.syncQueueDao().enqueue(syncItem)
-        syncScheduler.request()
+        if (requestSync) requestSafely()
     }
 
     suspend fun enqueueAllDataForSync() {
@@ -285,7 +340,8 @@ class SyncManager(
         database.masterDao().expenses(companyId).first().forEach { enqueueExpense(it, "INSERT") }
         
         // Enqueue Credits
-        // For customer credits and supplier credits, we don't have a simple getAll getter. Let's just grab sales and purchases.
+        database.masterDao().getAllCustomerCredits(companyId).forEach { enqueueCustomerCredit(it, "INSERT") }
+        database.masterDao().getAllSupplierCredits(companyId).forEach { enqueueSupplierCredit(it, "INSERT") }
         
         // Enqueue Sales
         database.saleDao().getSales(companyId).first().forEach { sale ->
@@ -304,7 +360,7 @@ class SyncManager(
         // as they are created with sales and purchases. But we could fetch all via MasterDao or similar if needed.
         
         // Trigger the scheduler immediately
-        syncScheduler.request()
+        requestSafely()
     }
 
     private fun toJson(value: Any?): String {
@@ -328,7 +384,7 @@ class SyncManager(
                 }
                 jsonObject.toString()
             } else {
-                org.json.JSONObject.wrap(value).toString()
+                org.json.JSONObject.wrap(value)?.toString() ?: "{}"
             }
         } catch (e: Exception) {
             "{}"

@@ -20,7 +20,8 @@ data class SaleEntity(
     val paidCashMinorUnits: Long = 0L,
     val paidUpiMinorUnits: Long = 0L,
     val creditAppliedMinorUnits: Long = 0L,
-    val discountMinorUnits: Long = 0L
+    val discountMinorUnits: Long = 0L,
+    @androidx.room.ColumnInfo(defaultValue = "0") val revision: Long = 0L
 )
 
 @Entity(
@@ -39,7 +40,11 @@ data class SaleItemEntity(
     val quantity: Long,
     val unitPriceMinorUnits: Long,
     val lineTotalMinorUnits: Long,
-    val discountMinorUnits: Long = 0L
+    val discountMinorUnits: Long = 0L,
+    val unitType: String? = null,
+    val productName: String? = null,
+    val costTotalMinorUnits: Long? = null,
+    val netRevenueMinorUnits: Long? = null
 )
 
 @Entity(tableName = "stock_movements", indices = [Index("companyId", "productId"), Index("companyId", "referenceId"), Index("companyId"), Index(value = ["companyId", "productId", "createdAtEpochMs"])])

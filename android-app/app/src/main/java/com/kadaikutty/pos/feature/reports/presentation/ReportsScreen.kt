@@ -1,6 +1,5 @@
 package com.kadaikutty.pos.feature.reports.presentation
 
-import com.kadaikutty.pos.core.ui.LocalLayoutMode
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -90,6 +89,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
     var billDetailData by remember { mutableStateOf<BillDetailData?>(null) }
     var isBillDetailLoading by remember { mutableStateOf(false) }
     var salesSearchQuery by remember { mutableStateOf("") }
+    var expandedStockRows by remember { mutableStateOf(setOf<String>()) }
 
     LaunchedEffect(selectedBillNumForDetail) {
         val target = selectedBillNumForDetail
@@ -207,6 +207,10 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                 val totalPurchasesSum by viewModel.totalPurchasesSum.collectAsState()
                 val expensesSum by viewModel.expensesSum.collectAsState()
                 val netProfitSum by viewModel.netProfitSum.collectAsState()
+                val totalStockValue by viewModel.totalStockValue.collectAsState()
+                val totalStockInward by viewModel.totalStockInward.collectAsState()
+                val totalStockOutward by viewModel.totalStockOutward.collectAsState()
+                val totalStockUnits by viewModel.totalStockUnits.collectAsState()
 
                 androidx.compose.foundation.lazy.LazyRow(
                     modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
@@ -395,107 +399,270 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                             .padding(top = 4.dp),
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        // Card 1: Sales
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                                Text("Sales", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "${Money(totalSalesSum)}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF059669),
-                                    maxLines = 1
-                                )
+                        if (activeReportTab == 1) {
+                            // Stock Value Tab Specific KPI Cards
+                            // Card 1: Stock Value
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                    Text("Stock Value", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${Money(totalStockValue)}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.primary,
+                                        maxLines = 1
+                                    )
+                                }
                             }
-                        }
 
-                        // Card 2: COGS / Purchases
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                                Text(if (activeReportTab == 3) "Purchases" else "COGS", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = if (activeReportTab == 3) "${Money(totalPurchasesSum)}" else "${Money(purchaseCostSum)}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFF2563EB),
-                                    maxLines = 1
-                                )
+                            // Card 2: Inward (+)
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                    Text("Inward (+)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    val inText = if (totalStockInward % 1.0 == 0.0) totalStockInward.toLong().toString() else String.format(java.util.Locale.US, "%.2f", totalStockInward)
+                                    Text(
+                                        text = "+$inText",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF059669),
+                                        maxLines = 1
+                                    )
+                                }
                             }
-                        }
 
-                        // Card 3: Expenses
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                                Text("Expenses", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "${Money(expensesSum)}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color(0xFFD97706),
-                                    maxLines = 1
-                                )
+                            // Card 3: Outward (-)
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                    Text("Sold (-)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    val outText = if (totalStockOutward % 1.0 == 0.0) totalStockOutward.toLong().toString() else String.format(java.util.Locale.US, "%.2f", totalStockOutward)
+                                    Text(
+                                        text = "-$outText",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFDC2626),
+                                        maxLines = 1
+                                    )
+                                }
                             }
-                        }
 
-                        // Card 4: Net Profit
-                        Card(
-                            modifier = Modifier
-                                .weight(1f)
-                                .border(
-                                    width = 1.dp,
-                                    color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                                Text("Net Profit", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                                Spacer(modifier = Modifier.height(2.dp))
-                                Text(
-                                    text = "${Money(netProfitSum)}",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (netProfitSum >= 0) Color(0xFF059669) else Color(0xFFDC2626),
-                                    maxLines = 1
-                                )
+                            // Card 4: Closing Units
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                    Text("Closing Units", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    val unitText = if (totalStockUnits % 1.0 == 0.0) totalStockUnits.toLong().toString() else String.format(java.util.Locale.US, "%.2f", totalStockUnits)
+                                    Text(
+                                        text = unitText,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF2563EB),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        } else if (activeReportTab == 4) {
+                            val totalCancelledCount = auditLogs.size
+                            val totalCancelledAmount = auditLogs.sumOf { it.amountMinorUnits }
+
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Text("Cancelled Bills", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "$totalCancelledCount Bills",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
+                                    Text("Cancelled Value", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = Money(totalCancelledAmount).toString(),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.error,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        } else {
+                            // Card 1: Sales
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                    Text("Sales", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${Money(totalSalesSum)}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF059669),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            // Card 2: COGS / Purchases
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                    Text(if (activeReportTab == 3) "Purchases" else "COGS", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = if (activeReportTab == 3) "${Money(totalPurchasesSum)}" else "${Money(purchaseCostSum)}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFF2563EB),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            // Card 3: Expenses
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                    Text("Expenses", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${Money(expensesSum)}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color(0xFFD97706),
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+
+                            // Card 4: Net Profit
+                            Card(
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
+                                        shape = RoundedCornerShape(12.dp)
+                                    ),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
+                                    Text("Net Profit", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = "${Money(netProfitSum)}",
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (netProfitSum >= 0) Color(0xFF059669) else Color(0xFFDC2626),
+                                        maxLines = 1
+                                    )
+                                }
                             }
                         }
                     }
@@ -543,13 +710,83 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                             report.rows
                         }
 
-                        if (!isGridView) {
-                            Column(modifier = Modifier.fillMaxSize()) {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            // Professional Report Header Banner
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                                shape = RoundedCornerShape(10.dp)
+                            ) {
+                                val timeFormat = remember { java.text.SimpleDateFormat("dd MMM yyyy, hh:mm a", java.util.Locale.getDefault()) }
+                                val periodStr = if (report.fromEpochMs != null || report.toEpochMs != null) {
+                                    val fromStr = report.fromEpochMs?.let { java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "Beginning"
+                                    val toStr = report.toEpochMs?.let { java.text.SimpleDateFormat("dd MMM yyyy", java.util.Locale.getDefault()).format(java.util.Date(it)) } ?: "Now"
+                                    if (fromStr == toStr) fromStr else "$fromStr - $toStr"
+                                } else {
+                                    "All Time"
+                                }
+                                val generatedTime = remember(report.generatedAtEpochMs) {
+                                    timeFormat.format(java.util.Date(report.generatedAtEpochMs))
+                                }
+                                val recordCount = report.rows.count { !it.any { c -> c.startsWith("TOTAL") || c == "---" } }
+
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(
+                                            text = report.title,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                        ) {
+                                            Text(
+                                                text = "📅 $periodStr",
+                                                fontSize = 11.sp,
+                                                color = MaterialTheme.colorScheme.primary,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                            Text("•", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                            Text(
+                                                text = "🕒 $generatedTime",
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
+                                        shape = RoundedCornerShape(6.dp)
+                                    ) {
+                                        Text(
+                                            text = "$recordCount items",
+                                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = MaterialTheme.colorScheme.primary
+                                        )
+                                    }
+                                }
+                            }
+
+                            if (!isGridView) {
+                                Column(modifier = Modifier.fillMaxSize()) {
                                 if (selectedType == ReportType.SALES) {
                                     OutlinedTextField(
                                         value = salesSearchQuery,
                                         onValueChange = { salesSearchQuery = it },
-                                        placeholder = { Text("Search by Bill #, Customer name, Amount...", fontSize = 13.sp) },
+                                        placeholder = { Text("Search", fontSize = 13.sp) },
                                         leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                                         trailingIcon = {
                                             if (salesSearchQuery.isNotBlank()) {
@@ -672,62 +909,122 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                                     val stock = row.getOrNull(4) ?: "0"
                                                     val cost = row.getOrNull(5) ?: "₹0"
                                                     val totalVal = row.getOrNull(6) ?: "₹0"
+                                                    val inward = row.getOrNull(7) ?: ""
+                                                    val outward = row.getOrNull(8) ?: ""
+                                                    val opening = row.getOrNull(9) ?: ""
+                                                    val lastActivity = row.getOrNull(10) ?: ""
                                                     val isOutOfStock = stock == "0" || stock == "0.000"
+                                                    val rowKey = "$sNo-$prod"
+                                                    val isExpanded = expandedStockRows.contains(rowKey)
 
                                                     Card(
+                                                        onClick = {
+                                                            expandedStockRows = if (isExpanded) expandedStockRows - rowKey else expandedStockRows + rowKey
+                                                        },
                                                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                                                         shape = RoundedCornerShape(12.dp),
                                                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .animateContentSize()
+                                                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
                                                     ) {
-                                                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.SpaceBetween,
-                                                            verticalAlignment = Alignment.CenterVertically
-                                                        ) {
-                                                            Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                                if (sNo.isNotBlank()) {
-                                                                    Surface(
-                                                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
-                                                                        shape = RoundedCornerShape(4.dp)
+                                                        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Row(modifier = Modifier.weight(1f), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                    if (sNo.isNotBlank()) {
+                                                                        Surface(
+                                                                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                                                            shape = RoundedCornerShape(4.dp)
+                                                                        ) {
+                                                                            Text("#$sNo", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                                        }
+                                                                    }
+                                                                    Text(prod, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                                }
+                                                                Surface(
+                                                                    color = if (isOutOfStock) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
+                                                                    shape = RoundedCornerShape(6.dp)
+                                                                ) {
+                                                                    Text(
+                                                                        text = "Closing: $stock $unit",
+                                                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                                        fontSize = 11.sp,
+                                                                        fontWeight = FontWeight.Bold,
+                                                                        color = if (isOutOfStock) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            Row(
+                                                                modifier = Modifier.fillMaxWidth(),
+                                                                horizontalArrangement = Arrangement.SpaceBetween,
+                                                                verticalAlignment = Alignment.CenterVertically
+                                                            ) {
+                                                                Text(cat, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                                                    Text(totalVal, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
+                                                                    Icon(
+                                                                        imageVector = if (isExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                                                                        contentDescription = null,
+                                                                        tint = MaterialTheme.colorScheme.outline,
+                                                                        modifier = Modifier.size(18.dp)
+                                                                    )
+                                                                }
+                                                            }
+
+                                                            if (isExpanded) {
+                                                                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f), modifier = Modifier.padding(vertical = 2.dp))
+                                                                if (opening.isNotBlank() || inward.isNotBlank() || outward.isNotBlank()) {
+                                                                    Row(
+                                                                        modifier = Modifier.fillMaxWidth(),
+                                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                                        verticalAlignment = Alignment.CenterVertically
                                                                     ) {
-                                                                        Text("#$sNo", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                                                        if (opening.isNotBlank()) {
+                                                                            Surface(
+                                                                                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.12f),
+                                                                                shape = RoundedCornerShape(4.dp)
+                                                                            ) {
+                                                                                Text("Open: $opening", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                                                            }
+                                                                        }
+                                                                        if (inward.isNotBlank()) {
+                                                                            Surface(
+                                                                                color = Color(0xFFDCFCE7),
+                                                                                shape = RoundedCornerShape(4.dp)
+                                                                            ) {
+                                                                                Text("+$inward In", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF166534))
+                                                                            }
+                                                                        }
+                                                                        if (outward.isNotBlank()) {
+                                                                            Surface(
+                                                                                color = Color(0xFFFEE2E2),
+                                                                                shape = RoundedCornerShape(4.dp)
+                                                                            ) {
+                                                                                Text("-$outward Sold", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFF991B1B))
+                                                                            }
+                                                                        }
                                                                     }
                                                                 }
-                                                                Text(prod, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                                                Row(
+                                                                    modifier = Modifier.fillMaxWidth(),
+                                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                                    verticalAlignment = Alignment.CenterVertically
+                                                                ) {
+                                                                    Text("Cost Rate: $cost", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                                                    if (lastActivity.isNotBlank() && lastActivity != "-") {
+                                                                        Text("🕒 $lastActivity", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                                                    }
+                                                                }
                                                             }
-                                                            Surface(
-                                                                color = if (isOutOfStock) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.secondaryContainer,
-                                                                shape = RoundedCornerShape(6.dp)
-                                                            ) {
-                                                                Text(
-                                                                    text = "Stock: $stock $unit",
-                                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                                                    fontSize = 11.sp,
-                                                                    fontWeight = FontWeight.Bold,
-                                                                    color = if (isOutOfStock) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onSecondaryContainer
-                                                                )
-                                                            }
-                                                        }
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.SpaceBetween
-                                                        ) {
-                                                            Text(cat, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                                            Text("Cost Rate: $cost", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                                        }
-                                                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f))
-                                                        Row(
-                                                            modifier = Modifier.fillMaxWidth(),
-                                                            horizontalArrangement = Arrangement.SpaceBetween
-                                                        ) {
-                                                            Text("Total Stock Value:", fontSize = 12.sp, fontWeight = FontWeight.Medium)
-                                                            Text(totalVal, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
                                                         }
                                                     }
                                                 }
-                                            }
                                             ReportType.PROFIT -> {
                                                 val sNo = row.getOrNull(0) ?: ""
                                                 val prod = row.getOrNull(1) ?: ""
@@ -898,13 +1195,14 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
             }
         }
     }
+    }
 
     if (showDatePicker) {
         DateRangePickerDialog(
             onDismiss = { showDatePicker = false },
             onConfirm = {
                 val start = dateRangeState.selectedStartDateMillis
-                val end = dateRangeState.selectedEndDateMillis
+                val end = dateRangeState.selectedEndDateMillis?.let { it + 86400000L - 1L }
                 viewModel.setDateFilter(start, end)
                 showDatePicker = false
             },

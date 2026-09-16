@@ -2,22 +2,35 @@ package com.kadaikutty.pos.feature.billing.data
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.paging.PagingSource
 import kotlinx.coroutines.flow.Flow
 
 @Dao interface SaleDao {
-    @Insert suspend fun insertSale(sale: SaleEntity)
-    @Insert suspend fun insertSales(items: List<SaleEntity>)
-    @Insert fun insertSalesSync(items: List<SaleEntity>)
+    @Query("SELECT * FROM stock_movements WHERE companyId = :companyId AND referenceId = :id")
+    suspend fun movementsFor(companyId: String, id: String): List<StockMovementEntity>
+    @Query("SELECT * FROM customer_credits WHERE companyId = :companyId AND referenceId = :id")
+    suspend fun creditsFor(companyId: String, id: String): List<com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity>
+
+    @Insert(onConflict = OnConflictStrategy.ABORT) suspend fun createSale(sale: SaleEntity)
+    @androidx.room.Update suspend fun updateSale(sale: SaleEntity)
+    @Query("SELECT COALESCE(SUM(quantityDelta), 0) FROM stock_movements WHERE companyId = :companyId AND productId = :productId")
+    suspend fun stock(companyId: String, productId: String): Long
+    @Query("SELECT COUNT(*) FROM stock_movements WHERE companyId = :companyId AND productId = :productId")
+    suspend fun movementCount(companyId: String, productId: String): Int
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSale(sale: SaleEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSales(items: List<SaleEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertSalesSync(items: List<SaleEntity>)
     @Query("DELETE FROM sales WHERE companyId = :companyId") suspend fun deleteSalesByCompany(companyId: String)
     @Query("DELETE FROM sales WHERE companyId = :companyId") fun deleteSalesByCompanySync(companyId: String)
-    @Insert suspend fun insertItems(items: List<SaleItemEntity>)
-    @Insert fun insertItemsSync(items: List<SaleItemEntity>)
-    @Insert suspend fun insertStockMovements(movements: List<StockMovementEntity>)
-    @Insert fun insertStockMovementsSync(movements: List<StockMovementEntity>)
-    @Insert suspend fun insertCustomerCredit(credit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertItems(items: List<SaleItemEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertItemsSync(items: List<SaleItemEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStockMovements(movements: List<StockMovementEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertStockMovementsSync(movements: List<StockMovementEntity>)
+    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertCustomerCredit(credit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity)
     @Transaction suspend fun saveSale(sale: SaleEntity, items: List<SaleItemEntity>, movements: List<StockMovementEntity>, customerCredit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity? = null) { 
         insertSale(sale)
         insertItems(items)
@@ -81,14 +94,14 @@ import kotlinx.coroutines.flow.Flow
     @Query("DELETE FROM stock_movements WHERE companyId = :companyId AND id = :movementId")
     suspend fun deleteStockMovementById(companyId: String, movementId: String)
 
-    @Query("DELETE FROM customer_credits WHERE companyId = :companyId AND reason LIKE :reasonPattern")
+    @Query("DELETE FROM customer_credits WHERE companyId = :companyId AND referenceId = :reasonPattern")
     suspend fun deleteCustomerCreditsByReason(companyId: String, reasonPattern: String)
 
     @Transaction
     suspend fun deleteSaleCascade(companyId: String, saleId: String, billNumber: String) {
         deleteSaleItems(companyId, saleId)
         deleteSaleStockMovements(companyId, saleId)
-        deleteCustomerCreditsByReason(companyId, "%$billNumber%")
+        deleteCustomerCreditsByReason(companyId, saleId)
         deleteSale(companyId, saleId)
     }
 }

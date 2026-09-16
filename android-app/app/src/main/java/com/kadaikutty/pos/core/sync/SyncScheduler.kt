@@ -15,12 +15,51 @@ import kotlinx.coroutines.flow.map
 
 class SyncScheduler(private val context: Context) {
 
+    private val _manualDismissed = kotlinx.coroutines.flow.MutableStateFlow(true)
+
+    fun dismissNotification() {
+        _manualDismissed.value = true
+    }
+
     val isSyncingFlow: Flow<Boolean> = WorkManager.getInstance(context)
         .getWorkInfosForUniqueWorkFlow("billing-sync")
         .map { workInfos ->
             workInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING }
         }
-    fun request() {
+
+    val syncNotificationFlow: Flow<SyncNotificationState> = kotlinx.coroutines.flow.combine(
+        WorkManager.getInstance(context).getWorkInfosForUniqueWorkFlow("billing-sync"),
+        _manualDismissed
+    ) { workInfos, dismissed ->
+        if (dismissed) {
+            SyncNotificationState.Idle
+        } else if (workInfos.any { it.state == androidx.work.WorkInfo.State.RUNNING }) {
+            SyncNotificationState.InProgress
+        } else if (workInfos.isNotEmpty() && workInfos.any { it.state == androidx.work.WorkInfo.State.FAILED }) {
+            val failedInfo = workInfos.firstOrNull { it.state == androidx.work.WorkInfo.State.FAILED }
+            val reason = failedInfo?.outputData?.getString("error_reason")
+                ?: "Network or server connection failed."
+            val nextSteps = failedInfo?.outputData?.getString("error_next_steps")
+                ?: "Please check your network and tap to retry."
+            SyncNotificationState.Failed(reason, nextSteps)
+        } else if (workInfos.isNotEmpty() && workInfos.all { it.state == androidx.work.WorkInfo.State.SUCCEEDED }) {
+            SyncNotificationState.Success("Cloud sync completed")
+        } else {
+            SyncNotificationState.Idle
+        }
+    }
+
+    /** Quiet background pull triggered by a realtime data_changed event; does not surface the sync banner. */
+    fun requestPull() {
+        val pullRequest = OneTimeWorkRequestBuilder<PullWorker>()
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 2, TimeUnit.MINUTES)
+            .setConstraints(Constraints(requiredNetworkType = NetworkType.CONNECTED))
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork("billing-pull", ExistingWorkPolicy.KEEP, pullRequest)
+    }
+
+    fun request(replaceExisting: Boolean = false) {
+        _manualDismissed.value = false
         val constraints = Constraints(requiredNetworkType = NetworkType.CONNECTED)
         
         val pullRequest = OneTimeWorkRequestBuilder<PullWorker>()
@@ -33,10 +72,21 @@ class SyncScheduler(private val context: Context) {
             .setConstraints(constraints)
             .build()
             
-        WorkManager.getInstance(context)
-            .beginUniqueWork("billing-sync", ExistingWorkPolicy.REPLACE, pullRequest)
-            .then(pushRequest)
-            .enqueue()
+        val workManager = WorkManager.getInstance(context)
+
+        // Upload and download are intentionally independent. A slow/failed pull
+        // must never prevent locally-created bills, products, or masters from
+        // reaching the backend sync API.
+        workManager.enqueueUniqueWork(
+                "billing-sync",
+                if (replaceExisting) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
+                pushRequest
+            )
+        workManager.enqueueUniqueWork(
+            "billing-pull",
+            if (replaceExisting) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP,
+            pullRequest
+        )
     }
 
     fun schedulePeriodicSync() {

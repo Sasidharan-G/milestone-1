@@ -1,11 +1,15 @@
 package com.kadaikutty.pos.core.ui.otp
 
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.*
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -13,23 +17,25 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Shield
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -37,16 +43,15 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
-import kotlin.math.cos
-import kotlin.math.sin
 
 /**
- * High-fidelity, exact replica of "OTP Verification v3" interactive orbit animation.
- * Features:
- * - 6-Digit (or 4-digit) custom pill slots with active neon borders (#2ee6a8 / #1e88e5)
- * - Orbiting atom/ring satellite animation upon completion
- * - Floating green checkmark with particle expansion
- * - Interactive fill simulator & resend timer
+ * Premium Royal Maroon and Warm Gold Glassmorphic OTP Verification View.
+ * Matches LoginScreen color codes:
+ * - Royal Deep Maroon (#5C151A / #4A0E13)
+ * - Warm Golden Amber (#F59E0B / #FCD34D)
+ * - Pure White and Soft Platinum
+ * - Fluid micro-animations: Pulsing security halo, spring-bounce digit slots,
+ *   shimmering button glow, error shake physics, and circular countdown timer.
  */
 @Composable
 fun OrbitOtpVerificationView(
@@ -54,372 +59,455 @@ fun OrbitOtpVerificationView(
     otpValue: String,
     phoneNumber: String,
     onOtpChange: (String) -> Unit,
-    onVerifyTriggered: (String) -> Unit,
+    onVerifyTriggered: (String) -> Unit = {},
     onResendClick: () -> Unit = {},
     isLoading: Boolean = false,
-    errorMessage: String? = null
+    errorMessage: String? = null,
+    showVerifyButton: Boolean = true,
+    verifyButtonText: String = "Verify & Proceed"
 ) {
     val focusRequester = remember { FocusRequester() }
     val isComplete = otpValue.length == otpLength
 
-    // Animation drivers
-    val infiniteTransition = rememberInfiniteTransition(label = "OrbitTransition")
-    val orbitRotation by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(2400, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "orbitRotation"
-    )
+    // Auto-focus keyboard on load
+    LaunchedEffect(Unit) {
+        delay(250)
+        try { focusRequester.requestFocus() } catch (_: Exception) {}
+    }
 
-    // Completion transition
-    val completeTransition = updateTransition(targetState = isComplete, label = "CompleteState")
-    
-    val orbitScale by completeTransition.animateFloat(
-        transitionSpec = { spring(dampingRatio = Spring.DampingRatioMediumBouncy, stiffness = Spring.StiffnessLow) },
-        label = "orbitScale"
-    ) { state -> if (state) 1f else 0f }
-
-    val slotsAlpha by completeTransition.animateFloat(
-        transitionSpec = { tween(350, easing = FastOutSlowInEasing) },
-        label = "slotsAlpha"
-    ) { state -> if (state) 0f else 1f }
-
-    val checkmarkScale by completeTransition.animateFloat(
-        transitionSpec = { 
-            if (targetState) {
-                keyframes {
-                    durationMillis = 600
-                    0f at 0 with FastOutSlowInEasing
-                    1.25f at 400 with FastOutSlowInEasing
-                    1f at 600
-                }
-            } else {
-                tween(200)
-            }
-        },
-        label = "checkmarkScale"
-    ) { state -> if (state) 1f else 0f }
-
-    // Resend countdown timer
-    var resendCountdown by remember { mutableIntStateOf(30) }
+    // Countdown timer for OTP Resend (30 seconds)
+    var countdownSeconds by remember { mutableIntStateOf(30) }
     var canResend by remember { mutableStateOf(false) }
 
-    LaunchedEffect(Unit) {
-        focusRequester.requestFocus()
-        while (resendCountdown > 0) {
+    LaunchedEffect(countdownSeconds) {
+        if (countdownSeconds > 0) {
             delay(1000L)
-            resendCountdown--
-        }
-        canResend = true
-    }
-
-    // Auto verify trigger on completion
-    LaunchedEffect(isComplete) {
-        if (isComplete && !isLoading) {
-            delay(400L)
-            onVerifyTriggered(otpValue)
+            countdownSeconds--
+        } else {
+            canResend = true
         }
     }
 
-    Box(
+    // 1. Hero Badge Pulsing Animation
+    val infiniteTransition = rememberInfiniteTransition(label = "SecurityHaloTransition")
+    
+    val haloScale by infiniteTransition.animateFloat(
+        initialValue = 0.95f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "haloScale"
+    )
+
+    val haloAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.45f,
+        targetValue = 0.08f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "haloAlpha"
+    )
+
+    val badgeRotation by infiniteTransition.animateFloat(
+        initialValue = -3f,
+        targetValue = 3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(2200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "badgeRotation"
+    )
+
+    // 2. Cursor Blink Animation for Active Slot
+    val cursorAlpha by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(500, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "cursorAlpha"
+    )
+
+    // 3. Error Shake Physics
+    val hasError = !errorMessage.isNullOrBlank()
+    val shakeOffset = remember { Animatable(0f) }
+
+    LaunchedEffect(errorMessage) {
+        if (!errorMessage.isNullOrBlank()) {
+            shakeOffset.animateTo(
+                targetValue = 0f,
+                animationSpec = keyframes {
+                    durationMillis = 400
+                    -12f at 50
+                    12f at 100
+                    -8f at 180
+                    8f at 260
+                    -4f at 330
+                    0f at 400
+                }
+            )
+        }
+    }
+
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF0B0F17))
-            .padding(vertical = 24.dp, horizontal = 16.dp),
-        contentAlignment = Alignment.Center
+            .padding(horizontal = 6.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-            modifier = Modifier.fillMaxWidth()
+        // --- HERO SECURITY BADGE WITH GLOWING HALO ---
+        Box(
+            modifier = Modifier
+                .size(80.dp)
+                .padding(4.dp),
+            contentAlignment = Alignment.Center
         ) {
-            // Header Badge: COMPONENT 89 / OTP Verification v3
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "COMPONENT · 89",
-                    fontSize = 11.sp,
-                    letterSpacing = 2.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF64748B),
-                    fontFamily = FontFamily.Monospace
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "OTP Verification v3",
-                    fontSize = 26.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    letterSpacing = (-0.5).sp
-                )
-            }
+            // Expanding Golden Halo Wave
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .scale(haloScale)
+                    .clip(CircleShape)
+                    .background(Color(0xFFF59E0B).copy(alpha = haloAlpha))
+            )
 
-            // Subtitle
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    text = "Verify your number",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFE2E8F0)
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = "Enter the $otpLength-digit code sent to ${phoneNumber.ifBlank { "+91 ••••• ••••" }}",
-                    fontSize = 13.sp,
-                    color = Color(0xFF94A3B8),
-                    textAlign = TextAlign.Center
-                )
+            // Inner Glassmorphic Circle
+            Surface(
+                modifier = Modifier
+                    .size(60.dp)
+                    .graphicsLayer { rotationZ = badgeRotation },
+                shape = CircleShape,
+                color = Color.White.copy(alpha = 0.15f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.5.dp,
+                    Brush.sweepGradient(
+                        listOf(
+                            Color(0xFFFCD34D),
+                            Color(0xFFF59E0B),
+                            Color.White.copy(alpha = 0.8f),
+                            Color(0xFFFCD34D)
+                        )
+                    )
+                ),
+                shadowElevation = 8.dp
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = if (isComplete) Icons.Default.CheckCircle else Icons.Default.Shield,
+                        contentDescription = "Security Verification",
+                        tint = if (isComplete) Color(0xFF10B981) else Color(0xFFFCD34D),
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
             }
+        }
 
-            // Hidden BasicTextField capturing keyboard inputs
+        Spacer(modifier = Modifier.height(8.dp))
+
+        // Title & Description
+        Text(
+            text = "Verification Code",
+            fontSize = 20.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = Color.White,
+            letterSpacing = 0.3.sp
+        )
+
+        Spacer(modifier = Modifier.height(4.dp))
+
+        val cleanDisplayPhone = if (phoneNumber.length >= 10) {
+            val last4 = phoneNumber.takeLast(4)
+            val first2 = phoneNumber.take(2)
+            "+91 $first2â€¢â€¢â€¢â€¢ â€¢â€¢$last4"
+        } else if (phoneNumber.isNotBlank()) {
+            phoneNumber
+        } else {
+            "your registered mobile"
+        }
+
+        Text(
+            text = "We sent a 6-digit OTP to",
+            fontSize = 12.sp,
+            color = Color.White.copy(alpha = 0.7f)
+        )
+
+        // Pill badge displaying formatted phone number
+        Surface(
+            modifier = Modifier.padding(top = 4.dp),
+            shape = RoundedCornerShape(percent = 50),
+            color = Color.White.copy(alpha = 0.12f),
+            border = androidx.compose.foundation.BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+        ) {
+            Text(
+                text = cleanDisplayPhone,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color(0xFFFCD34D),
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 3.dp)
+            )
+        }
+
+        Spacer(modifier = Modifier.height(20.dp))
+
+        // --- INTERACTIVE 6-DIGIT GLASSMORPHIC SLOTS GRID ---
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer { translationX = shakeOffset.value }
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) {
+                    focusRequester.requestFocus()
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            // Hidden native TextField capturing actual input
             BasicTextField(
                 value = otpValue,
                 onValueChange = { input ->
                     val filtered = input.filter { it.isDigit() }.take(otpLength)
                     onOtpChange(filtered)
+                    if (filtered.length == otpLength) {
+                        onVerifyTriggered(filtered)
+                    }
                 },
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                keyboardActions = KeyboardActions(onDone = {
-                    if (otpValue.length == otpLength) onVerifyTriggered(otpValue)
-                }),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                keyboardActions = KeyboardActions(
+                    onDone = {
+                        if (otpValue.length == otpLength) {
+                            onVerifyTriggered(otpValue)
+                        }
+                    }
+                ),
                 modifier = Modifier
                     .size(1.dp)
                     .alpha(0f)
                     .focusRequester(focusRequester)
             )
 
-            // OTP Container Area: Switching between Slots and Orbit Animation
-            Box(
+            // Visible 6 Distinct Luxury Digit Slots
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(130.dp)
-                    .clickable(
-                        interactionSource = remember { MutableInteractionSource() },
-                        indication = null
-                    ) {
-                        focusRequester.requestFocus()
-                    },
-                contentAlignment = Alignment.Center
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                // Layer 1: The Input Pill Slots (shown while typing)
-                if (slotsAlpha > 0.01f) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier
-                            .alpha(slotsAlpha)
-                            .scale(0.8f + (slotsAlpha * 0.2f))
-                    ) {
-                        for (i in 0 until otpLength) {
-                            val digit = otpValue.getOrNull(i)?.toString() ?: ""
-                            val isFocused = otpValue.length == i
-                            val isFilled = digit.isNotEmpty()
+                for (i in 0 until otpLength) {
+                    val char = otpValue.getOrNull(i)?.toString() ?: ""
+                    val isCurrentSlot = (i == otpValue.length) && (otpValue.length < otpLength)
+                    val isFilled = char.isNotEmpty()
 
-                            OtpSlotBox(
-                                digit = digit,
-                                isFocused = isFocused,
-                                isFilled = isFilled
-                            )
-                        }
+                    // Spring bounce scale on enter
+                    val slotScale by animateFloatAsState(
+                        targetValue = if (isFilled) 1.05f else if (isCurrentSlot) 1.02f else 1f,
+                        animationSpec = spring(
+                            dampingRatio = Spring.DampingRatioMediumBouncy,
+                            stiffness = Spring.StiffnessMedium
+                        ),
+                        label = "slotScale_$i"
+                    )
+
+                    val slotBorderColor = when {
+                        hasError -> Color(0xFFFF5252)
+                        isCurrentSlot -> Color(0xFFF59E0B) // Glowing Amber active focus
+                        isFilled -> Color.White.copy(alpha = 0.7f)
+                        else -> Color.White.copy(alpha = 0.2f)
                     }
-                }
 
-                // Layer 2: Orbit Animation (Shown when completed)
-                if (orbitScale > 0.01f) {
-                    Box(
+                    val slotBgColor = when {
+                        hasError -> Color(0xFFFF5252).copy(alpha = 0.15f)
+                        isCurrentSlot -> Color.White.copy(alpha = 0.20f)
+                        isFilled -> Color.White.copy(alpha = 0.24f)
+                        else -> Color.White.copy(alpha = 0.10f)
+                    }
+
+                    Surface(
                         modifier = Modifier
-                            .size(110.dp)
-                            .scale(orbitScale)
-                            .alpha(orbitScale),
-                        contentAlignment = Alignment.Center
+                            .weight(1f)
+                            .height(52.dp)
+                            .scale(slotScale),
+                        shape = RoundedCornerShape(12.dp),
+                        color = slotBgColor,
+                        border = androidx.compose.foundation.BorderStroke(
+                            width = if (isCurrentSlot || hasError) 2.dp else 1.2.dp,
+                            color = slotBorderColor
+                        ),
+                        shadowElevation = if (isCurrentSlot) 6.dp else 2.dp
                     ) {
-                        // Background Orbit Circles & Particles
-                        Canvas(
-                            modifier = Modifier
-                                .size(110.dp)
-                                .rotate(orbitRotation)
-                        ) {
-                            val centerOffset = Offset(size.width / 2, size.height / 2)
-                            val radius = size.minDimension / 2.3f
-
-                            // Outer Dashed Orbit Ring
-                            drawCircle(
-                                color = Color(0xFF2EE6A8).copy(alpha = 0.35f),
-                                radius = radius,
-                                center = centerOffset,
-                                style = Stroke(
-                                    width = 2.dp.toPx(),
-                                    pathEffect = PathEffect.dashPathEffect(floatArrayOf(12f, 10f), 0f),
-                                    cap = StrokeCap.Round
+                        Box(contentAlignment = Alignment.Center) {
+                            if (isFilled) {
+                                Text(
+                                    text = char,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.ExtraBold,
+                                    fontFamily = FontFamily.Monospace,
+                                    color = Color.White,
+                                    textAlign = TextAlign.Center
                                 )
-                            )
-
-                            // Inner Glow Orbit Ring
-                            drawCircle(
-                                color = Color(0xFF1E88E5).copy(alpha = 0.25f),
-                                radius = radius * 0.72f,
-                                center = centerOffset,
-                                style = Stroke(width = 1.5.dp.toPx())
-                            )
-
-                            // Satellite Moon 1 (#2ee6a8)
-                            val angle1 = 0.0
-                            val satX1 = centerOffset.x + radius * cos(angle1).toFloat()
-                            val satY1 = centerOffset.y + radius * sin(angle1).toFloat()
-                            drawCircle(
-                                color = Color(0xFF2EE6A8),
-                                radius = 5.dp.toPx(),
-                                center = Offset(satX1, satY1)
-                            )
-
-                            // Satellite Moon 2 (#38bdf8)
-                            val angle2 = Math.PI
-                            val satX2 = centerOffset.x + radius * cos(angle2).toFloat()
-                            val satY2 = centerOffset.y + radius * sin(angle2).toFloat()
-                            drawCircle(
-                                color = Color(0xFF38BDF8),
-                                radius = 4.dp.toPx(),
-                                center = Offset(satX2, satY2)
-                            )
-                        }
-
-                        // Orbit Center Core Glow
-                        Box(
-                            modifier = Modifier
-                                .size(58.dp)
-                                .clip(CircleShape)
-                                .background(Color(0xFF0F232B))
-                                .border(1.5.dp, Color(0xFF2EE6A8), CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            // Green Success Checkmark Icon
-                            Text(
-                                text = "?",
-                                color = Color(0xFF2EE6A8),
-                                fontSize = 28.sp,
-                                fontWeight = FontWeight.ExtraBold,
-                                modifier = Modifier.scale(checkmarkScale)
-                            )
+                            } else if (isCurrentSlot) {
+                                // Pulsing Amber Cursor
+                                Box(
+                                    modifier = Modifier
+                                        .width(2.dp)
+                                        .height(20.dp)
+                                        .alpha(cursorAlpha)
+                                        .background(Color(0xFFFCD34D), shape = RoundedCornerShape(1.dp))
+                                )
+                            } else {
+                                // Subtle placeholder dot
+                                Box(
+                                    modifier = Modifier
+                                        .size(6.dp)
+                                        .alpha(0.35f)
+                                        .background(Color.White, shape = CircleShape)
+                                )
+                            }
                         }
                     }
-                }
-            }
-
-            // Error Message Display
-            if (!errorMessage.isNullOrBlank()) {
-                Text(
-                    text = errorMessage,
-                    color = Color(0xFFFF5252),
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    textAlign = TextAlign.Center
-                )
-            }
-
-            // Bottom Info & Resend Timer
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.Center
-            ) {
-                Text(
-                    text = "Didn't receive the code? ",
-                    fontSize = 13.sp,
-                    color = Color(0xFF94A3B8)
-                )
-                if (canResend) {
-                    Text(
-                        text = "Resend Code",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFF2EE6A8),
-                        modifier = Modifier.clickable {
-                            resendCountdown = 30
-                            canResend = false
-                            onResendClick()
-                        }
-                    )
-                } else {
-                    Text(
-                        text = "Resend in ${resendCountdown}s",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color(0xFF64748B)
-                    )
                 }
             }
         }
-    }
-}
 
-/**
- * Distinct Pill-shaped Slot matching video design:
- * Dark glassy background #121A29, glowing neon teal border (#2ee6a8) when focused.
- */
-@Composable
-private fun OtpSlotBox(
-    digit: String,
-    isFocused: Boolean,
-    isFilled: Boolean
-) {
-    val borderColor = when {
-        isFocused -> Color(0xFF2EE6A8)
-        isFilled -> Color(0xFF38BDF8).copy(alpha = 0.7f)
-        else -> Color(0xFF1E293B)
-    }
-
-    val backgroundColor = when {
-        isFocused -> Color(0xFF0F2228)
-        isFilled -> Color(0xFF111E33)
-        else -> Color(0xFF0D1524)
-    }
-
-    val scale by animateFloatAsState(
-        targetValue = if (isFocused) 1.06f else 1f,
-        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
-        label = "slotScale"
-    )
-
-    Box(
-        modifier = Modifier
-            .size(width = 46.dp, height = 60.dp)
-            .scale(scale)
-            .clip(RoundedCornerShape(16.dp))
-            .background(backgroundColor)
-            .border(
-                width = if (isFocused) 1.8.dp else 1.dp,
-                color = borderColor,
-                shape = RoundedCornerShape(16.dp)
-            ),
-        contentAlignment = Alignment.Center
-    ) {
-        if (digit.isNotEmpty()) {
+        // Error message row
+        AnimatedVisibility(
+            visible = hasError,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut()
+        ) {
             Text(
-                text = digit,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                fontFamily = FontFamily.SansSerif
+                text = errorMessage ?: "",
+                color = Color(0xFFFF6B6B),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(top = 10.dp, start = 8.dp, end = 8.dp)
             )
-        } else if (isFocused) {
-            // Blinking caret
-            val caretAlpha by rememberInfiniteTransition(label = "Caret").animateFloat(
-                initialValue = 0.2f,
-                targetValue = 1f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(500, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse
+        }
+
+        Spacer(modifier = Modifier.height(18.dp))
+
+        // --- CIRCULAR ANIMATED RESEND COUNTDOWN ---
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            if (canResend) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(percent = 50))
+                        .clickable {
+                            canResend = false
+                            countdownSeconds = 30
+                            onResendClick()
+                        }
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = "Resend OTP",
+                        tint = Color(0xFFFCD34D),
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = "Didn't receive code? Resend OTP",
+                        color = Color(0xFFFCD34D),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            } else {
+                // Progress circle with countdown seconds
+                Box(
+                    contentAlignment = Alignment.Center,
+                    modifier = Modifier.size(24.dp)
+                ) {
+                    val progress = countdownSeconds / 30f
+                    Canvas(modifier = Modifier.fillMaxSize()) {
+                        drawArc(
+                            color = Color.White.copy(alpha = 0.2f),
+                            startAngle = -90f,
+                            sweepAngle = 360f,
+                            useCenter = false,
+                            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                        drawArc(
+                            color = Color(0xFFF59E0B),
+                            startAngle = -90f,
+                            sweepAngle = 360f * progress,
+                            useCenter = false,
+                            style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
+                        )
+                    }
+                    Text(
+                        text = "$countdownSeconds",
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = "Resend OTP in 00:${if (countdownSeconds < 10) "0$countdownSeconds" else "$countdownSeconds"}",
+                    color = Color.White.copy(alpha = 0.65f),
+                    fontSize = 12.sp
+                )
+            }
+        }
+
+        if (showVerifyButton) {
+            Spacer(modifier = Modifier.height(18.dp))
+
+            // --- SHIMMERING VERIFY BUTTON ---
+            Button(
+                onClick = {
+                    if (otpValue.length == otpLength) {
+                        onVerifyTriggered(otpValue)
+                    }
+                },
+                enabled = !isLoading && isComplete,
+                shape = RoundedCornerShape(percent = 50),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color.White,
+                    contentColor = Color(0xFF5C151A),
+                    disabledContainerColor = Color.White.copy(alpha = 0.25f),
+                    disabledContentColor = Color.White.copy(alpha = 0.4f)
                 ),
-                label = "caretAlpha"
-            )
-            Box(
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = if (isComplete) 6.dp else 0.dp,
+                    pressedElevation = 2.dp
+                ),
                 modifier = Modifier
-                    .width(2.dp)
-                    .height(22.dp)
-                    .alpha(caretAlpha)
-                    .background(Color(0xFF2EE6A8), RoundedCornerShape(1.dp))
-            )
+                    .fillMaxWidth()
+                    .height(50.dp)
+            ) {
+                if (isLoading) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(22.dp),
+                        color = Color(0xFF5C151A),
+                        strokeWidth = 2.5.dp
+                    )
+                } else {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = verifyButtonText,
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.4.sp
+                        )
+                    }
+                }
+            }
         }
     }
 }

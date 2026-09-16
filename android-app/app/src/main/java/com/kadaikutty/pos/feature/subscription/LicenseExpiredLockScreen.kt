@@ -12,17 +12,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.automirrored.filled.Chat
+import androidx.compose.material.icons.automirrored.filled.ExitToApp
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kadaikutty.pos.BuildConfig
 import com.kadaikutty.pos.core.license.LicenseEntity
 
 @Composable
@@ -37,7 +38,7 @@ fun LicenseExpiredLockScreen(
     var enteredPin by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf(false) }
 
-    val masterContactPhone = "+919840000000" // Master Admin Support
+    val masterContactPhone = BuildConfig.MASTER_SUPPORT_PHONE.trim()
 
     Box(
         modifier = Modifier
@@ -121,8 +122,12 @@ fun LicenseExpiredLockScreen(
             Button(
                 onClick = {
                     try {
-                        val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$masterContactPhone"))
-                        context.startActivity(intent)
+                        if (masterContactPhone.isBlank()) {
+                            android.widget.Toast.makeText(context, "Master Admin contact is not configured.", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            val intent = Intent(Intent.ACTION_DIAL, Uri.parse("tel:$masterContactPhone"))
+                            context.startActivity(intent)
+                        }
                     } catch (e: Exception) {}
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -139,10 +144,14 @@ fun LicenseExpiredLockScreen(
             Button(
                 onClick = {
                     try {
-                        val shop = shopName.ifBlank { license?.businessName ?: "Your Store" }
-                        val url = "https://api.whatsapp.com/send?phone=$masterContactPhone&text=Hello%20Master%20Admin,%20I%20want%20to%20renew%20the%20KadaiKutty%20POS%20License%20for%20my%20store:%20${Uri.encode(shop)}"
-                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                        context.startActivity(intent)
+                        if (masterContactPhone.isBlank()) {
+                            android.widget.Toast.makeText(context, "Master Admin contact is not configured.", android.widget.Toast.LENGTH_SHORT).show()
+                        } else {
+                            val shop = shopName.ifBlank { license?.businessName ?: "Your Store" }
+                            val url = "https://api.whatsapp.com/send?phone=$masterContactPhone&text=Hello%20Master%20Admin,%20I%20want%20to%20renew%20the%20KadaiKutty%20POS%20License%20for%20my%20store:%20${Uri.encode(shop)}"
+                            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                            context.startActivity(intent)
+                        }
                     } catch (e: Exception) {}
                 },
                 modifier = Modifier.fillMaxWidth().height(50.dp),
@@ -176,7 +185,7 @@ fun LicenseExpiredLockScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF334155))
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Icon(Icons.Default.ExitToApp, contentDescription = null, tint = Color.White)
+                    Icon(Icons.AutoMirrored.Filled.ExitToApp, contentDescription = null, tint = Color.White)
                     Text("Switch User / Logout", color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }

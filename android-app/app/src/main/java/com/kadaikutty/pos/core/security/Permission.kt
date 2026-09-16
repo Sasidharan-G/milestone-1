@@ -14,8 +14,3 @@ enum class Permission {
         }.toSet()
     }
 }
-
-interface AuthorizationService { fun can(permission: Permission): Boolean }
-class PermissionAuthorizationService(private val granted: Set<Permission>) : AuthorizationService {
-    override fun can(permission: Permission): Boolean = permission in granted
-}

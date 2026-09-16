@@ -10,7 +10,20 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.firstOrNull
 
+data class SavedPrinter(val type: String, val deviceId: String, val paperWidth: Int)
+
 class AppPreferences(private val dataStore: DataStore<Preferences>) {
+    private val savedPrintersKey = stringPreferencesKey("saved_printer_profiles")
+    val savedPrinters: Flow<List<SavedPrinter>> = dataStore.data.map { preferences ->
+        decodePrinters(preferences[savedPrintersKey])
+    }
+    private fun decodePrinters(value: String?): List<SavedPrinter> = try {
+        val array = org.json.JSONArray(value ?: "[]")
+        (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            SavedPrinter(item.getString("type"), item.getString("deviceId"), item.getInt("paperWidth"))
+        }
+    } catch (_: org.json.JSONException) { emptyList() }
     private val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
     val isOnboardingCompleted: Flow<Boolean> = dataStore.data.map { it[onboardingCompleted] ?: false }
     suspend fun markOnboardingCompleted() { dataStore.edit { it[onboardingCompleted] = true } }
@@ -43,10 +56,20 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     }
 
     suspend fun savePrinterSettings(type: String, deviceId: String, paperWidth: Int) {
+        require(type in listOf("Bluetooth", "Usb", "Network")) { "Select a supported connection" }
+        require(deviceId.isNotBlank()) { "Select a printer first" }
+        require(paperWidth in listOf(32, 48)) { "Select 58 mm or 80 mm paper" }
         dataStore.edit {
             it[printerTypeKey] = type
             it[printerDeviceIdKey] = deviceId
             it[printerPaperWidthKey] = paperWidth
+            val profiles = decodePrinters(it[savedPrintersKey]).filterNot { p -> p.type == type && p.deviceId == deviceId } +
+                SavedPrinter(type, deviceId, paperWidth)
+            val array = org.json.JSONArray()
+            profiles.takeLast(30).forEach { p ->
+                array.put(org.json.JSONObject().put("type", p.type).put("deviceId", p.deviceId).put("paperWidth", p.paperWidth))
+            }
+            it[savedPrintersKey] = array.toString()
         }
     }
 
@@ -86,7 +109,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     }
 
     private val themeModeKey = stringPreferencesKey("theme_mode")
-    val themeMode: Flow<String> = dataStore.data.map { it[themeModeKey] ?: "System" }
+    val themeMode: Flow<String> = dataStore.data.map { it[themeModeKey] ?: "Light" }
 
     suspend fun saveThemeMode(mode: String) {
         dataStore.edit {
@@ -143,11 +166,12 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     val installationDeviceId: Flow<String?> = dataStore.data.map { it[installationDeviceIdKey] }
 
     suspend fun getOrCreateInstallationDeviceId(): String {
-        val existing = installationDeviceId.firstOrNull()
-        if (!existing.isNullOrBlank()) return existing
-        val newId = java.util.UUID.randomUUID().toString()
-        dataStore.edit { it[installationDeviceIdKey] = newId }
-        return newId
+        var id = ""
+        dataStore.edit {
+            id = it[installationDeviceIdKey]?.takeIf(String::isNotBlank) ?: java.util.UUID.randomUUID().toString()
+            it[installationDeviceIdKey] = id
+        }
+        return id
     }
 
     fun getDeviceModelName(): String {

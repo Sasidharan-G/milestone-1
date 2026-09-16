@@ -68,10 +68,12 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
     var priceText by remember { mutableStateOf("") }
 
     var message by remember { mutableStateOf("") }
+    val operationError by viewModel.operationError.collectAsState()
+    LaunchedEffect(operationError) { operationError?.let { message = it } }
     var showCameraScanner by remember { mutableStateOf(value = false) }
     
     var showPaymentDialog by remember { mutableStateOf(value = false) }
-    var discountInput by remember { mutableStateOf("") }
+    val discountInput by viewModel.discountInput.collectAsState()
     var includePreviousDueInCheckout by remember { mutableStateOf(value = false) }
     
     var showSplitCartDialog by remember { mutableStateOf(value = false) }
@@ -172,7 +174,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
 
     val activeLines = if (checkoutMode == "SPLIT_CART") lines.filter { splitCartSelectedItems.contains(it.productId) } else lines
     val activeBillSubtotal = activeLines.fold(Money.Zero) { sum, line -> sum + line.lineTotal }
-    val globalDiscountMinorUnits = (discountInput.toDoubleOrNull() ?: 0.0).let { (it * 100).toLong() }
+    val globalDiscountMinorUnits = com.kadaikutty.pos.core.common.CheckoutMath.parseAmount(discountInput) ?: 0L
     val activeBillTotal = Money(maxOf(0L, activeBillSubtotal.minorUnits - globalDiscountMinorUnits))
     val selectedProduct = products.find { it.id == selectedProductId }
     val currentStockUnits = if (selectedProduct != null) stockMap[selectedProduct.id] ?: 0L else 0L
@@ -435,13 +437,26 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                     message = "Quantity must be > 0"
                                 } else if (priceDouble == null || priceDouble <= 0.0) {
                                     message = "Unit price must be > 0"
+                                } else if (currentStockUnits <= 0L) {
+                                    message = "${selectedProduct.name} stock illa. Sale cart-la add panna mudiyadhu."
+                                } else if (parsedQty > currentStockUnits) {
+                                    val stockText = if (isDecimalUnit) {
+                                        String.format(Locale.US, "%.3f", currentStockUnits / 1000.0)
+                                    } else {
+                                        currentStockUnits.toString()
+                                    }
+                                    message = "Enough stock illa. Available: $stockText ${selectedProduct.unitType}"
                                 } else {
                                     val priceMoney = Money((priceDouble * 100).toLong())
-                                    viewModel.addLine(selectedProductId, selectedProduct.name, parsedQty, priceMoney, selectedProduct.unitType)
-                                    selectedProductId = ""
-                                    quantityText = "1"
-                                    priceText = ""
-                                    message = "Added to invoice"
+                                    val addError = viewModel.addLine(selectedProductId, selectedProduct.name, parsedQty, priceMoney, selectedProduct.unitType)
+                                    if (addError == null) {
+                                        selectedProductId = ""
+                                        quantityText = "1"
+                                        priceText = ""
+                                        message = "Added to invoice"
+                                    } else {
+                                        message = addError
+                                    }
                                 }
                             },
                             shape = MaterialTheme.shapes.small,
@@ -584,7 +599,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
                             value = discountInput,
-                            onValueChange = { discountInput = it },
+                            onValueChange = { viewModel.setDiscountInput(it) },
                             label = { Text("Discount(₹)", style = MaterialTheme.typography.bodySmall) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f).padding(end = 12.dp),
@@ -686,8 +701,8 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                         }
                     )
 
-                    val finalPayableTotal = activeBillTotal
-                    val settleDueAmount = 0L
+                    val settleDueAmount = if (includePreviousDueInCheckout && selectedCustomerId != null && selectedCustomerId != "online") maxOf(0L, customerCreditDue) else 0L
+                    val finalPayableTotal = activeBillTotal + Money(settleDueAmount)
 
                     PaymentCheckoutDialog(
                         showDialog = showPaymentDialog,
@@ -711,7 +726,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                     settlePreviousCreditMinorUnits = settleDueAmount,
                                     onSuccess = { billNum ->
                                         message = "Bill saved successfully: $billNum"
-                                        discountInput = ""
+                                        viewModel.setDiscountInput("")
                                         includePreviousDueInCheckout = false
                                     },
                                     onError = { message = "Error: ${it.message}" }
@@ -726,7 +741,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                     settlePreviousCreditMinorUnits = settleDueAmount,
                                     onSuccess = { billNum ->
                                         message = "Bill saved successfully: $billNum"
-                                        discountInput = ""
+                                        viewModel.setDiscountInput("")
                                         includePreviousDueInCheckout = false
                                     },
                                     onError = { message = "Error: ${it.message}" }

@@ -7,8 +7,19 @@ import androidx.room.Query
 data class SaleAmountRow(val date: String, val totalAmount: Long)
 data class SaleBillRow(val billNumber: String, val date: String, val totalAmount: Long, val customerName: String)
 data class ItemWiseRow(val productName: String, val categoryName: String, val totalQty: Long, val totalRevenue: Long)
-data class StockReportRow(val productName: String, val categoryName: String, val unitType: String, val purchasePrice: Long, val salePrice: Long, val currentStock: Long)
-data class ProfitReportRawRow(val productId: String, val productName: String, val totalQty: Long, val totalRevenue: Long)
+data class StockReportRow(
+    val productName: String,
+    val categoryName: String,
+    val unitType: String,
+    val purchasePrice: Long,
+    val salePrice: Long,
+    val currentStock: Long,
+    val openingStock: Long = 0L,
+    val inwardQty: Long = 0L,
+    val outwardQty: Long = 0L,
+    val lastUpdatedEpochMs: Long = 0L
+)
+data class ProfitReportRawRow(val productId: String, val productName: String, val totalQty: Long, val totalRevenue: Long, val recordedCost: Long? = null)
 data class PurchaseReportRow(val purchaseId: String, val orderNumber: String?, val invoiceNumber: String?, val date: String, val supplierName: String, val paymentMode: String, val totalAmount: Long)
 data class CustomerReportRow(val customerName: String, val totalBills: Long, val totalSpent: Long)
 data class SupplierReportRow(val supplierName: String, val totalBills: Long, val totalPurchased: Long)
@@ -54,7 +65,10 @@ interface ReportDao {
             p.name as productName, 
             cat.name as categoryName, 
             SUM(si.quantity) as totalQty, 
-            SUM(si.lineTotalMinorUnits) as totalRevenue
+            SUM(COALESCE(si.netRevenueMinorUnits, si.lineTotalMinorUnits - (
+                CAST(s.discountMinorUnits * 1.0 * (SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId AND x.productId <= si.productId) / MAX(1, (SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId)) AS INTEGER)
+                - CAST(s.discountMinorUnits * 1.0 * COALESCE((SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId AND x.productId < si.productId), 0) / MAX(1, (SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId)) AS INTEGER)
+            ))) as totalRevenue
         FROM sale_items si
         INNER JOIN sales s ON si.saleId = s.id AND s.companyId = :companyId
         INNER JOIN products p ON si.productId = p.id AND p.companyId = :companyId
@@ -70,19 +84,23 @@ interface ReportDao {
     @Query("""
         SELECT 
             p.name as productName, 
-            cat.name as categoryName, 
+            COALESCE(cat.name, 'General') as categoryName, 
             p.unitType as unitType,
             p.purchasePriceMinorUnits as purchasePrice,
             p.salePriceMinorUnits as salePrice,
-            COALESCE(SUM(sm.quantityDelta), 0) as currentStock
+            COALESCE(SUM(CASE WHEN (:toEpochMs IS NULL OR sm.createdAtEpochMs <= :toEpochMs) THEN sm.quantityDelta ELSE 0 END), 0) as currentStock,
+            COALESCE(SUM(CASE WHEN (:fromEpochMs IS NOT NULL AND sm.createdAtEpochMs < :fromEpochMs) THEN sm.quantityDelta ELSE 0 END), 0) as openingStock,
+            COALESCE(SUM(CASE WHEN (:fromEpochMs IS NULL OR sm.createdAtEpochMs >= :fromEpochMs) AND (:toEpochMs IS NULL OR sm.createdAtEpochMs <= :toEpochMs) AND sm.quantityDelta > 0 THEN sm.quantityDelta ELSE 0 END), 0) as inwardQty,
+            COALESCE(SUM(CASE WHEN (:fromEpochMs IS NULL OR sm.createdAtEpochMs >= :fromEpochMs) AND (:toEpochMs IS NULL OR sm.createdAtEpochMs <= :toEpochMs) AND sm.quantityDelta < 0 THEN ABS(sm.quantityDelta) ELSE 0 END), 0) as outwardQty,
+            COALESCE(MAX(sm.createdAtEpochMs), p.updatedAtEpochMs) as lastUpdatedEpochMs
         FROM products p
-        INNER JOIN categories cat ON p.categoryId = cat.id AND cat.companyId = :companyId
+        LEFT JOIN categories cat ON p.categoryId = cat.id AND cat.companyId = :companyId
         LEFT JOIN stock_movements sm ON p.id = sm.productId AND sm.companyId = :companyId
         WHERE p.companyId = :companyId
         GROUP BY p.id
         ORDER BY p.name ASC
     """)
-    suspend fun getStockReport(companyId: String): List<StockReportRow>
+    suspend fun getStockReport(companyId: String, fromEpochMs: Long?, toEpochMs: Long?): List<StockReportRow>
 
     @Query("""
         SELECT 
@@ -105,7 +123,11 @@ interface ReportDao {
             p.id as productId,
             p.name as productName, 
             SUM(si.quantity) as totalQty, 
-            SUM(si.lineTotalMinorUnits) as totalRevenue
+            SUM(COALESCE(si.netRevenueMinorUnits, si.lineTotalMinorUnits - (
+                CAST(s.discountMinorUnits * 1.0 * (SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId AND x.productId <= si.productId) / MAX(1, (SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId)) AS INTEGER)
+                - CAST(s.discountMinorUnits * 1.0 * COALESCE((SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId AND x.productId < si.productId), 0) / MAX(1, (SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId)) AS INTEGER)
+            ))) as totalRevenue,
+            CASE WHEN COUNT(si.costTotalMinorUnits) = COUNT(*) THEN SUM(si.costTotalMinorUnits) ELSE NULL END as recordedCost
         FROM sale_items si
         INNER JOIN sales s ON si.saleId = s.id AND s.companyId = :companyId
         INNER JOIN products p ON si.productId = p.id AND p.companyId = :companyId

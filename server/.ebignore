@@ -1,0 +1,9 @@
+.env
+.env.*
+!.env.example
+.local-data/
+coverage/
+node_modules/
+Dockerfile
+.dockerignore
+*.log

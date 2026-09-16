@@ -2,7 +2,6 @@ package com.kadaikutty.pos.feature.settings.presentation
 
 import com.kadaikutty.pos.core.ui.LocalLayoutMode
 import com.kadaikutty.pos.core.auth.UserEntity
-import kotlinx.serialization.json.jsonPrimitive
 import com.kadaikutty.pos.core.security.Permission
 import com.kadaikutty.pos.core.security.BiometricAuthenticator
 import androidx.compose.material.icons.filled.Add
@@ -19,6 +18,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -27,6 +27,9 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -67,6 +70,7 @@ fun SettingsScreen(
     }
 
     val printerType by viewModel.printerType.collectAsState()
+    val savedPrinters by viewModel.savedPrinters.collectAsState()
     val layoutModePref by viewModel.layoutMode.collectAsState()
     val printerDeviceId by viewModel.printerDeviceId.collectAsState()
     val printerPaperWidth by viewModel.printerPaperWidth.collectAsState()
@@ -164,6 +168,7 @@ fun SettingsScreen(
                 },
                 onError = { error ->
                     viewModel.clearBiometricAuthPending()
+                    viewModel.onBiometricAuthFailed(error)
                 }
             )
         }
@@ -183,7 +188,7 @@ fun SettingsScreen(
                         Text(
                             text = if (activeCategory != null) activeCategory!!.title else brandingShopName.ifBlank { stringResource(com.kadaikutty.pos.R.string.settings_title) },
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimary
+                            color = Color.White
                         )
                     }
                 },
@@ -195,10 +200,14 @@ fun SettingsScreen(
                             onBack()
                         }
                     }) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = Color(0xFF5C151A),
+                    titleContentColor = Color.White,
+                    navigationIconContentColor = Color.White
+                )
             )
         }
     ) { paddingValues ->
@@ -218,7 +227,7 @@ fun SettingsScreen(
                 else -> maxWidth < 600.dp
             }
 
-            val firebaseCloudCard: @Composable (Modifier) -> Unit = { modifier ->
+            val cloudSyncCard: @Composable (Modifier) -> Unit = { modifier ->
                 val cloudSyncStatus by viewModel.cloudSyncStatus.collectAsState()
 
                 Card(
@@ -301,6 +310,38 @@ fun SettingsScreen(
                                                 Text("Cancel")
                                             }
                                         }
+                                    )
+                                }
+                            }
+
+                            if (isRestoreRunning) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Row(
+                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                    horizontalArrangement = Arrangement.Center,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Restoring data from cloud...", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                }
+                            }
+
+                            if (!restoreStatus.isNullOrBlank()) {
+                                Spacer(modifier = Modifier.height(8.dp))
+                                Card(
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = if (restoreStatus!!.contains("failed", ignoreCase = true) || restoreStatus!!.contains("error", ignoreCase = true) || restoreStatus!!.contains("cancelled", ignoreCase = true))
+                                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
+                                        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                                    ),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text(
+                                        text = restoreStatus!!,
+                                        modifier = Modifier.padding(10.dp),
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium
                                     )
                                 }
                             }
@@ -490,6 +531,18 @@ fun SettingsScreen(
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         Text("Printer Driver Preferences", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        if (savedPrinters.isNotEmpty()) {
+                            Text("Saved printers (tap, then save to activate)")
+                            savedPrinters.forEach { profile ->
+                                TextButton(onClick = {
+                                    selectedType = profile.type
+                                    selectedDeviceId = profile.deviceId
+                                    selectedPaperWidth = profile.paperWidth
+                                }) {
+                                    Text("${profile.type}: ${profile.deviceId} — ${if (profile.paperWidth == 48) 80 else 58} mm")
+                                }
+                            }
+                        }
 
                         Text("Connection Type:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Row(
@@ -508,6 +561,10 @@ fun SettingsScreen(
 
                         HorizontalDivider()
 
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            RadioButton(selected = selectedType == "Network", onClick = { selectedType = "Network" })
+                            Text("Wi-Fi / LAN (ESC/POS)")
+                        }
                         Text("Paper Layout Size:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -526,6 +583,14 @@ fun SettingsScreen(
                         HorizontalDivider()
 
                         Text("Target Printer Address / ID:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        if (selectedType == "Usb") {
+                            val usbManager = context.getSystemService(android.content.Context.USB_SERVICE) as? android.hardware.usb.UsbManager
+                            usbManager?.deviceList?.values?.forEach { device ->
+                                TextButton(onClick = { selectedDeviceId = device.deviceName }) {
+                                    Text("${device.productName ?: "USB device"}: ${device.deviceName}")
+                                }
+                            }
+                        }
                         if (selectedType == "Bluetooth") {
                             var expanded by remember { mutableStateOf(false) }
                             val activeDeviceName = bluetoothDevices.find { it.address == selectedDeviceId }?.name ?: selectedDeviceId.ifBlank { "Select Paired Device" }
@@ -563,7 +628,7 @@ fun SettingsScreen(
                             OutlinedTextField(
                                 value = selectedDeviceId,
                                 onValueChange = { selectedDeviceId = it },
-                                label = { Text("USB Target Name / Path") },
+                                label = { Text(if (selectedType == "Network") "Printer IP / host (optional :9100)" else "USB Target Name / Path") },
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
@@ -572,7 +637,7 @@ fun SettingsScreen(
                         Button(
                             onClick = {
                                 viewModel.saveSettings(selectedType, selectedDeviceId, selectedPaperWidth)
-                                message = "Settings saved successfully!"
+                                message = "Hardware preferences saved."
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
@@ -678,10 +743,9 @@ fun SettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        Row(
+                        Column(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
                             Column {
                                 Text(
@@ -693,20 +757,32 @@ fun SettingsScreen(
                                 Text(
                                     "Real-time mockup of printed customer receipt",
                                     fontSize = 12.sp,
-                                    color = MaterialTheme.colorScheme.outline
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )
                             }
 
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 FilterChip(
                                     selected = previewPaperSize == 32,
                                     onClick = { previewPaperSize = 32 },
-                                    label = { Text("58mm", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                    label = { Text("58mm (Standard)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                                    leadingIcon = if (previewPaperSize == 32) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                    } else null,
+                                    modifier = Modifier.weight(1f)
                                 )
                                 FilterChip(
                                     selected = previewPaperSize == 48,
                                     onClick = { previewPaperSize = 48 },
-                                    label = { Text("80mm", fontSize = 11.sp, fontWeight = FontWeight.Bold) }
+                                    label = { Text("80mm (Wide)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                                    leadingIcon = if (previewPaperSize == 48) {
+                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                    } else null,
+                                    modifier = Modifier.weight(1f)
                                 )
                             }
                         }
@@ -715,14 +791,15 @@ fun SettingsScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Color(0xFFF3F4F6), RoundedCornerShape(12.dp))
+                                .background(Color(0xFFF1F5F9), RoundedCornerShape(12.dp))
                                 .padding(vertical = 14.dp, horizontal = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
                             Surface(
                                 modifier = Modifier
-                                    .width(if (previewPaperSize == 32) 280.dp else 340.dp)
-                                    .border(1.dp, Color(0xFFE5E7EB), RoundedCornerShape(8.dp)),
+                                    .widthIn(max = if (previewPaperSize == 32) 300.dp else 420.dp)
+                                    .fillMaxWidth(if (previewPaperSize == 32) 0.88f else 1f)
+                                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp)),
                                 shape = RoundedCornerShape(8.dp),
                                 color = Color.White,
                                 shadowElevation = 4.dp
@@ -730,7 +807,7 @@ fun SettingsScreen(
                                 Column(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .padding(16.dp),
+                                        .padding(horizontal = 12.dp, vertical = 14.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
@@ -783,12 +860,20 @@ fun SettingsScreen(
                                         )
                                     }
 
-                                    Text(
-                                        text = if (previewPaperSize == 32) "--------------------------------" else "------------------------------------------------",
-                                        fontSize = 10.sp,
-                                        color = Color.Gray,
-                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                    )
+                                    Canvas(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                            .height(1.dp)
+                                    ) {
+                                        drawLine(
+                                            color = Color(0xFF94A3B8),
+                                            start = Offset(0f, 0f),
+                                            end = Offset(size.width, 0f),
+                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f),
+                                            strokeWidth = 2f
+                                        )
+                                    }
 
                                     // Meta details
                                     Row(
@@ -806,52 +891,71 @@ fun SettingsScreen(
                                         Text("Customer: Cash", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                                     }
 
-                                    Text(
-                                        text = if (previewPaperSize == 32) "--------------------------------" else "------------------------------------------------",
-                                        fontSize = 10.sp,
-                                        color = Color.Gray,
-                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                    )
+                                    Canvas(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                            .height(1.dp)
+                                    ) {
+                                        drawLine(
+                                            color = Color(0xFF94A3B8),
+                                            start = Offset(0f, 0f),
+                                            end = Offset(size.width, 0f),
+                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f),
+                                            strokeWidth = 2f
+                                        )
+                                    }
 
                                     // Items Header
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("ITEM", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(1.5f))
-                                        Text("QTY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
-                                        Text("RATE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
-                                        Text("TOTAL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                        Text("ITEM", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(1.8f))
+                                        Text("QTY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.6f), textAlign = TextAlign.Center)
+                                        Text("RATE", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
+                                        Text("TOTAL", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
                                     }
 
                                     // Sample Item 1
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("Aashirvaad Atta 5kg", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(1.5f), maxLines = 1)
-                                        Text("1", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
-                                        Text("265.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
-                                        Text("265.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                        Text("Aashirvaad Atta 5kg", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(1.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("1", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.6f), textAlign = TextAlign.Center)
+                                        Text("265.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
+                                        Text("265.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
                                     }
 
                                     // Sample Item 2
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Text("Sunflower Oil 1L", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(1.5f), maxLines = 1)
-                                        Text("2", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.7f), textAlign = TextAlign.Center)
-                                        Text("135.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
-                                        Text("270.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.9f), textAlign = TextAlign.End)
+                                        Text("Sunflower Oil 1L", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(1.8f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("2", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.6f), textAlign = TextAlign.Center)
+                                        Text("135.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
+                                        Text("270.00", fontSize = 10.sp, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, modifier = Modifier.weight(0.8f), textAlign = TextAlign.End)
                                     }
 
-                                    Text(
-                                        text = if (previewPaperSize == 32) "--------------------------------" else "------------------------------------------------",
-                                        fontSize = 10.sp,
-                                        color = Color.Gray,
-                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                    )
+                                    Canvas(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                            .height(1.dp)
+                                    ) {
+                                        drawLine(
+                                            color = Color(0xFF94A3B8),
+                                            start = Offset(0f, 0f),
+                                            end = Offset(size.width, 0f),
+                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f),
+                                            strokeWidth = 2f
+                                        )
+                                    }
 
                                     // Totals
                                     Row(
@@ -869,12 +973,20 @@ fun SettingsScreen(
                                         Text("UPI / GPAY", fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Black, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)
                                     }
 
-                                    Text(
-                                        text = if (previewPaperSize == 32) "--------------------------------" else "------------------------------------------------",
-                                        fontSize = 10.sp,
-                                        color = Color.Gray,
-                                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace
-                                    )
+                                    Canvas(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp)
+                                            .height(1.dp)
+                                    ) {
+                                        drawLine(
+                                            color = Color(0xFF94A3B8),
+                                            start = Offset(0f, 0f),
+                                            end = Offset(size.width, 0f),
+                                            pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f),
+                                            strokeWidth = 2f
+                                        )
+                                    }
 
                                     // Tamil & English Footer
                                     Spacer(Modifier.height(4.dp))
@@ -1114,9 +1226,10 @@ fun SettingsScreen(
                 if (showAddDialog) {
                     AddUserDialog(
                         onDismiss = { showAddDialog = false },
-                        onCreate = { phone, name, pass, role, perms ->
+                        onCreate = { phone, name, pass, role, perms, onComplete ->
                             viewModel.createUser(phone, name, pass, role, perms) { success, msg ->
                                 android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                onComplete(success)
                                 if (success) {
                                     showAddDialog = false
                                 }
@@ -1129,17 +1242,19 @@ fun SettingsScreen(
                     EditUserDialog(
                         user = selectedUser!!,
                         onDismiss = { showEditDialog = false },
-                        onSave = { name, role, pass, perms ->
+                        onSave = { name, role, pass, perms, onComplete ->
                             viewModel.updateUserCredentials(selectedUser!!.id, name, role, pass, perms) { success, msg ->
                                 android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                onComplete(success)
                                 if (success) {
                                     showEditDialog = false
                                 }
                             }
                         },
-                        onDelete = {
+                        onDelete = { onComplete ->
                             viewModel.deleteUser(selectedUser!!.id) { success, msg ->
                                 android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                onComplete(success)
                                 if (success) {
                                     showEditDialog = false
                                 }
@@ -1205,20 +1320,6 @@ fun SettingsScreen(
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
                                 OutlinedButton(
-                                    onClick = {
-                                        viewModel.loadDemoSampleData { resultMsg ->
-                                            android.widget.Toast.makeText(context, resultMsg, android.widget.Toast.LENGTH_LONG).show()
-                                        }
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Load 100 Demo Retail Records", fontWeight = FontWeight.Bold)
-                                }
-
-                                OutlinedButton(
                                     onClick = { showClearDatabaseDialog = true },
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(12.dp),
@@ -1257,34 +1358,15 @@ fun SettingsScreen(
 
                                 HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
-                                Row(
+                                OutlinedButton(
+                                    onClick = { showClearDatabaseDialog = true },
                                     modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
                                 ) {
-                                    OutlinedButton(
-                                        onClick = {
-                                            viewModel.loadDemoSampleData { resultMsg ->
-                                                android.widget.Toast.makeText(context, resultMsg, android.widget.Toast.LENGTH_LONG).show()
-                                            }
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Load 100 Demo Records", fontWeight = FontWeight.Bold)
-                                    }
-
-                                    OutlinedButton(
-                                        onClick = { showClearDatabaseDialog = true },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                    ) {
-                                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                                        Spacer(Modifier.width(8.dp))
-                                        Text("Reset Database", fontWeight = FontWeight.Bold)
-                                    }
+                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text("Reset / Clear Database", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
@@ -1304,7 +1386,7 @@ fun SettingsScreen(
                                                 checked = clearCloudOption,
                                                 onCheckedChange = { clearCloudOption = it }
                                             )
-                                            Text("Also clear Cloud Sync data on Firestore", fontSize = 13.sp)
+                                            Text("Also clear backend cloud sync data", fontSize = 13.sp)
                                         }
                                     }
                                 },
@@ -1747,7 +1829,7 @@ fun SettingsScreen(
                             printerDiagnosticsCard(Modifier.fillMaxWidth())
                         }
                         SettingsCategory.CLOUD_BACKUP -> {
-                            firebaseCloudCard(Modifier.fillMaxWidth())
+                            cloudSyncCard(Modifier.fillMaxWidth())
                         }
                         SettingsCategory.STAFF -> {
                             userManagementCard(Modifier.fillMaxWidth())
@@ -1771,7 +1853,7 @@ fun SettingsScreen(
 @Composable
 fun AddUserDialog(
     onDismiss: () -> Unit,
-    onCreate: (phone: String, displayName: String, password: CharArray, role: String, permissions: Set<Permission>) -> Unit
+    onCreate: (phone: String, displayName: String, password: CharArray, role: String, permissions: Set<Permission>, onComplete: (Boolean) -> Unit) -> Unit
 ) {
     var phone by remember { mutableStateOf("") }
     var displayName by remember { mutableStateOf("") }
@@ -1789,6 +1871,7 @@ fun AddUserDialog(
     var requirePasswordChange by remember { mutableStateOf(false) }
 
     var errorMsg by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     fun applyRoleDefaults(role: String) {
         selectedRole = role
@@ -1825,7 +1908,9 @@ fun AddUserDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
@@ -1855,43 +1940,52 @@ fun AddUserDialog(
                     leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSubmitting
                 )
 
-                // Mobile Number Login ID
+                // Phone / Username
                 OutlinedTextField(
                     value = phone,
-                    onValueChange = { input ->
-                        val digits = input.filter { it.isDigit() }.take(10)
-                        phone = digits
-                    },
-                    label = { Text("Mobile Number (Login User ID) *") },
-                    placeholder = { Text("10-digit mobile number") },
-                    leadingIcon = {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(start = 8.dp, end = 4.dp)
-                        ) {
-                            Icon(Icons.Default.Phone, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("+91", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-                    },
+                    onValueChange = { phone = it },
+                    label = { Text("Mobile Number (Login ID) *") },
+                    placeholder = { Text("10 digit mobile number") },
+                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSubmitting
                 )
+
+                // Role Selector Chips
+                Text("Quick Preset Role:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("CASHIER" to "Cashier", "STORE_MANAGER" to "Manager", "INWARD_CLERK" to "Inward Clerk", "ADMIN" to "Admin").forEach { (roleKey, roleLabel) ->
+                        FilterChip(
+                            selected = selectedRole == roleKey,
+                            onClick = { if (!isSubmitting) applyRoleDefaults(roleKey) },
+                            label = { Text(roleLabel, fontSize = 12.sp) },
+                            enabled = !isSubmitting
+                        )
+                    }
+                }
 
                 // Password / PIN
                 OutlinedTextField(
                     value = password,
                     onValueChange = { password = it },
-                    label = { Text("Security Password / 4-6 Digit PIN *") },
-                    placeholder = { Text("Enter terminal login password or PIN") },
+                    label = { Text("Temporary Password / PIN *") },
+                    placeholder = { Text("Min 4 characters") },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
+                        IconButton(
+                            enabled = !isSubmitting,
+                            onClick = { showPassword = !showPassword }
+                        ) {
                             Icon(
                                 imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                 contentDescription = if (showPassword) "Hide password" else "Show password",
@@ -1903,7 +1997,8 @@ fun AddUserDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSubmitting
                 )
 
 
@@ -1916,23 +2011,23 @@ fun AddUserDialog(
                 ) {
                     Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessBilling, onCheckedChange = { accessBilling = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessBilling, onCheckedChange = { accessBilling = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Point of Sale Billing & Checkout", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Inventory & Inward Stock Purchases", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Master Catalog (Products & Pricing)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessReports, onCheckedChange = { accessReports = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessReports, onCheckedChange = { accessReports = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Business Reports & Profit Analytics", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                     }
@@ -1947,7 +2042,7 @@ fun AddUserDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(8.dp)
                     ) {
-                        Checkbox(checked = requirePasswordChange, onCheckedChange = { requirePasswordChange = it })
+                        Checkbox(checked = requirePasswordChange, onCheckedChange = { requirePasswordChange = it }, enabled = !isSubmitting)
                         Column {
                             Text("Force Password Reset on Login", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             Text("User must set a new PIN when they first log in", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1962,15 +2057,18 @@ fun AddUserDialog(
         },
         confirmButton = {
             Button(
+                enabled = !isSubmitting,
                 onClick = {
+                    if (isSubmitting) return@Button
                     val cleanDigits = phone.filter { it.isDigit() }
                     if (displayName.isBlank() || cleanDigits.isBlank() || password.isBlank()) {
                         errorMsg = "Please fill in all mandatory fields"
                     } else if (cleanDigits.length < 10) {
                         errorMsg = "Please enter a valid 10-digit mobile number"
-                    } else if (password.length < 4) {
-                        errorMsg = "Password / PIN must be at least 4 characters"
+                    } else if (password.length < 6) {
+                        errorMsg = "Password / PIN must be at least 6 characters"
                     } else {
+                        isSubmitting = true
                         val pSet = buildSet {
                             if (accessMasters) {
                                 addAll(listOf(Permission.CATEGORY_VIEW, Permission.CATEGORY_CREATE, Permission.CATEGORY_EDIT, Permission.PRODUCT_VIEW, Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT))
@@ -1991,16 +2089,21 @@ fun AddUserDialog(
                                 add(Permission.REQUIRE_PASSWORD_CHANGE)
                             }
                         }
-                        onCreate(cleanDigits, displayName.trim(), password.toCharArray(), selectedRole, pSet)
+                        onCreate(cleanDigits, displayName.trim(), password.toCharArray(), selectedRole, pSet) {
+                            isSubmitting = false
+                        }
                     }
                 },
                 shape = RoundedCornerShape(10.dp)
             ) {
-                Text("Create Staff Account", fontWeight = FontWeight.Bold)
+                Text(if (isSubmitting) "Creating..." else "Create Staff Account", fontWeight = FontWeight.Bold)
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }
@@ -2011,13 +2114,14 @@ fun AddUserDialog(
 fun EditUserDialog(
     user: UserEntity,
     onDismiss: () -> Unit,
-    onSave: (displayName: String?, role: String?, newPassword: CharArray?, permissions: Set<Permission>) -> Unit,
-    onDelete: () -> Unit
+    onSave: (displayName: String?, role: String?, newPassword: CharArray?, permissions: Set<Permission>, onComplete: (Boolean) -> Unit) -> Unit,
+    onDelete: (onComplete: (Boolean) -> Unit) -> Unit
 ) {
     var displayName by remember { mutableStateOf(user.displayName) }
     var selectedRole by remember { mutableStateOf(user.role.ifBlank { "CASHIER" }) }
     var newPassword by remember { mutableStateOf("") }
     var showPassword by remember { mutableStateOf(false) }
+    var isSubmitting by remember { mutableStateOf(false) }
 
     val initialPerms = remember(user.permissions) { user.toPermissionsSet() }
 
@@ -2065,14 +2169,16 @@ fun EditUserDialog(
     }
 
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = {
+            if (!isSubmitting) onDismiss()
+        },
         title = {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
-                Text("Edit Staff Account", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                Text("Edit Staff Credentials & Access", fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
         },
         text = {
@@ -2080,21 +2186,38 @@ fun EditUserDialog(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())
             ) {
+                // Header Info
                 Surface(
-                    color = MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
-                    shape = RoundedCornerShape(10.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                    shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
-                        modifier = Modifier.padding(10.dp),
+                        modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        Icon(Icons.Default.Phone, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Mobile Login User ID (Fixed)", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Text("+91 ${user.username}", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.AccountCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(32.dp))
+                        Column {
+                            Text(user.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            Text("Mobile Login: +91 ${user.username}", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
                         }
+                    }
+                }
+
+                // Preset Role
+                Text("Role Preset:", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("CASHIER" to "Cashier", "STORE_MANAGER" to "Manager", "INWARD_CLERK" to "Inward Clerk", "ADMIN" to "Admin").forEach { (roleKey, roleLabel) ->
+                        FilterChip(
+                            selected = selectedRole == roleKey,
+                            onClick = { if (!isSubmitting) applyRoleDefaults(roleKey) },
+                            label = { Text(roleLabel, fontSize = 12.sp) },
+                            enabled = !isSubmitting
+                        )
                     }
                 }
 
@@ -2126,6 +2249,7 @@ fun EditUserDialog(
                         Switch(
                             checked = isActive,
                             onCheckedChange = { isActive = it },
+                            enabled = !isSubmitting,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
                                 checkedTrackColor = Color(0xFF3B82F6),
@@ -2143,7 +2267,8 @@ fun EditUserDialog(
                     label = { Text("Staff Full Name") },
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSubmitting
                 )
 
                 // Password Reset
@@ -2154,7 +2279,10 @@ fun EditUserDialog(
                     placeholder = { Text("Leave blank to keep current") },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
+                        IconButton(
+                            enabled = !isSubmitting,
+                            onClick = { showPassword = !showPassword }
+                        ) {
                             Icon(
                                 imageVector = if (showPassword) Icons.Default.Visibility else Icons.Default.VisibilityOff,
                                 contentDescription = if (showPassword) "Hide password" else "Show password",
@@ -2166,7 +2294,8 @@ fun EditUserDialog(
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    enabled = !isSubmitting
                 )
 
 
@@ -2179,23 +2308,23 @@ fun EditUserDialog(
                 ) {
                     Column(modifier = Modifier.padding(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessBilling, onCheckedChange = { accessBilling = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessBilling, onCheckedChange = { accessBilling = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Point of Sale Billing & Checkout", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessPurchases, onCheckedChange = { accessPurchases = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Inventory & Inward Stock Purchases", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessMasters, onCheckedChange = { accessMasters = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Master Catalog (Products & Pricing)", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessReports, onCheckedChange = { accessReports = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessReports, onCheckedChange = { accessReports = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Business Reports & Profit Analytics", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" })
+                            Checkbox(checked = accessSettings, onCheckedChange = { accessSettings = it; selectedRole = "CUSTOM" }, enabled = !isSubmitting)
                             Text("Store Settings & Printer Setup", fontSize = 12.sp, fontWeight = FontWeight.Medium)
                         }
                     }
@@ -2210,7 +2339,7 @@ fun EditUserDialog(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(8.dp)
                     ) {
-                        Checkbox(checked = requirePasswordChange, onCheckedChange = { requirePasswordChange = it })
+                        Checkbox(checked = requirePasswordChange, onCheckedChange = { requirePasswordChange = it }, enabled = !isSubmitting)
                         Column {
                             Text("Force Password Reset on Login", fontSize = 13.sp, fontWeight = FontWeight.Bold)
                             Text("User must set a new PIN when they next log in", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -2222,14 +2351,22 @@ fun EditUserDialog(
         confirmButton = {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(
-                    onClick = onDelete,
+                    enabled = !isSubmitting,
+                    onClick = {
+                        if (isSubmitting) return@Button
+                        isSubmitting = true
+                        onDelete { isSubmitting = false }
+                    },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("Delete")
+                    Text(if (isSubmitting) "..." else "Delete")
                 }
                 Button(
+                    enabled = !isSubmitting,
                     onClick = {
+                        if (isSubmitting) return@Button
+                        isSubmitting = true
                         val pSet = buildSet {
                             if (accessMasters) {
                                 addAll(listOf(Permission.CATEGORY_VIEW, Permission.CATEGORY_CREATE, Permission.CATEGORY_EDIT, Permission.PRODUCT_VIEW, Permission.PRODUCT_CREATE, Permission.PRODUCT_EDIT))
@@ -2254,16 +2391,21 @@ fun EditUserDialog(
                             }
                         }
                         val passArray = if (newPassword.isBlank()) null else newPassword.toCharArray()
-                        onSave(displayName.trim(), selectedRole, passArray, pSet)
+                        onSave(displayName.trim(), selectedRole, passArray, pSet) {
+                            isSubmitting = false
+                        }
                     },
                     shape = RoundedCornerShape(10.dp)
                 ) {
-                    Text("Save Changes")
+                    Text(if (isSubmitting) "Saving..." else "Save Changes")
                 }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
+            TextButton(
+                enabled = !isSubmitting,
+                onClick = onDismiss
+            ) {
                 Text("Cancel")
             }
         }

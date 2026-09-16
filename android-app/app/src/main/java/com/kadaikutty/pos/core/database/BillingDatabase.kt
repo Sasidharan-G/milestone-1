@@ -50,13 +50,15 @@ import com.kadaikutty.pos.feature.billing.data.AuditLogDao
         DraftCartItemEntity::class,
         ShiftEntity::class,
         LicenseEntity::class,
-        AuditLogEntity::class
+        AuditLogEntity::class,
+        LocalOperationEntity::class
     ],
-    version = 21,
+    version = 22,
     exportSchema = true
 )
 @TypeConverters(SyncStatusConverter::class)
 abstract class BillingDatabase : RoomDatabase() {
+    abstract fun localOperationDao(): LocalOperationDao
     abstract fun syncQueueDao(): SyncQueueDao
     abstract fun syncDeadLetterDao(): SyncDeadLetterDao
     abstract fun masterDao(): MasterDao

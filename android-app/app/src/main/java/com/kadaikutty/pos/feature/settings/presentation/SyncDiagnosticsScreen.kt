@@ -8,7 +8,6 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
@@ -17,7 +16,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -32,6 +30,7 @@ fun SyncDiagnosticsScreen(
     onBack: () -> Unit
 ) {
     val deadLetters by viewModel.deadLetters.collectAsState()
+    val unresolvedItems by viewModel.unresolvedItems.collectAsState()
 
     Scaffold(
         topBar = {
@@ -64,12 +63,31 @@ fun SyncDiagnosticsScreen(
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (deadLetters.isEmpty()) {
+            if (deadLetters.isEmpty() && unresolvedItems.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
                         Text("All items synced successfully!", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Text("No failed sync items in the queue.", fontSize = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            } else if (deadLetters.isEmpty()) {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Column(
+                        modifier = Modifier.padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.error)
+                        Text("${unresolvedItems.size} items not uploaded", fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                        Text(
+                            unresolvedItems.firstOrNull()?.lastError ?: "Items are waiting for cloud sync.",
+                            fontSize = 13.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                        Button(onClick = { viewModel.retryUnresolved() }) {
+                            Text("Retry Cloud Sync")
+                        }
                     }
                 }
             } else {

@@ -39,11 +39,40 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
-import com.google.mlkit.vision.barcode.BarcodeScannerOptions
-import com.google.mlkit.vision.barcode.BarcodeScanning
-import com.google.mlkit.vision.barcode.common.Barcode
-import com.google.mlkit.vision.common.InputImage
+import com.google.zxing.BarcodeFormat
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.DecodeHintType
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.PlanarYUVLuminanceSource
+import com.google.zxing.common.HybridBinarizer
 import java.util.concurrent.Executors
+
+private fun decodeBarcode(reader: MultiFormatReader, image: ImageProxy): String? {
+    val plane = image.planes.firstOrNull() ?: return null
+    val width = image.width
+    val height = image.height
+    val sourceBytes = ByteArray(width * height)
+    val buffer = plane.buffer.duplicate()
+    val rowStride = plane.rowStride
+    val pixelStride = plane.pixelStride
+    for (row in 0 until height) {
+        for (column in 0 until width) {
+            sourceBytes[row * width + column] = buffer.get(row * rowStride + column * pixelStride)
+        }
+    }
+    val (rotated, rotatedWidth, rotatedHeight) = when (image.imageInfo.rotationDegrees) {
+        90 -> Triple(ByteArray(width * height).also { output ->
+            for (row in 0 until height) for (column in 0 until width) output[column * height + (height - row - 1)] = sourceBytes[row * width + column]
+        }, height, width)
+        180 -> Triple(sourceBytes.reversedArray(), width, height)
+        270 -> Triple(ByteArray(width * height).also { output ->
+            for (row in 0 until height) for (column in 0 until width) output[(width - column - 1) * height + row] = sourceBytes[row * width + column]
+        }, height, width)
+        else -> Triple(sourceBytes, width, height)
+    }
+    val luminance = PlanarYUVLuminanceSource(rotated, rotatedWidth, rotatedHeight, 0, 0, rotatedWidth, rotatedHeight, false)
+    return runCatching { reader.decodeWithState(BinaryBitmap(HybridBinarizer(luminance))).text }.getOrNull()
+}
 
 @Composable
 fun CameraBarcodeScannerDialog(
@@ -142,19 +171,12 @@ private fun CameraPreviewWithAnalyzer(
     var lastScanTime by remember { mutableLongStateOf(0L) }
 
     val scanner = remember {
-        val options = BarcodeScannerOptions.Builder()
-            .setBarcodeFormats(
-                Barcode.FORMAT_EAN_13,
-                Barcode.FORMAT_EAN_8,
-                Barcode.FORMAT_UPC_A,
-                Barcode.FORMAT_UPC_E,
-                Barcode.FORMAT_CODE_128,
-                Barcode.FORMAT_CODE_39,
-                Barcode.FORMAT_CODE_93,
-                Barcode.FORMAT_QR_CODE
-            )
-            .build()
-        BarcodeScanning.getClient(options)
+        MultiFormatReader().apply {
+            setHints(mapOf(DecodeHintType.POSSIBLE_FORMATS to listOf(
+                BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E,
+                BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.CODE_93, BarcodeFormat.QR_CODE,
+            )))
+        }
     }
 
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -162,7 +184,7 @@ private fun CameraPreviewWithAnalyzer(
     DisposableEffect(Unit) {
         onDispose {
             cameraExecutor.shutdown()
-            scanner.close()
+            scanner.reset()
         }
     }
 
@@ -184,36 +206,19 @@ private fun CameraPreviewWithAnalyzer(
                         .build()
 
                     imageAnalysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                        val mediaImage = imageProxy.image
-                        if (mediaImage != null) {
-                            val inputImage = InputImage.fromMediaImage(mediaImage, imageProxy.imageInfo.rotationDegrees)
-                            scanner.process(inputImage)
-                                .addOnSuccessListener { barcodes ->
-                                    for (barcode in barcodes) {
-                                        val rawVal = barcode.rawValue?.trim()
-                                        if (!rawVal.isNullOrBlank()) {
-                                            val now = System.currentTimeMillis()
-                                            // Debounce duplicate scans: 1.5s delay if same barcode, 600ms if different
-                                            val isDifferent = rawVal != lastScannedBarcode
-                                            val cooldown = if (isDifferent) 600L else 1500L
-
-                                            if (now - lastScanTime > cooldown) {
-                                                lastScanTime = now
-                                                lastScannedBarcode = rawVal
-                                                previewView.post {
-                                                    onBarcodeScanned(rawVal)
-                                                }
-                                                if (!continuousScan) {
-                                                    break
-                                                }
-                                            }
-                                        }
-                                    }
+                        try {
+                            val rawVal = decodeBarcode(scanner, imageProxy)?.trim()
+                            if (!rawVal.isNullOrBlank()) {
+                                val now = System.currentTimeMillis()
+                                val cooldown = if (rawVal != lastScannedBarcode) 600L else 1500L
+                                if (now - lastScanTime > cooldown) {
+                                    lastScanTime = now
+                                    lastScannedBarcode = rawVal
+                                    previewView.post { onBarcodeScanned(rawVal) }
                                 }
-                                .addOnCompleteListener {
-                                    imageProxy.close()
-                                }
-                        } else {
+                            }
+                        } finally {
+                            scanner.reset()
                             imageProxy.close()
                         }
                     }

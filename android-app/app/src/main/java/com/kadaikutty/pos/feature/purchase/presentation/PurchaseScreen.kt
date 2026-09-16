@@ -49,6 +49,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
     val purchases = uiState.purchases
     val lines = uiState.lines
     val selectedSupplierId = uiState.selectedSupplierId
+    val isSaving by viewModel.isSaving.collectAsState()
 
     var selectedProductId by remember { mutableStateOf("") }
     var quantityText by remember { mutableStateOf("1") }
@@ -58,6 +59,8 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
     var expandedSupplier by remember { mutableStateOf(false) }
     var supplierInvoiceNumber by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    val operationError by viewModel.operationError.collectAsState()
+    LaunchedEffect(operationError) { operationError?.let { message = it } }
     var showCameraScanner by remember { mutableStateOf(false) }
     var editingPurchaseLine by remember { mutableStateOf<PurchaseLine?>(null) }
 
@@ -560,6 +563,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                                     onError = { message = "Error: ${it.message}" }
                                                 )
                                             },
+                                            enabled = !isSaving,
                                             modifier = Modifier.fillMaxWidth(),
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
@@ -581,6 +585,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                                     onError = { message = "Error: ${it.message}" }
                                                 )
                                             },
+                                            enabled = !isSaving,
                                             modifier = Modifier.fillMaxWidth(),
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
                                             shape = RoundedCornerShape(12.dp)
@@ -603,6 +608,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                                     onError = { message = "Error: ${it.message}" }
                                                 )
                                             },
+                                            enabled = !isSaving,
                                             modifier = Modifier.fillMaxWidth(),
                                             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
                                             shape = RoundedCornerShape(12.dp)
@@ -612,6 +618,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
 
                                         OutlinedButton(
                                             onClick = { isSplitMode = true },
+                                            enabled = !isSaving,
                                             modifier = Modifier.fillMaxWidth(),
                                             shape = RoundedCornerShape(12.dp)
                                         ) {
@@ -672,6 +679,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                                     onError = { message = "Error: ${it.message}" }
                                                 )
                                             },
+                                            enabled = !isSaving,
                                             modifier = Modifier.fillMaxWidth(),
                                             shape = RoundedCornerShape(12.dp)
                                         ) {

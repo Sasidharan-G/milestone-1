@@ -1,7 +1,6 @@
 package com.kadaikutty.pos.feature.billing.presentation.components
 
 import androidx.compose.animation.*
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -119,7 +118,7 @@ fun SearchableProductSelectorDialog(
                 OutlinedTextField(
                     value = query,
                     onValueChange = { query = it },
-                    placeholder = { Text("Search product name, barcode...", fontSize = 14.sp) },
+                    placeholder = { Text("Search", fontSize = 14.sp) },
                     leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                     trailingIcon = {
                         if (query.isNotEmpty()) {
@@ -220,8 +219,10 @@ fun SearchableProductSelectorDialog(
 
                             Card(
                                 onClick = {
-                                    onProductSelected(product)
-                                    onDismiss()
+                                    if (!isOutOfStock) {
+                                        onProductSelected(product)
+                                        onDismiss()
+                                    }
                                 },
                                 modifier = Modifier
                                     .fillMaxWidth()
@@ -231,7 +232,13 @@ fun SearchableProductSelectorDialog(
                                         shape = RoundedCornerShape(12.dp)
                                     ),
                                 shape = RoundedCornerShape(12.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isOutOfStock) {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    }
+                                )
                             ) {
                                 Column(
                                     modifier = Modifier

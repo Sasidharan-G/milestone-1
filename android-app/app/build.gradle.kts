@@ -1,3 +1,4 @@
+import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -5,13 +6,18 @@ plugins {
     alias(libs.plugins.hilt.android)
     alias(libs.plugins.ksp)
     alias(libs.plugins.kotlin.serialization)
-    alias(libs.plugins.google.services)
 }
 
 android {
     namespace = "com.kadaikutty.pos"
     compileSdk = 35
 
+    // Release configuration (backend URL, Sentry, signing) comes from release.properties (see release.properties.template) or CI env vars.
+    val releaseProps = Properties().apply {
+        val f = rootProject.file("release.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    fun releaseValue(name: String): String? = System.getenv(name) ?: releaseProps.getProperty(name)
     defaultConfig {
         applicationId = "com.kadaikutty.pos"
         minSdk = 26
@@ -19,15 +25,28 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "com.kadaikutty.pos.HiltTestRunner"
-        buildConfigField("String", "SENTRY_DSN", "\"\"")
+        buildConfigField("String", "SENTRY_DSN", "\"${releaseValue("SENTRY_DSN") ?: ""}\"")
+
+        val backendBaseUrl = releaseValue("BACKEND_BASE_URL")
+            ?: (project.findProperty("BACKEND_BASE_URL") as? String)
+            ?: "http://10.0.2.2:3000/"
+        buildConfigField("String", "BACKEND_BASE_URL", "\"$backendBaseUrl\"")
+
+        val masterSupportPhone = releaseValue("MASTER_SUPPORT_PHONE")
+            ?: (project.findProperty("MASTER_SUPPORT_PHONE") as? String)
+            ?: "+919962255661"
+        buildConfigField("String", "MASTER_SUPPORT_PHONE", "\"$masterSupportPhone\"")
     }
 
     signingConfigs {
         create("release") {
-            storeFile = file("kadaikutty.jks")
-            storePassword = "kadai123"
-            keyAlias = "kadaikutty_key"
-            keyPassword = "kadai123"
+            val storePath = releaseValue("KADAIKUTTY_KEYSTORE_FILE")
+            if (storePath != null) {
+                storeFile = file(storePath)
+                storePassword = releaseValue("KADAIKUTTY_STORE_PASSWORD")
+                keyAlias = releaseValue("KADAIKUTTY_KEY_ALIAS")
+                keyPassword = releaseValue("KADAIKUTTY_KEY_PASSWORD")
+            }
         }
     }
 
@@ -107,24 +126,14 @@ dependencies {
     ksp(libs.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.datastore.preferences)
-    implementation(libs.play.services.auth)
     debugImplementation(libs.okhttp3.logging.interceptor)
-    implementation(libs.retrofit.core)
-    implementation(libs.retrofit.kotlinx.serialization)
     implementation(libs.sentry.android)
     testImplementation(libs.junit)
+    // org.json is a stub in the Android JVM test runtime; real impl needed for BackupManager/SyncManager tests
+    testImplementation("org.json:json:20240303")
     testImplementation(libs.mockito.core)
     testImplementation(libs.kotlinx.coroutines.test)
-    implementation(libs.generativeai)
 
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth)
-    implementation(libs.firebase.firestore)
-    implementation(libs.firebase.storage)
-    implementation("com.google.firebase:firebase-analytics")
-    implementation(libs.firebase.appcheck.playintegrity)
-    implementation(libs.firebase.appcheck.debug)
     implementation(libs.kotlinx.serialization.json)
     
     // Paging 3

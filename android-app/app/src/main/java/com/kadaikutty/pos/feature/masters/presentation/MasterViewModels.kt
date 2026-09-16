@@ -2,6 +2,7 @@
 
 package com.kadaikutty.pos.feature.masters.presentation
 
+import androidx.room.withTransaction
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kadaikutty.pos.core.database.BillingDatabase
@@ -23,7 +24,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 import kotlinx.coroutines.flow.first
@@ -61,13 +61,27 @@ class CategoryViewModel @Inject constructor(
     fun updateSearch(query: String) { searchQuery.value = query }
 
     fun addCategory(name: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) {
+            onError(IllegalArgumentException("Category name cannot be blank"))
+            return
+        }
         viewModelScope.launch {
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                
+                // Duplicate prevention: check if category with same name exists
+                val existing = dao.categories(session.companyId, "").first()
+                val duplicate = existing.firstOrNull { it.name.trim().equals(cleanName, ignoreCase = true) }
+                if (duplicate != null) {
+                    onError(IllegalArgumentException("Category '$cleanName' already exists"))
+                    return@launch
+                }
+
                 val category = CategoryEntity(
                     id = newRecordId(),
                     companyId = session.companyId,
-                    name = name,
+                    name = cleanName,
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
                     syncStatus = SyncStatus.LOCAL_ONLY
@@ -82,16 +96,31 @@ class CategoryViewModel @Inject constructor(
     }
 
     fun updateCategory(category: CategoryEntity, newName: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        val cleanName = newName.trim()
+        if (cleanName.isBlank()) {
+            onError(IllegalArgumentException("Category name cannot be blank"))
+            return
+        }
         viewModelScope.launch {
             try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                
+                // Duplicate prevention: check if another category has the same name
+                val existing = dao.categories(session.companyId, "").first()
+                val duplicate = existing.firstOrNull { it.id != category.id && it.name.trim().equals(cleanName, ignoreCase = true) }
+                if (duplicate != null) {
+                    onError(IllegalArgumentException("Another category with name '$cleanName' already exists"))
+                    return@launch
+                }
+
                 val updated = category.copy(
-                    name = newName,
+                    name = cleanName,
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateCategory(updated)
                 
                 val updates = mutableMapOf<String, Any?>()
-                if (category.name != newName) updates["name"] = newName
+                if (category.name != cleanName) updates["name"] = cleanName
                 if (updates.isNotEmpty()) {
                     syncManager.enqueuePartialUpdate("Category", category.id, updates)
                 }
@@ -164,15 +193,33 @@ class ProductViewModel @Inject constructor(
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit
     ) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) {
+            onError(IllegalArgumentException("Product name cannot be blank"))
+            return
+        }
+        val cleanBarcode = barcode?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                
+                // Duplicate check
+                val existing = dao.getAllProducts(session.companyId)
+                if (existing.any { it.name.trim().equals(cleanName, ignoreCase = true) }) {
+                    onError(IllegalArgumentException("Product '$cleanName' already exists"))
+                    return@launch
+                }
+                if (cleanBarcode != null && existing.any { !it.barcode.isNullOrBlank() && it.barcode.trim() == cleanBarcode }) {
+                    onError(IllegalArgumentException("Product with barcode '$cleanBarcode' already exists"))
+                    return@launch
+                }
+
                 val finalCategoryId = if (categoryId.isNotBlank()) {
                     categoryId
                 } else {
-                    val existing = dao.categories(session.companyId, "").first()
-                    if (existing.isNotEmpty()) {
-                        existing.first().id
+                    val existingCats = dao.categories(session.companyId, "").first()
+                    if (existingCats.isNotEmpty()) {
+                        existingCats.first().id
                     } else {
                         val newCat = CategoryEntity(
                             id = newRecordId(),
@@ -191,12 +238,12 @@ class ProductViewModel @Inject constructor(
                 val product = ProductEntity(
                     id = newRecordId(),
                     companyId = session.companyId,
-                    name = name,
+                    name = cleanName,
                     categoryId = finalCategoryId,
                     purchasePriceMinorUnits = purchasePriceMinorUnits,
                     salePriceMinorUnits = salePriceMinorUnits,
                     unitType = unitType,
-                    barcode = barcode,
+                    barcode = cleanBarcode,
                     minStockLevel = minStockLevel,
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
@@ -223,27 +270,46 @@ class ProductViewModel @Inject constructor(
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit
     ) {
+        val cleanName = newName.trim()
+        if (cleanName.isBlank()) {
+            onError(IllegalArgumentException("Product name cannot be blank"))
+            return
+        }
+        val cleanBarcode = newBarcode?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
+                // Duplicate check
+                val existing = dao.getAllProducts(product.companyId)
+                if (existing.any { it.id != product.id && it.name.trim().equals(cleanName, ignoreCase = true) }) {
+                    onError(IllegalArgumentException("Another product with name '$cleanName' already exists"))
+                    return@launch
+                }
+                if (cleanBarcode != null && existing.any { it.id != product.id && !it.barcode.isNullOrBlank() && it.barcode.trim() == cleanBarcode }) {
+                    onError(IllegalArgumentException("Another product with barcode '$cleanBarcode' already exists"))
+                    return@launch
+                }
+
+                require(product.unitType == newUnitType || database.saleDao().movementCount(product.companyId, product.id) == 0) { "Unit cannot be changed after stock transactions. Create a new product." }
+                require(newPurchasePriceMinorUnits >= 0 && newSalePriceMinorUnits >= 0) { "Prices cannot be negative" }
                 val updated = product.copy(
-                    name = newName,
+                    name = cleanName,
                     categoryId = newCategoryId,
                     purchasePriceMinorUnits = newPurchasePriceMinorUnits,
                     salePriceMinorUnits = newSalePriceMinorUnits,
                     unitType = newUnitType,
-                    barcode = newBarcode,
+                    barcode = cleanBarcode,
                     minStockLevel = newMinStockLevel,
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateProduct(updated)
                 
                 val updates = mutableMapOf<String, Any?>()
-                if (product.name != newName) updates["name"] = newName
+                if (product.name != cleanName) updates["name"] = cleanName
                 if (product.categoryId != newCategoryId) updates["categoryId"] = newCategoryId
                 if (product.purchasePriceMinorUnits != newPurchasePriceMinorUnits) updates["purchasePriceMinorUnits"] = newPurchasePriceMinorUnits
                 if (product.salePriceMinorUnits != newSalePriceMinorUnits) updates["salePriceMinorUnits"] = newSalePriceMinorUnits
                 if (product.unitType != newUnitType) updates["unitType"] = newUnitType
-                if (product.barcode != newBarcode) updates["barcode"] = newBarcode
+                if (product.barcode != cleanBarcode) updates["barcode"] = cleanBarcode
                 if (product.minStockLevel != newMinStockLevel) updates["minStockLevel"] = newMinStockLevel
                 
                 if (updates.isNotEmpty()) {
@@ -274,11 +340,13 @@ class ProductViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
-                val current = stockBalances.value[product.id] ?: 0L
+                require(session.role in listOf("ADMIN", "SUPER_ADMIN")) { "Only an administrator can adjust stock" }
+                require(product.companyId == session.companyId && newQuantity in 0..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) { "Invalid stock adjustment" }
+                database.withTransaction {
+                val current = database.saleDao().stock(session.companyId, product.id)
                 val delta = newQuantity - current
                 if (delta == 0L) {
-                    onSuccess()
-                    return@launch
+                    return@withTransaction
                 }
                 val movement = com.kadaikutty.pos.feature.billing.data.StockMovementEntity(
                     id = newRecordId(),
@@ -291,6 +359,7 @@ class ProductViewModel @Inject constructor(
                 )
                 database.purchaseDao().insertStockMovements(listOf(movement))
                 syncManager.enqueueStockMovement(movement)
+                }
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -496,10 +565,9 @@ class ProductViewModel @Inject constructor(
 
                         // Flush in batches of 500 to keep memory small and DB fast
                         if (productBatch.size >= 500) {
-                            dao.insertProducts(productBatch)
-                            productBatch.forEach { p ->
-                                syncManager.enqueueProduct(p, "INSERT")
-                            }
+                            val syncBatch = productBatch.toList()
+                            dao.insertProducts(syncBatch)
+                            syncManager.enqueueProducts(syncBatch, "INSERT")
                             productBatch.clear()
                             onProgress(totalRead, totalRead)
                         }
@@ -510,10 +578,9 @@ class ProductViewModel @Inject constructor(
 
                 // Flush remaining batch
                 if (productBatch.isNotEmpty()) {
-                    dao.insertProducts(productBatch)
-                    productBatch.forEach { p ->
-                        syncManager.enqueueProduct(p, "INSERT")
-                    }
+                    val syncBatch = productBatch.toList()
+                    dao.insertProducts(syncBatch)
+                    syncManager.enqueueProducts(syncBatch, "INSERT")
                     productBatch.clear()
                 }
 
@@ -732,16 +799,34 @@ class CustomerViewModel @Inject constructor(
         onSuccess: () -> Unit, 
         onError: (Throwable) -> Unit
     ) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) {
+            onError(IllegalArgumentException("Customer name cannot be blank"))
+            return
+        }
+        val cleanPhone = phone?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                
+                // Duplicate check
+                val existing = dao.customers(session.companyId, "").first()
+                if (cleanPhone != null && existing.any { !it.phone.isNullOrBlank() && it.phone.trim() == cleanPhone }) {
+                    onError(IllegalArgumentException("Customer with phone '$cleanPhone' already exists"))
+                    return@launch
+                }
+                if (existing.any { it.name.trim().equals(cleanName, ignoreCase = true) }) {
+                    onError(IllegalArgumentException("Customer '$cleanName' already exists"))
+                    return@launch
+                }
+
                 val customerId = newRecordId()
                 val customer = CustomerEntity(
                     id = customerId,
                     companyId = session.companyId,
-                    name = name,
-                    phone = phone,
-                    address = address,
+                    name = cleanName,
+                    phone = cleanPhone,
+                    address = address?.trim()?.takeIf { it.isNotBlank() },
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
                     syncStatus = SyncStatus.LOCAL_ONLY
@@ -771,20 +856,38 @@ class CustomerViewModel @Inject constructor(
     }
 
     fun updateCustomer(customer: CustomerEntity, newName: String, newPhone: String?, newAddress: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        val cleanName = newName.trim()
+        if (cleanName.isBlank()) {
+            onError(IllegalArgumentException("Customer name cannot be blank"))
+            return
+        }
+        val cleanPhone = newPhone?.trim()?.takeIf { it.isNotBlank() }
+        val cleanAddress = newAddress?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
+                // Duplicate check
+                val existing = dao.customers(customer.companyId, "").first()
+                if (cleanPhone != null && existing.any { it.id != customer.id && !it.phone.isNullOrBlank() && it.phone.trim() == cleanPhone }) {
+                    onError(IllegalArgumentException("Another customer with phone '$cleanPhone' already exists"))
+                    return@launch
+                }
+                if (existing.any { it.id != customer.id && it.name.trim().equals(cleanName, ignoreCase = true) }) {
+                    onError(IllegalArgumentException("Another customer with name '$cleanName' already exists"))
+                    return@launch
+                }
+
                 val updated = customer.copy(
-                    name = newName,
-                    phone = newPhone,
-                    address = newAddress,
+                    name = cleanName,
+                    phone = cleanPhone,
+                    address = cleanAddress,
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateCustomer(updated)
                 
                 val updates = mutableMapOf<String, Any?>()
-                if (customer.name != newName) updates["name"] = newName
-                if (customer.phone != newPhone) updates["phone"] = newPhone
-                if (customer.address != newAddress) updates["address"] = newAddress
+                if (customer.name != cleanName) updates["name"] = cleanName
+                if (customer.phone != cleanPhone) updates["phone"] = cleanPhone
+                if (customer.address != cleanAddress) updates["address"] = cleanAddress
                 
                 if (updates.isNotEmpty()) {
                     syncManager.enqueuePartialUpdate("Customer", customer.id, updates)
@@ -924,15 +1027,33 @@ class SupplierViewModel @Inject constructor(
     fun updateSearch(query: String) { searchQuery.value = query }
 
     fun addSupplier(name: String, phone: String?, address: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        val cleanName = name.trim()
+        if (cleanName.isBlank()) {
+            onError(IllegalArgumentException("Supplier name cannot be blank"))
+            return
+        }
+        val cleanPhone = phone?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
+                
+                // Duplicate check
+                val existing = dao.suppliers(session.companyId, "").first()
+                if (cleanPhone != null && existing.any { !it.phone.isNullOrBlank() && it.phone.trim() == cleanPhone }) {
+                    onError(IllegalArgumentException("Supplier with phone '$cleanPhone' already exists"))
+                    return@launch
+                }
+                if (existing.any { it.name.trim().equals(cleanName, ignoreCase = true) }) {
+                    onError(IllegalArgumentException("Supplier '$cleanName' already exists"))
+                    return@launch
+                }
+
                 val supplier = SupplierEntity(
                     id = newRecordId(),
                     companyId = session.companyId,
-                    name = name,
-                    phone = phone,
-                    address = address,
+                    name = cleanName,
+                    phone = cleanPhone,
+                    address = address?.trim()?.takeIf { it.isNotBlank() },
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
                     syncStatus = SyncStatus.LOCAL_ONLY
@@ -947,20 +1068,38 @@ class SupplierViewModel @Inject constructor(
     }
 
     fun updateSupplier(supplier: SupplierEntity, newName: String, newPhone: String?, newAddress: String?, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        val cleanName = newName.trim()
+        if (cleanName.isBlank()) {
+            onError(IllegalArgumentException("Supplier name cannot be blank"))
+            return
+        }
+        val cleanPhone = newPhone?.trim()?.takeIf { it.isNotBlank() }
+        val cleanAddress = newAddress?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
+                // Duplicate check
+                val existing = dao.suppliers(supplier.companyId, "").first()
+                if (cleanPhone != null && existing.any { it.id != supplier.id && !it.phone.isNullOrBlank() && it.phone.trim() == cleanPhone }) {
+                    onError(IllegalArgumentException("Another supplier with phone '$cleanPhone' already exists"))
+                    return@launch
+                }
+                if (existing.any { it.id != supplier.id && it.name.trim().equals(cleanName, ignoreCase = true) }) {
+                    onError(IllegalArgumentException("Another supplier with name '$cleanName' already exists"))
+                    return@launch
+                }
+
                 val updated = supplier.copy(
-                    name = newName,
-                    phone = newPhone,
-                    address = newAddress,
+                    name = cleanName,
+                    phone = cleanPhone,
+                    address = cleanAddress,
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateSupplier(updated)
                 
                 val updates = mutableMapOf<String, Any?>()
-                if (supplier.name != newName) updates["name"] = newName
-                if (supplier.phone != newPhone) updates["phone"] = newPhone
-                if (supplier.address != newAddress) updates["address"] = newAddress
+                if (supplier.name != cleanName) updates["name"] = cleanName
+                if (supplier.phone != cleanPhone) updates["phone"] = cleanPhone
+                if (supplier.address != cleanAddress) updates["address"] = cleanAddress
                 
                 if (updates.isNotEmpty()) {
                     syncManager.enqueuePartialUpdate("Supplier", supplier.id, updates)
@@ -1087,6 +1226,11 @@ class ExpenseViewModel @Inject constructor(
         }.stateIn(viewModelScope, SharingStarted.Lazily, emptyList())
 
     fun addExpense(amountMinorUnits: Long, description: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        val cleanDesc = description.trim()
+        if (amountMinorUnits <= 0L || cleanDesc.isBlank()) {
+            onError(IllegalArgumentException("Invalid expense amount or description"))
+            return
+        }
         viewModelScope.launch {
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
@@ -1094,7 +1238,7 @@ class ExpenseViewModel @Inject constructor(
                     id = newRecordId(),
                     companyId = session.companyId,
                     amountMinorUnits = amountMinorUnits,
-                    description = description,
+                    description = cleanDesc,
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
                     syncStatus = SyncStatus.LOCAL_ONLY
@@ -1109,18 +1253,23 @@ class ExpenseViewModel @Inject constructor(
     }
 
     fun updateExpense(expense: ExpenseEntity, newAmountMinorUnits: Long, newDescription: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        val cleanDesc = newDescription.trim()
+        if (newAmountMinorUnits <= 0L || cleanDesc.isBlank()) {
+            onError(IllegalArgumentException("Invalid expense amount or description"))
+            return
+        }
         viewModelScope.launch {
             try {
                 val updated = expense.copy(
                     amountMinorUnits = newAmountMinorUnits,
-                    description = newDescription,
+                    description = cleanDesc,
                     updatedAtEpochMs = System.currentTimeMillis()
                 )
                 dao.updateExpense(updated)
                 
                 val updates = mutableMapOf<String, Any?>()
                 if (expense.amountMinorUnits != newAmountMinorUnits) updates["amountMinorUnits"] = newAmountMinorUnits
-                if (expense.description != newDescription) updates["description"] = newDescription
+                if (expense.description != cleanDesc) updates["description"] = cleanDesc
                 
                 if (updates.isNotEmpty()) {
                     syncManager.enqueuePartialUpdate("Expense", expense.id, updates)

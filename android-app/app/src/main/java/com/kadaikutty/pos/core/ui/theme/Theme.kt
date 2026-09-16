@@ -1,6 +1,5 @@
 package com.kadaikutty.pos.core.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
@@ -35,10 +34,10 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = PrimaryLightSapphire,
-    onPrimary = Color(0xFF0B0F19),
-    primaryContainer = Color(0xFF1E3A8A),
-    onPrimaryContainer = Color(0xFFBFDBFE),
+    primary = Color(0xFFFB7185), // Vibrant, accessible Rose for crisp readability on dark surfaces
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF5C151A),
+    onPrimaryContainer = Color(0xFFFFDADA),
     secondary = EmeraldSuccess,
     onSecondary = Color(0xFF064E3B),
     secondaryContainer = Color(0xFF065F46),
@@ -88,15 +87,29 @@ private val AmoledColors = darkColorScheme(
 
 @Composable
 fun BillingTheme(
-    themeMode: String = "System",
-    darkTheme: Boolean = isSystemInDarkTheme(),
+    themeMode: String = "Light",
+    darkTheme: Boolean = false,
     content: @Composable () -> Unit
 ) {
     val colors = when {
         themeMode == "Amoled" -> AmoledColors
-        themeMode == "Dark" || (themeMode == "System" && darkTheme) -> DarkColors
+        themeMode == "Dark" || darkTheme -> DarkColors
         else -> LightColors
     }
+
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) {
+        androidx.compose.runtime.SideEffect {
+            val window = (view.context as? android.app.Activity)?.window
+            if (window != null) {
+                val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, view)
+                val isLight = colors == LightColors
+                insetsController.isAppearanceLightStatusBars = isLight
+                insetsController.isAppearanceLightNavigationBars = isLight
+            }
+        }
+    }
+
     MaterialTheme(
         colorScheme = colors,
         shapes = androidx.compose.material3.Shapes(

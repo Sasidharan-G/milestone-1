@@ -334,3 +334,29 @@ val migration20To21 = object : Migration(20, 21) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_audit_logs_action` ON `audit_logs` (`action`)")
     }
 }
+
+val migration21To22 = object : Migration(21, 22) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS local_operations (companyId TEXT NOT NULL, `key` TEXT NOT NULL, value TEXT NOT NULL, PRIMARY KEY(companyId, `key`))")
+        db.execSQL("ALTER TABLE sales ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE purchases ADD COLUMN revision INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE sale_items ADD COLUMN unitType TEXT")
+        db.execSQL("ALTER TABLE sale_items ADD COLUMN productName TEXT")
+        db.execSQL("ALTER TABLE sale_items ADD COLUMN costTotalMinorUnits INTEGER")
+        db.execSQL("ALTER TABLE sale_items ADD COLUMN netRevenueMinorUnits INTEGER")
+        db.execSQL("ALTER TABLE purchase_items ADD COLUMN unitType TEXT")
+        db.execSQL("ALTER TABLE customer_credits ADD COLUMN referenceId TEXT")
+        db.execSQL("ALTER TABLE supplier_credits ADD COLUMN referenceId TEXT")
+        db.execSQL("ALTER TABLE draft_cart_items ADD COLUMN customerId TEXT")
+        db.execSQL("ALTER TABLE draft_cart_items ADD COLUMN checkoutId TEXT")
+        db.execSQL("ALTER TABLE draft_cart_items ADD COLUMN editingSaleId TEXT")
+        db.execSQL("ALTER TABLE draft_cart_items ADD COLUMN editingRevision INTEGER")
+        db.execSQL("ALTER TABLE draft_cart_items ADD COLUMN lineDiscountMinorUnits INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE draft_cart_items ADD COLUMN cartDiscountMinorUnits INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("UPDATE sale_items SET unitType = (SELECT unitType FROM products WHERE products.id = sale_items.productId), productName = (SELECT name FROM products WHERE products.id = sale_items.productId)")
+        db.execSQL("UPDATE purchase_items SET unitType = (SELECT unitType FROM products WHERE products.id = purchase_items.productId)")
+        db.execSQL("UPDATE customer_credits SET referenceId = (SELECT id FROM sales WHERE sales.companyId = customer_credits.companyId AND sales.customerId = customer_credits.customerId AND customer_credits.reason = 'Bill #' || sales.billNumber LIMIT 1)")
+        // Only associate legacy supplier entries when the exact description identifies one purchase.
+        db.execSQL("UPDATE supplier_credits SET referenceId = (SELECT MIN(id) FROM purchases p WHERE p.companyId = supplier_credits.companyId AND p.supplierId = supplier_credits.supplierId AND supplier_credits.terms = 'Purchase ' || CASE WHEN p.invoiceNumber IS NOT NULL AND TRIM(p.invoiceNumber) != '' THEN 'Bill #' || p.invoiceNumber ELSE 'Order #' || p.orderNumber END || ' (' || p.paymentMode || ')' HAVING COUNT(*) = 1)")
+    }
+}

@@ -1,0 +1,387 @@
+import { randomUUID } from 'node:crypto';
+import {
+  BatchWriteCommand,
+  DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+  QueryCommand,
+  ScanCommand,
+  TransactWriteCommand,
+  UpdateCommand
+} from '@aws-sdk/lib-dynamodb';
+import { AppError } from '../../core/errors';
+import { GetSecretValueCommand, PutSecretValueCommand, SecretsManagerClient } from '@aws-sdk/client-secrets-manager';
+import {
+  CloudRecord,
+  DataStore,
+  LicenseRecord,
+  MasterConfig,
+  NewAccountInput,
+  StaffInput,
+  SyncOperation,
+  SyncPage,
+  SyncResult,
+  UserAccount
+} from '../contracts';
+import { activePermissions } from '../local/localDataStore';
+import { isAwsError, mapAwsError } from './awsErrors';
+
+const companyPk = (companyId: string) => `COMPANY#${companyId}`;
+const userPk = (userId: string) => `USER#${userId}`;
+const phonePk = (phone: string) => `PHONE#${phone}`;
+const recordSk = (entityType: string, entityId: string) => `RECORD#${entityType}#${entityId}`;
+const idempotencySk = (operationId: string) => `IDEMPOTENCY#${operationId}`;
+const sequenceWidth = 20;
+const changeSk = (sequence: number) => `CHANGE#${String(sequence).padStart(sequenceWidth, '0')}`;
+const ttlSeconds = (milliseconds: number) => Math.floor(milliseconds / 1000);
+const supportedEntities = new Set(['Category', 'Product', 'Customer', 'Supplier', 'Expense', 'Sale', 'Purchase', 'CustomerCredit', 'SupplierCredit', 'StockMovement']);
+
+interface StoredItem<T> {
+  pk: string;
+  sk: string;
+  itemType: string;
+  data: T;
+  gsi1pk?: string;
+  gsi1sk?: string;
+  expiresAtEpochSeconds?: number;
+}
+
+export class AwsDataStore implements DataStore {
+  constructor(
+    private readonly client: DynamoDBDocumentClient,
+    private readonly tableName: string,
+    private readonly secrets?: SecretsManagerClient,
+    private readonly masterPinSecretArn?: string
+  ) {}
+
+  async createAccount(input: NewAccountInput): Promise<{ user: UserAccount; license: LicenseRecord }> {
+    const now = Date.now();
+    const companyId = randomUUID();
+    const user: UserAccount = {
+      userId: randomUUID(), companyId, phone: input.phone, displayName: input.displayName, businessName: input.businessName,
+      role: 'ADMIN', permissions: [...activePermissions], status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now
+    };
+    const license: LicenseRecord = {
+      companyId, ownerMobile: input.phone, status: 'TRIAL', validUntilEpochMs: now + 172_800_000,
+      updatedAtEpochMs: now, businessName: input.businessName, ownerName: input.displayName
+    };
+    try {
+      await this.client.send(new TransactWriteCommand({ TransactItems: [
+        { Put: { TableName: this.tableName, Item: this.phoneItem(user), ConditionExpression: 'attribute_not_exists(pk)' } },
+        { Put: { TableName: this.tableName, Item: this.userItem(user), ConditionExpression: 'attribute_not_exists(pk)' } },
+        { Put: { TableName: this.tableName, Item: this.companyItem(companyId, 'LICENSE', license), ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)' } }
+      ] }));
+      return { user, license };
+    } catch (error) {
+      if (isAwsError(error, 'TransactionCanceledException')) throw new AppError(409, 'ACCOUNT_PHONE_EXISTS', 'Mobile number is already registered');
+      throw mapAwsError(error, 'DynamoDB account creation');
+    }
+  }
+
+  async findUserByPhone(phone: string): Promise<UserAccount | null> {
+    const lock = await this.get<{ userId: string }>(phonePk(phone), 'USER');
+    return lock ? this.findUserById(lock.userId) : null;
+  }
+
+  findUserById(userId: string): Promise<UserAccount | null> { return this.get<UserAccount>(userPk(userId), 'PROFILE'); }
+
+  async listStaff(companyId: string): Promise<UserAccount[]> {
+    const users = await this.queryCompanyUsers(companyId);
+    return users.filter(user => user.role === 'CASHIER');
+  }
+
+  async createStaff(input: StaffInput): Promise<UserAccount> {
+    const now = Date.now();
+    const user: UserAccount = {
+      userId: randomUUID(), companyId: input.companyId, phone: input.phone, displayName: input.displayName, role: 'CASHIER',
+      permissions: input.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE'),
+      status: 'PENDING_APPROVAL', createdAtEpochMs: now, updatedAtEpochMs: now
+    };
+    try {
+      await this.client.send(new TransactWriteCommand({ TransactItems: [
+        { Put: { TableName: this.tableName, Item: this.phoneItem(user), ConditionExpression: 'attribute_not_exists(pk)' } },
+        { Put: { TableName: this.tableName, Item: this.userItem(user), ConditionExpression: 'attribute_not_exists(pk)' } }
+      ] }));
+      return user;
+    } catch (error) {
+      if (isAwsError(error, 'TransactionCanceledException')) throw new AppError(409, 'ACCOUNT_PHONE_EXISTS', 'Mobile number is already registered');
+      throw mapAwsError(error, 'DynamoDB staff creation');
+    }
+  }
+
+  async deleteStaff(companyId: string, userId: string): Promise<void> {
+    const user = await this.findUserById(userId);
+    if (!user || user.companyId !== companyId || user.role !== 'CASHIER') return;
+    try {
+      await this.client.send(new TransactWriteCommand({ TransactItems: [
+        { Delete: { TableName: this.tableName, Key: { pk: userPk(userId), sk: 'PROFILE' } } },
+        { Delete: { TableName: this.tableName, Key: { pk: phonePk(user.phone), sk: 'USER' } } }
+      ] }));
+    } catch (error) { throw mapAwsError(error, 'DynamoDB staff rollback'); }
+  }
+
+  async updateStaff(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'displayName' | 'permissions' | 'status'>>): Promise<UserAccount> {
+    const current = await this.findUserById(userId);
+    if (!current || current.companyId !== companyId || current.role !== 'CASHIER') throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff account was not found');
+    const updated: UserAccount = {
+      ...current,
+      ...(changes.displayName === undefined ? {} : { displayName: changes.displayName }),
+      ...(changes.status === undefined ? {} : { status: changes.status }),
+      ...(changes.permissions === undefined ? {} : { permissions: changes.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE') }),
+      updatedAtEpochMs: Date.now()
+    };
+    try {
+      await this.client.send(new PutCommand({ TableName: this.tableName, Item: this.userItem(updated), ConditionExpression: 'attribute_exists(pk)' }));
+      return updated;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB staff update'); }
+  }
+
+  getLicense(companyId: string): Promise<LicenseRecord | null> { return this.get<LicenseRecord>(companyPk(companyId), 'LICENSE'); }
+
+  async consumeNonce(scope: string, nonce: string, expiresAtEpochMs: number): Promise<boolean> {
+    const pk = `NONCE#${scope}#${nonce}`;
+    try {
+      await this.client.send(new PutCommand({
+        TableName: this.tableName,
+        Item: { pk, sk: 'VALUE', itemType: 'NONCE', expiresAtEpochSeconds: ttlSeconds(expiresAtEpochMs) },
+        ConditionExpression: 'attribute_not_exists(pk) OR expiresAtEpochSeconds < :now',
+        ExpressionAttributeValues: { ':now': ttlSeconds(Date.now()) }
+      }));
+      return true;
+    } catch (error) {
+      if (isAwsError(error, 'ConditionalCheckFailedException')) return false;
+      throw mapAwsError(error, 'DynamoDB nonce consumption');
+    }
+  }
+
+  async applySyncBatch(companyId: string, operations: SyncOperation[]): Promise<SyncResult[]> {
+    const results: SyncResult[] = [];
+    for (const operation of operations) results.push(await this.applySyncOperation(companyId, operation));
+    return results;
+  }
+
+  async pullSync(companyId: string, cursor: string, limit: number): Promise<SyncPage> {
+    const parsedCursor = cursor ? Number(cursor) : 0;
+    if (!Number.isSafeInteger(parsedCursor) || parsedCursor < 0) throw new AppError(400, 'SYNC_CURSOR_INVALID', 'Sync cursor is invalid');
+    try {
+      const response = await this.client.send(new QueryCommand({
+        TableName: this.tableName,
+        KeyConditionExpression: 'pk = :pk AND sk BETWEEN :from AND :to',
+        ExpressionAttributeValues: { ':pk': companyPk(companyId), ':from': changeSk(parsedCursor + 1), ':to': 'CHANGE#~' },
+        Limit: limit,
+        ConsistentRead: true
+      }));
+      const items = (response.Items || []) as Array<StoredItem<{ sequence: number; record: CloudRecord }>>;
+      const nextCursor = items.length ? items[items.length - 1].data.sequence : parsedCursor;
+      return { records: items.map(item => item.data.record), nextCursor: String(nextCursor), hasMore: Boolean(response.LastEvaluatedKey) };
+    } catch (error) { throw mapAwsError(error, 'DynamoDB sync pull'); }
+  }
+
+  async purgeCompanyRecords(companyId: string): Promise<number> {
+    const records = await this.queryPartition<CloudRecord>(companyPk(companyId), 'RECORD#');
+    let count = 0;
+    for (const record of records.map(item => item.data).filter(record => !record.deleted)) {
+      await this.applySyncOperation(companyId, {
+        operationId: `purge-${randomUUID()}`, companyId, entityType: record.entityType, entityId: record.entityId,
+        operation: 'DELETE', baseVersion: record.version, schemaVersion: record.schemaVersion
+      });
+      count += 1;
+    }
+    return count;
+  }
+
+  async adminOverview(): Promise<{ licenses: LicenseRecord[]; users: UserAccount[]; masterConfig: MasterConfig }> {
+    const items = await this.scanAll();
+    return {
+      licenses: items.filter(item => item.itemType === 'LICENSE').map(item => item.data as LicenseRecord),
+      users: items.filter(item => item.itemType === 'USER').map(item => item.data as UserAccount),
+      masterConfig: await this.getMasterConfig()
+    };
+  }
+
+  async updateLicense(companyId: string, changes: Partial<LicenseRecord>): Promise<LicenseRecord> {
+    const current = await this.getLicense(companyId);
+    if (!current) throw new AppError(404, 'LICENSE_NOT_FOUND', 'Company license was not found');
+    const updated: LicenseRecord = { ...current, ...changes, companyId, updatedAtEpochMs: Date.now() };
+    try {
+      await this.client.send(new PutCommand({ TableName: this.tableName, Item: this.companyItem(companyId, 'LICENSE', updated), ConditionExpression: 'attribute_exists(pk)' }));
+      return updated;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB license update'); }
+  }
+
+  async deleteCompany(companyId: string): Promise<void> {
+    try {
+      const companyItems = await this.queryPartition<unknown>(companyPk(companyId));
+      const users = await this.queryCompanyUsers(companyId);
+      const keys = [
+        ...companyItems.map(item => ({ pk: item.pk, sk: item.sk })),
+        ...users.flatMap(user => [{ pk: userPk(user.userId), sk: 'PROFILE' }, { pk: phonePk(user.phone), sk: 'USER' }])
+      ];
+      for (let index = 0; index < keys.length; index += 25) {
+        let pending: Array<{ DeleteRequest: { Key: Record<string, string> } }> = keys.slice(index, index + 25).map(Key => ({ DeleteRequest: { Key } }));
+        for (let attempt = 0; pending.length && attempt < 5; attempt += 1) {
+          const response = await this.client.send(new BatchWriteCommand({ RequestItems: { [this.tableName]: pending } }));
+          pending = (response.UnprocessedItems?.[this.tableName] || []).filter(item => item.DeleteRequest?.Key).map(item => ({ DeleteRequest: { Key: item.DeleteRequest!.Key! as Record<string, string> } }));
+          if (pending.length) await new Promise(resolve => setTimeout(resolve, 25 * (2 ** attempt)));
+        }
+        if (pending.length) throw new AppError(503, 'AWS_BATCH_INCOMPLETE', 'DynamoDB company deletion is temporarily incomplete', true);
+      }
+    } catch (error) { throw mapAwsError(error, 'DynamoDB company deletion'); }
+  }
+
+  async getMasterConfig(): Promise<MasterConfig> {
+    const stored = await this.get<Omit<MasterConfig, 'pin'>>('CONFIG', 'MASTER');
+    let pin = process.env.MASTER_ADMIN_PIN || '';
+    if (this.secrets && this.masterPinSecretArn) {
+      try { pin = (await this.secrets.send(new GetSecretValueCommand({ SecretId: this.masterPinSecretArn }))).SecretString || ''; }
+      catch (error) { throw mapAwsError(error, 'Secrets Manager master PIN read'); }
+    }
+    return { mobile: stored?.mobile || process.env.MASTER_SUPPORT_PHONE || '', pin, updatedAtEpochMs: stored?.updatedAtEpochMs || Date.now() };
+  }
+
+  async updateMasterConfig(changes: Pick<MasterConfig, 'mobile' | 'pin'>): Promise<MasterConfig> {
+    const updated = { ...changes, updatedAtEpochMs: Date.now() };
+    try {
+      if (!this.secrets || !this.masterPinSecretArn) throw new AppError(500, 'MASTER_SECRET_NOT_CONFIGURED', 'Master PIN secret is not configured');
+      await this.secrets.send(new PutSecretValueCommand({ SecretId: this.masterPinSecretArn, SecretString: changes.pin }));
+      await this.client.send(new PutCommand({ TableName: this.tableName, Item: { pk: 'CONFIG', sk: 'MASTER', itemType: 'MASTER_CONFIG', data: { mobile: changes.mobile, updatedAtEpochMs: updated.updatedAtEpochMs } } }));
+      return updated;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB master configuration update'); }
+  }
+
+  private async applySyncOperation(companyId: string, operation: SyncOperation): Promise<SyncResult> {
+    if (operation.companyId !== companyId) throw new AppError(403, 'TENANT_MISMATCH', 'Operation tenant does not match authenticated tenant');
+    if (!supportedEntities.has(operation.entityType)) throw new AppError(422, 'SYNC_ENTITY_UNSUPPORTED', 'Unsupported sync entity type');
+    if (Buffer.byteLength(JSON.stringify(operation.payload || {}), 'utf8') > 350_000) throw new AppError(413, 'SYNC_RECORD_TOO_LARGE', 'Sync record exceeds DynamoDB safe item size');
+    const pk = companyPk(companyId);
+    const prior = await this.get<SyncResult>(pk, idempotencySk(operation.operationId));
+    if (prior) return { ...prior, status: 'DUPLICATE' };
+    const current = await this.get<CloudRecord>(pk, recordSk(operation.entityType, operation.entityId));
+    const baseVersion = operation.baseVersion || 0;
+    if ((current && current.version !== baseVersion && operation.operation !== 'INSERT') || (!current && baseVersion > 0)) {
+      return this.storeConflict(pk, operation.operationId, current || undefined);
+    }
+    const now = Date.now();
+    const payload = operation.operation === 'PARTIAL_UPDATE' ? { ...(current?.payload || {}), ...(operation.payload || {}) } : { ...(operation.payload || {}) };
+    payload.companyId = companyId;
+    const record: CloudRecord = {
+      companyId, entityType: operation.entityType, entityId: operation.entityId, version: (current?.version || 0) + 1,
+      schemaVersion: operation.schemaVersion, updatedAtEpochMs: now, deleted: operation.operation === 'DELETE', payload
+    };
+    const sequence = await this.nextSequence(pk);
+    const result: SyncResult = { operationId: operation.operationId, status: 'APPLIED', version: record.version };
+    const recordItem: StoredItem<CloudRecord> = { pk, sk: recordSk(operation.entityType, operation.entityId), itemType: 'SYNC_RECORD', data: record };
+    if (record.deleted) recordItem.expiresAtEpochSeconds = ttlSeconds(now + 90 * 86_400_000);
+    try {
+      await this.client.send(new TransactWriteCommand({ TransactItems: [
+        { Put: {
+          TableName: this.tableName, Item: recordItem,
+          ConditionExpression: current ? '#data.#version = :version' : 'attribute_not_exists(pk)',
+          ...(current ? { ExpressionAttributeNames: { '#data': 'data', '#version': 'version' }, ExpressionAttributeValues: { ':version': current.version } } : {})
+        } },
+        { Put: { TableName: this.tableName, Item: { pk, sk: changeSk(sequence), itemType: 'SYNC_CHANGE', data: { sequence, record }, expiresAtEpochSeconds: ttlSeconds(now + 120 * 86_400_000) }, ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)' } },
+        { Put: { TableName: this.tableName, Item: { pk, sk: idempotencySk(operation.operationId), itemType: 'IDEMPOTENCY', data: result, expiresAtEpochSeconds: ttlSeconds(now + 7 * 86_400_000) }, ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)' } }
+      ] }));
+      return result;
+    } catch (error) {
+      if (isAwsError(error, 'TransactionCanceledException')) {
+        const duplicate = await this.get<SyncResult>(pk, idempotencySk(operation.operationId));
+        if (duplicate) return { ...duplicate, status: 'DUPLICATE' };
+        const authoritative = await this.get<CloudRecord>(pk, recordSk(operation.entityType, operation.entityId));
+        return this.storeConflict(pk, operation.operationId, authoritative || undefined);
+      }
+      throw mapAwsError(error, 'DynamoDB sync mutation');
+    }
+  }
+
+  private async storeConflict(pk: string, operationId: string, record?: CloudRecord): Promise<SyncResult> {
+    const result: SyncResult = { operationId, status: 'CONFLICT', ...(record ? { record } : {}) };
+    try {
+      await this.client.send(new PutCommand({
+        TableName: this.tableName,
+        Item: { pk, sk: idempotencySk(operationId), itemType: 'IDEMPOTENCY', data: result, expiresAtEpochSeconds: ttlSeconds(Date.now() + 7 * 86_400_000) },
+        ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)'
+      }));
+      return result;
+    } catch (error) {
+      if (isAwsError(error, 'ConditionalCheckFailedException')) return await this.get<SyncResult>(pk, idempotencySk(operationId)) || result;
+      throw mapAwsError(error, 'DynamoDB conflict persistence');
+    }
+  }
+
+  private async nextSequence(pk: string): Promise<number> {
+    try {
+      const response = await this.client.send(new UpdateCommand({
+        TableName: this.tableName, Key: { pk, sk: 'SYNC_COUNTER' },
+        UpdateExpression: 'SET itemType = if_not_exists(itemType, :type) ADD #sequence :one',
+        ExpressionAttributeNames: { '#sequence': 'sequence' }, ExpressionAttributeValues: { ':one': 1, ':type': 'SYNC_COUNTER' }, ReturnValues: 'UPDATED_NEW'
+      }));
+      const sequence = Number(response.Attributes?.sequence);
+      if (!Number.isSafeInteger(sequence)) throw new AppError(502, 'SYNC_SEQUENCE_INVALID', 'DynamoDB returned an invalid sync sequence', true);
+      return sequence;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB sequence allocation'); }
+  }
+
+  private async get<T>(pk: string, sk: string): Promise<T | null> {
+    try {
+      const response = await this.client.send(new GetCommand({ TableName: this.tableName, Key: { pk, sk }, ConsistentRead: true }));
+      return response.Item ? (response.Item as StoredItem<T>).data : null;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB read'); }
+  }
+
+  private userItem(user: UserAccount): StoredItem<UserAccount> {
+    return { pk: userPk(user.userId), sk: 'PROFILE', itemType: 'USER', data: user, gsi1pk: companyPk(user.companyId), gsi1sk: `USER#${user.role}#${user.userId}` };
+  }
+
+  private phoneItem(user: UserAccount): StoredItem<{ userId: string }> {
+    return { pk: phonePk(user.phone), sk: 'USER', itemType: 'PHONE_INDEX', data: { userId: user.userId } };
+  }
+
+  private companyItem<T>(companyId: string, sk: string, data: T): StoredItem<T> { return { pk: companyPk(companyId), sk, itemType: sk, data }; }
+
+  private async queryCompanyUsers(companyId: string): Promise<UserAccount[]> {
+    try {
+      const users: UserAccount[] = [];
+      let ExclusiveStartKey: Record<string, unknown> | undefined;
+      do {
+        const response = await this.client.send(new QueryCommand({
+          TableName: this.tableName, IndexName: 'CompanyUsersIndex', KeyConditionExpression: 'gsi1pk = :pk AND begins_with(gsi1sk, :prefix)',
+          ExpressionAttributeValues: { ':pk': companyPk(companyId), ':prefix': 'USER#' }, ExclusiveStartKey
+        }));
+        users.push(...(response.Items || []).map(item => (item as StoredItem<UserAccount>).data));
+        ExclusiveStartKey = response.LastEvaluatedKey;
+      } while (ExclusiveStartKey);
+      return users;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB company user query'); }
+  }
+
+  private async queryPartition<T>(pk: string, prefix?: string): Promise<Array<StoredItem<T>>> {
+    try {
+      const items: Array<StoredItem<T>> = [];
+      let ExclusiveStartKey: Record<string, unknown> | undefined;
+      do {
+        const response = await this.client.send(new QueryCommand({
+          TableName: this.tableName,
+          KeyConditionExpression: prefix ? 'pk = :pk AND begins_with(sk, :prefix)' : 'pk = :pk',
+          ExpressionAttributeValues: { ':pk': pk, ...(prefix ? { ':prefix': prefix } : {}) }, ExclusiveStartKey, ConsistentRead: true
+        }));
+        items.push(...(response.Items || []) as Array<StoredItem<T>>);
+        ExclusiveStartKey = response.LastEvaluatedKey;
+      } while (ExclusiveStartKey);
+      return items;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB partition query'); }
+  }
+
+  private async scanAll(): Promise<Array<StoredItem<unknown>>> {
+    try {
+      const items: Array<StoredItem<unknown>> = [];
+      let ExclusiveStartKey: Record<string, unknown> | undefined;
+      do {
+        const response = await this.client.send(new ScanCommand({ TableName: this.tableName, ExclusiveStartKey }));
+        items.push(...(response.Items || []) as Array<StoredItem<unknown>>);
+        ExclusiveStartKey = response.LastEvaluatedKey;
+      } while (ExclusiveStartKey);
+      return items;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB administration scan'); }
+  }
+}

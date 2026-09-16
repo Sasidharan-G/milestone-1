@@ -23,7 +23,6 @@ import javax.inject.Inject
 import com.kadaikutty.pos.core.backup.data.BackupManager
 import com.kadaikutty.pos.core.backup.domain.BackupResult
 import com.kadaikutty.pos.core.sync.SyncScheduler
-import kotlinx.coroutines.tasks.await
 
 data class BluetoothDeviceInfo(val name: String, val address: String)
 
@@ -38,11 +37,9 @@ class SettingsViewModel @Inject constructor(
     private val database: com.kadaikutty.pos.core.database.BillingDatabase,
     private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
     private val verifier: com.kadaikutty.pos.core.auth.OfflineCredentialVerifier,
-    private val firestore: com.google.firebase.firestore.FirebaseFirestore,
-
-    private val sampleDataGenerator: com.kadaikutty.pos.core.sample.SampleDataGenerator,
     private val licenseManager: com.kadaikutty.pos.core.license.LicenseManager,
-    private val sessionSecurityManager: com.kadaikutty.pos.core.auth.SessionSecurityManager
+    private val sessionSecurityManager: com.kadaikutty.pos.core.auth.SessionSecurityManager,
+    private val backendApi: com.kadaikutty.pos.core.network.BackendApiClient,
 ) : ViewModel() {
 
     val isSessionTerminated: StateFlow<Boolean> = sessionSecurityManager.isSessionTerminated
@@ -72,9 +69,8 @@ class SettingsViewModel @Inject constructor(
             try {
                 val session = sessionStore.activeSession.first()
                 if (session != null) {
-                    val count = sampleDataGenerator.insert100DemoRecords(session.companyId)
-                    _backupStatus.value = "Successfully initialized $count demo items (Products, Sales, Customers, Stock)!"
-                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult("Loaded $count demo records successfully!") }
+                    _backupStatus.value = "Demo data tooling is not included in production builds."
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult("Demo data is unavailable in this production build.") }
                 } else {
                     _backupStatus.value = "Failed: No active merchant session."
                     withContext(kotlinx.coroutines.Dispatchers.Main) { onResult("Error: Please log in first.") }
@@ -95,15 +91,8 @@ class SettingsViewModel @Inject constructor(
                 _restoreStatus.value = "Safely clearing database records..."
                 try {
                     val session = sessionStore.activeSession.first()
-                    val companyId = session?.companyId ?: ""
-                    val success = sampleDataGenerator.clearAllData(companyId, clearCloudToo)
-                    if (success) {
-                        _restoreStatus.value = "All database records safely cleared."
-                        withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(true) }
-                    } else {
-                        _restoreStatus.value = "Failed to clear database."
-                        withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false) }
-                    }
+                    _restoreStatus.value = "Database reset is disabled in production builds."
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false) }
                 } catch (e: Exception) {
                     _restoreStatus.value = "Clear error: ${e.message}"
                     withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false) }
@@ -128,6 +117,10 @@ class SettingsViewModel @Inject constructor(
         _biometricAuthPending.value = null
     }
 
+    fun onBiometricAuthFailed(error: String) {
+        _restoreStatus.value = "Authentication failed: $error"
+    }
+
     val isLoggedIn: StateFlow<Boolean?> = sessionStore.activeSession
         .map { it != null }
         .stateIn(
@@ -140,6 +133,11 @@ class SettingsViewModel @Inject constructor(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = "Bluetooth"
+    )
+    val savedPrinters: StateFlow<List<com.kadaikutty.pos.core.preferences.SavedPrinter>> = appPreferences.savedPrinters.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
     )
 
     val printerDeviceId: StateFlow<String?> = appPreferences.printerDeviceId.stateIn(
@@ -512,16 +510,18 @@ class SettingsViewModel @Inject constructor(
                     onFinished(false)
                     return@launch
                 }
-                when (val result = backupManager.restoreFromCloud(session.companyId, firestore)) {
-                    is BackupResult.Success -> {
+                val result = runCatching {
+                    val accessToken = requireNotNull(session.accessToken) { "Restore failed: authentication token is missing." }
+                    val bytes = backendApi.downloadLatestBackup(accessToken)
+                    check(backupManager.restoreBackup(bytes)) { "Downloaded cloud backup is invalid." }
+                }
+                if (result.isSuccess) {
                         _restoreStatus.value = "Cloud restore completed successfully! App will restart."
                         _requireRestart.value = true
                         onFinished(true)
-                    }
-                    is BackupResult.Failure -> {
-                        _restoreStatus.value = "Cloud restore failed: ${result.exception.message}"
+                } else {
+                        _restoreStatus.value = "Cloud restore failed: ${result.exceptionOrNull()?.message}"
                         onFinished(false)
-                    }
                 }
                 _isRestoreRunning.value = false
             }
@@ -592,59 +592,8 @@ class SettingsViewModel @Inject constructor(
                 )
                 database.userDao().insertUser(userEntity)
 
-                // Sync to Firestore Cloud
-                try {
-                    val map = hashMapOf(
-                        "id" to userEntity.id,
-                        "username" to userEntity.username,
-                        "displayName" to userEntity.displayName,
-                        "salt" to userEntity.salt,
-                        "verifier" to userEntity.verifier,
-                        "permissions" to userEntity.permissions,
-                        "companyId" to userEntity.companyId,
-                        "businessName" to currentBusinessName,
-                        "role" to userEntity.role,
-                        "status" to "PENDING_APPROVAL",
-                        "createdAt" to System.currentTimeMillis(),
-                        "lastOnlineVerifiedAt" to userEntity.lastOnlineVerifiedAt,
-                        "offlineValidUntil" to userEntity.offlineValidUntil
-                    )
-                    
-                    val rootMap = hashMapOf(
-                        "user_id" to userEntity.id,
-                        "username" to userEntity.username,
-                        "mobile" to userEntity.username,
-                        "full_name" to userEntity.displayName,
-                        "salt" to userEntity.salt,
-                        "verifier" to userEntity.verifier,
-                        "permissions" to fullPermissions.map { it.name },
-                        "company_id" to userEntity.companyId,
-                        "business_name" to currentBusinessName,
-                        "role" to userEntity.role,
-                        "status" to "PENDING_APPROVAL",
-                        "createdAt" to System.currentTimeMillis()
-                    )
-
-                    kotlinx.coroutines.withTimeout(5000L) {
-                        firestore.collection("staff_requests").document(userEntity.id).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
-                        if (userEntity.username.isNotBlank()) {
-                            firestore.collection("staff_requests").document(userEntity.username).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
-                        }
-                        firestore.collection("users").document(companyId).collection("staff").document(userEntity.id).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
-                        firestore.collection("users").document(userEntity.username).set(rootMap, com.google.firebase.firestore.SetOptions.merge()).await()
-                        firestore.collection("users").document("+91${userEntity.username}").set(rootMap, com.google.firebase.firestore.SetOptions.merge()).await()
-                        firestore.collection("company_users").document().set(mapOf(
-                            "company_id" to companyId,
-                            "user_id" to userEntity.id,
-                            "role" to userEntity.role,
-                            "status" to "PENDING_APPROVAL",
-                            "mobile" to userEntity.username,
-                            "permissions" to fullPermissions.map { it.name }
-                        )).await()
-                    }
-                } catch (rpcEx: Exception) {
-                    android.util.Log.e("SettingsVM", "Staff cloud sync error: ${rpcEx.message}", rpcEx)
-                }
+                val token = session.accessToken ?: error("Online session token is missing")
+                backendApi.createStaff(token, cleanPhone, displayName, password.concatToString(), permissions.map { it.name })
 
                 onResult(true, "Staff account for '$displayName' ($cleanPhone) created! Awaiting Master Admin approval.")
             } catch (e: Exception) {
@@ -695,43 +644,8 @@ class SettingsViewModel @Inject constructor(
                 }
                 userDao.updateUser(updatedUser)
 
-                // Sync to Firestore
-                try {
-                    val session = sessionStore.activeSession.first()
-                    if (session != null) {
-                        val map = hashMapOf(
-                            "id" to updatedUser.id,
-                            "username" to updatedUser.username,
-                            "displayName" to updatedUser.displayName,
-                            "salt" to updatedUser.salt,
-                            "verifier" to updatedUser.verifier,
-                            "permissions" to updatedUser.permissions,
-                            "companyId" to updatedUser.companyId,
-                            "role" to updatedUser.role,
-                            "lastOnlineVerifiedAt" to updatedUser.lastOnlineVerifiedAt,
-                            "offlineValidUntil" to updatedUser.offlineValidUntil
-                        )
-                        val rootUpdate = hashMapOf(
-                            "user_id" to updatedUser.id,
-                            "username" to updatedUser.username,
-                            "mobile" to updatedUser.username,
-                            "full_name" to updatedUser.displayName,
-                            "salt" to updatedUser.salt,
-                            "verifier" to updatedUser.verifier,
-                            "permissions" to permissions.map { it.name },
-                            "role" to updatedUser.role
-                        )
-                        kotlinx.coroutines.withTimeout(5000L) {
-                            firestore.collection("staff_requests").document(updatedUser.id).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
-                            if (updatedUser.username.isNotBlank()) {
-                                firestore.collection("staff_requests").document(updatedUser.username).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
-                            }
-                            firestore.collection("users").document(session.companyId).collection("staff").document(updatedUser.id).set(map, com.google.firebase.firestore.SetOptions.merge()).await()
-                            firestore.collection("users").document(updatedUser.username).set(rootUpdate, com.google.firebase.firestore.SetOptions.merge()).await()
-                            firestore.collection("users").document("+91${updatedUser.username}").set(rootUpdate, com.google.firebase.firestore.SetOptions.merge()).await()
-                        }
-                    }
-                } catch (ignored: Exception) {}
+                val token = session.accessToken ?: error("Online session token is missing")
+                backendApi.updateStaff(token, updatedUser.id, finalDisplayName, newPassword?.concatToString(), permissions.map { it.name })
 
                 onResult(true, "Staff account updated successfully!")
             } catch (e: Exception) {
@@ -755,16 +669,8 @@ class SettingsViewModel @Inject constructor(
                 }
                 userDao.deleteUser(existing)
 
-                try {
-                    val session = sessionStore.activeSession.first()
-                    if (session != null) {
-                        kotlinx.coroutines.withTimeout(5000L) {
-                            firestore.collection("staff_requests").document(userId).delete().await()
-                            firestore.collection("users").document(session.companyId).collection("staff").document(userId).delete().await()
-                            firestore.collection("users").document(existing.username).delete().await()
-                        }
-                    }
-                } catch (ignored: Exception) {}
+                val token = session.accessToken ?: error("Online session token is missing")
+                backendApi.deactivateStaff(token, userId)
 
                 onResult(true, "Staff user deleted successfully!")
             } catch (e: Exception) {
