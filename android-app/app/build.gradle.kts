@@ -149,7 +149,8 @@ dependencies {
     // Security Dependencies
     implementation(libs.androidx.biometric)
     implementation(libs.rootbeer.lib)
-    implementation(libs.android.database.sqlcipher)
+    implementation(libs.sqlcipher.android)
+    implementation(libs.androidx.sqlite)
 
     // CameraX & Google ML Kit Barcode Scanner
     implementation(libs.camerax.core)

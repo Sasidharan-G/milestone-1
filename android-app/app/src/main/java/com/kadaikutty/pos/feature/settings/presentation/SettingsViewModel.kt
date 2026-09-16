@@ -574,17 +574,26 @@ class SettingsViewModel @Inject constructor(
                 }
 
                 val companyId = session.companyId
-                val credResult = createCredentials(cleanPhone, password, java.util.UUID.randomUUID().toString(), displayName)
-                val fullPermissions = permissions + com.kadaikutty.pos.core.security.Permission.PENDING_MASTER_APPROVAL
-                val currentBusinessName = appPreferences.shopName.first().ifBlank { "Store $companyId" }
-                
+                val token = session.accessToken ?: error("Online session token is missing")
+
+                // The backend is the source of truth for the account's identity: it creates the
+                // account ACTIVE immediately (the shop admin owns staff onboarding, no separate
+                // master approval step) and assigns the real userId. Calling it first — and only
+                // writing the local offline-login cache once it succeeds, keyed by that same
+                // server userId — is what keeps this device's local record and the cloud record
+                // pointing at the same account; inventing a local ID first (as before) meant every
+                // later edit/deactivate for that staff member silently 404'd against the backend.
+                val created = backendApi.createStaff(token, cleanPhone, displayName, password.concatToString(), permissions.map { it.name })
+                val serverUserId = created.getJSONObject("user").getString("userId")
+
+                val credResult = createCredentials(cleanPhone, password, serverUserId, displayName)
                 val userEntity = com.kadaikutty.pos.core.auth.UserEntity(
                     id = credResult.userId,
                     username = cleanPhone,
                     displayName = displayName,
                     salt = credResult.saltStr,
                     verifier = credResult.verifierStr,
-                    permissions = fullPermissions.joinToString(",") { it.name },
+                    permissions = permissions.joinToString(",") { it.name },
                     companyId = companyId,
                     role = role,
                     lastOnlineVerifiedAt = System.currentTimeMillis(),
@@ -592,10 +601,7 @@ class SettingsViewModel @Inject constructor(
                 )
                 database.userDao().insertUser(userEntity)
 
-                val token = session.accessToken ?: error("Online session token is missing")
-                backendApi.createStaff(token, cleanPhone, displayName, password.concatToString(), permissions.map { it.name })
-
-                onResult(true, "Staff account for '$displayName' ($cleanPhone) created! Awaiting Master Admin approval.")
+                onResult(true, "Staff account for '$displayName' ($cleanPhone) created and active.")
             } catch (e: Exception) {
                 onResult(false, e.message ?: "Failed to create staff account")
             }
@@ -626,6 +632,11 @@ class SettingsViewModel @Inject constructor(
                 val finalDisplayName = displayName?.ifBlank { null } ?: existing.displayName
                 val finalRole = role ?: existing.role
 
+                // Backend first: if this fails (network, permission, stale userId), nothing local
+                // changes, so this device's cache never diverges from what the cloud actually has.
+                val token = session.accessToken ?: error("Online session token is missing")
+                backendApi.updateStaff(token, existing.id, finalDisplayName, newPassword?.concatToString(), permissions.map { it.name })
+
                 val updatedUser = if (newPassword != null && newPassword.isNotEmpty()) {
                     val credResult = createCredentials(existing.username, newPassword, existing.id, finalDisplayName)
                     existing.copy(
@@ -643,9 +654,6 @@ class SettingsViewModel @Inject constructor(
                     )
                 }
                 userDao.updateUser(updatedUser)
-
-                val token = session.accessToken ?: error("Online session token is missing")
-                backendApi.updateStaff(token, updatedUser.id, finalDisplayName, newPassword?.concatToString(), permissions.map { it.name })
 
                 onResult(true, "Staff account updated successfully!")
             } catch (e: Exception) {
@@ -667,10 +675,14 @@ class SettingsViewModel @Inject constructor(
                     onResult(false, "User not found")
                     return@launch
                 }
-                userDao.deleteUser(existing)
 
+                // Backend first: deactivate the real account before dropping the local cache row.
+                // The old order deleted locally first, so a failed/offline backend call silently
+                // left the staff member's cloud account fully active and able to log in on another
+                // device — while this device's admin saw the entry gone and believed it was removed.
                 val token = session.accessToken ?: error("Online session token is missing")
                 backendApi.deactivateStaff(token, userId)
+                userDao.deleteUser(existing)
 
                 onResult(true, "Staff user deleted successfully!")
             } catch (e: Exception) {

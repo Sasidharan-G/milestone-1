@@ -2,19 +2,23 @@ package com.kadaikutty.pos
 
 import android.app.Application
 import dagger.hilt.android.HiltAndroidApp
-import io.sentry.Sentry
+import io.sentry.android.core.SentryAndroid
 
 @HiltAndroidApp
 class BillingApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        net.sqlcipher.database.SQLiteDatabase.loadLibs(this)
+        // sqlcipher-android (16 KB page size compatible) loads its native library explicitly,
+        // unlike the deprecated android-database-sqlcipher's SQLiteDatabase.loadLibs(context).
+        System.loadLibrary("sqlcipher")
         initSentry()
     }
 
     private fun initSentry() {
-        Sentry.init { options ->
+        // Sentry 8.x's platform-agnostic Sentry.init() refuses to run on Android at all
+        // ("Please, use SentryAndroid.init") — the Android entry point needs the Context.
+        SentryAndroid.init(this) { options ->
             options.dsn = BuildConfig.SENTRY_DSN ?: ""
             options.isSendDefaultPii = false
             options.tracesSampleRate = if (BuildConfig.DEBUG) 1.0 else 0.1

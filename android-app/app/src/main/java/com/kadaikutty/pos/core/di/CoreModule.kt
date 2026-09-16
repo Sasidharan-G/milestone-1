@@ -68,7 +68,7 @@ private val Context.billingDataStore by preferencesDataStore("billing_preference
 object CoreModule {
     @Provides @Singleton fun database(@ApplicationContext context: Context): BillingDatabase {
         val keyBytes = com.kadaikutty.pos.core.security.SecurityShield.getOrCreateDatabaseKey(context)
-        val factory = net.sqlcipher.database.SupportFactory(keyBytes)
+        val factory = net.zetetic.database.sqlcipher.SupportOpenHelperFactory(keyBytes)
         
         val db = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
             .openHelperFactory(factory)

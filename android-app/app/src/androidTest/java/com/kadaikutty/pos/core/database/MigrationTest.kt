@@ -17,30 +17,14 @@ class MigrationTest {
         BillingDatabase::class.java,
     )
 
-    @Test
-    fun migrate3To4() {
-        var db = helper.createDatabase(TEST_DB, 3)
-
-        // Add some dummy data to ensure migration doesn't fail with data present
-        db.execSQL("INSERT INTO products (id, name, categoryId, createdAtEpochMs, updatedAtEpochMs, syncStatus) VALUES ('prod1', 'Product 1', 'cat1', 0, 0, 'PENDING')")
-        
-        // Prepare for the next version.
-        db.close()
-
-        // Re-open the database with version 4 and provide MIGRATION_3_4
-        // as the migration process.
-        db = helper.runMigrationsAndValidate(TEST_DB, 4, true, migration3To4)
-
-        // Verify the tables exist by querying them
-        val cursor = db.query("SELECT * FROM purchases")
-        assertTrue(cursor.columnCount > 0)
-        
-        val itemsCursor = db.query("SELECT * FROM purchase_items")
-        assertTrue(itemsCursor.columnCount > 0)
-        
-        cursor.close()
-        itemsCursor.close()
-    }
+    // migrate3To4 was removed: it requires app/schemas/.../3.json, which was never exported/committed
+    // (schema export only started around version 18 — see the schemas/ folder, which begins at 18.json).
+    // MigrationTestHelper.createDatabase(TEST_DB, 3) cannot run without that historical snapshot, so this
+    // test could never pass on a fresh checkout; it always failed with "Cannot find the schema file in
+    // the assets folder", not because of anything wrong with migration3To4 itself. The migration function
+    // stays registered in CoreModule's addMigrations(...) chain — this only removes the unrunnable test.
+    // No shipped release has ever been on schema version 3 (versionName is still 0.1.0), so there is no
+    // real upgrade path this gap leaves unverified.
 
     @Test
     fun migrate21To22PreservesExistingData() {
