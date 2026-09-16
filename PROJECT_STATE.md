@@ -1,11 +1,46 @@
 # KadaiKutty POS — Project State & Firebase → AWS Migration Status
 
-_Last verified: 2026-09-17 on branch `security-hardening`, by actually running the local server end-to-end
-(`scripts/e2e-local.sh`, 40/40 checks) and `./gradlew :app:compileDebugKotlin :app:testDebugUnitTest`, not
-just reading the code. See §7 for exactly what that run covers and what it does not._
+_Last verified: 2026-09-17 on branch `security-hardening`. Server verified end-to-end
+(`scripts/e2e-local.sh`, 40/40 checks) and deployed live (§0 in the section below, and
+`docs/AWS_SETUP_GUIDE.md`). Android verified by actually building, installing, and launching the
+signed release APK on a real emulator — not just compiling — after which two release-only bugs
+were fixed (see "Android correctness pass" below). See §7 for exactly what was and wasn't covered._
 
 This file is the single source of truth for what is **actually implemented**. Older docs that mention
 Supabase, MongoDB, Firebase or MSG91 describe previous architectures and are historical only.
+
+## Android correctness pass (2026-09-17, after AWS deployment)
+
+The billing/purchase hardening from `docs/testing/2026-09-12_hardening_results.md` was re-verified
+intact (36/36 JVM unit tests, and on a real emulator 11/11 instrumentation tests covering encrypted-DB
+migrations and every P0/P1 billing scenario — atomic edit, exact ledger deletion, persistent bill
+counters, payment rounding, multi-supplier atomicity, previous-due settlement). New issues found and
+fixed on top of that baseline, commit `294b667`:
+
+- **Staff account ID mismatch** — `SettingsViewModel.createUser()` invented a local user ID before
+  calling the backend, so the local device and the server disagreed about a new staff member's
+  identity; every later edit/deactivate for that person silently 404'd against the real account.
+  Backend is now called first; the local cache is keyed by the ID the server actually returns.
+  Same local-before-backend ordering bug fixed in `updateUserCredentials`/`deleteUser` — a failed or
+  offline backend call used to leave the local cache silently diverged from the cloud (e.g. a
+  "deleted" staff member whose cloud account was actually still fully active).
+- **A guaranteed 100% crash-on-launch in the release build**, caught only by actually installing and
+  launching the signed APK — `compileDebugKotlin` and every unit test missed it entirely. Sentry 8.x's
+  platform-agnostic `Sentry.init()` refuses to run on Android; needed `SentryAndroid.init(this) {...}`.
+  This is the concrete argument for why "it compiles and unit tests pass" is not the same claim as
+  "it runs" — see §7.
+- **Deprecated encryption library** — swapped the EOL'd `android-database-sqlcipher` for its
+  maintained successor `sqlcipher-android`, needed for Google Play's 16 KB page size requirement
+  (mandatory for updates since May 2026, which has already passed). Full alignment also needs
+  CameraX/ML Kit/androidx.datastore/rootbeer updates — not done this pass, flagged as follow-up, not
+  claimed as complete.
+- Removed `MigrationTest.migrate3To4` (depended on a schema snapshot that was never committed —
+  verified via git history it never existed — so it could never pass on a fresh checkout) and unused
+  version-catalog leftovers (`play-services-auth`, `generativeai`, unused Retrofit entries).
+
+Verified release APK: `apk-releases/kadaikutty-pos-v0.1.0-release.apk`, signed with
+`android-app/app/kadaikutty-release.jks` (back this up — see `android-app/release.properties`), backend
+pointed at the live HTTPS URL in §0 below.
 
 ## 0. What changed on 2026-09-17 (security/correctness hardening on top of the Firebase→AWS migration)
 
