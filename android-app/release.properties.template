@@ -2,7 +2,11 @@
 # Copy this file to release.properties (or pass as environment variables in CI/CD)
 
 # 1. Deployed Backend Base URL (MUST be explicit https:// domain, cannot be 10.0.2.2 or localhost)
-BACKEND_BASE_URL=https://api.kadaikutty.com/
+# Current live backend (2026-09-17): Elastic Beanstalk (kadaikutty-pos-production, ap-southeast-2)
+# fronted by an API Gateway HTTP API for HTTPS, since the EB load balancer itself has no TLS and
+# there is no custom domain yet. Replace with your own domain's URL once you have one — see
+# docs/AWS_SETUP_GUIDE.md "HTTPS without a custom domain" section.
+BACKEND_BASE_URL=https://u3bmxkaw25.execute-api.ap-southeast-2.amazonaws.com/
 
 # 2. Master Support Phone in E.164 format (e.g. +91 followed by 10 digits)
 MASTER_SUPPORT_PHONE=+919840000000

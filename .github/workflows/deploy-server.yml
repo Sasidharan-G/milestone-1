@@ -4,11 +4,14 @@ name: Deploy Backend to AWS App Runner
 # lets App Runner auto-deploy the new :latest tag. Requires these repository secrets, all
 # printed by aws-infrastructure/setup-aws-resources.(ps1|sh):
 #   AWS_REGION, AWS_DEPLOY_ROLE_ARN, ECR_REPOSITORY_URI
+#
+# NOTE (2026-09-17): App Runner is denied by an AWS Organizations SCP on the account this project
+# currently deploys to — see docs/AWS_SETUP_GUIDE.md §0. This workflow will not succeed there no
+# matter what secrets are configured. The live backend runs on Elastic Beanstalk instead (see that
+# guide for the deploy steps). Trigger is manual-only for that reason — don't re-enable the push
+# trigger unless you've moved to an account/org where App Runner isn't blocked.
 
 on:
-  push:
-    branches: [ "main" ]
-    paths: [ "server/**", ".github/workflows/deploy-server.yml" ]
   workflow_dispatch:
 
 permissions:

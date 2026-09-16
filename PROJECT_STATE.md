@@ -104,17 +104,25 @@ Hosting: App Runner (image from ECR, built by GitHub Actions), CloudWatch alarm 
 | Server: container + CI/CD | ✅ Done | `server/Dockerfile`, `.github/workflows/server.yml` (Node 22, tests), `deploy-server.yml` (OIDC → ECR → App Runner) |
 | Local dev run end-to-end | ✅ Verified 2026-09-17 | `scripts/e2e-local.sh`: register→OTP→login→single-device session→sync (tenant isolation, idempotency)→staff RBAC→forgot password→master login→license grant/extend/revoke (zero grace)→audit — 40/40 checks pass against a live `PROVIDER_MODE=local` server |
 | Android compiles + unit tests against the new contract | ✅ Verified 2026-09-17 | `./gradlew :app:compileDebugKotlin :app:testDebugUnitTest` — BUILD SUCCESSFUL |
-| Infra as code (`aws-infrastructure/`) | ✅ Written, ⏳ not yet deployed | `cloudformation-template.yaml` + `setup-aws-resources.ps1/.sh`; needs AWS credentials to run |
+| Infra as code (`aws-infrastructure/cloudformation-template.yaml`, App Runner path) | ✖ Blocked on this account | **AWS Organizations SCP explicitly denies App Runner** on account 638120274634 — not an IAM permissions issue, `AdministratorAccess` still gets denied. Do not retry this path without an org-admin lifting the SCP. See `docs/AWS_SETUP_GUIDE.md` §0. |
+| AWS deployment — actually live | ✅ Done 2026-09-17 | Elastic Beanstalk (`kadaikutty-pos-production`, ap-southeast-2), not App Runner. Cognito/DynamoDB/S3/Secrets Manager provisioned via a separate CFN stack (`kadakutty-pos-production`) that predates this pass. Today's hardened server code deployed as version `kadaikutty-pos-server-v7`; `GET /health` confirms `mode:"aws"`. Full detail: `docs/AWS_SETUP_GUIDE.md`. |
+| AWS `PROVIDER_MODE` was silently falling back to local | ✅ Fixed 2026-09-17 | Three EB env var **names** had trailing whitespace (`'AWS_REGION   '` etc.) from a console copy-paste, so `process.env.PROVIDER_MODE` was `undefined` and the live server had been running in ephemeral local-JSON mode the whole time — nothing was actually reaching DynamoDB/S3/Cognito despite the environment being fully provisioned. Real, verified-live bug; see `docs/AWS_SETUP_GUIDE.md` §2. |
+| HTTPS for the live backend | ✅ Done 2026-09-17 (no custom domain) | CloudFront was tried first but this account needs AWS-support account verification before it'll create any CloudFront resource — also not an IAM issue. Used an API Gateway HTTP API (`https://u3bmxkaw25.execute-api.ap-southeast-2.amazonaws.com/`) as a plain reverse proxy in front of the EB origin instead; free, no domain needed, verified end-to-end. Trade-off: it's HTTP-proxy only, so socket.io falls back to long-polling instead of a persistent WebSocket (still functional — see guide §3). |
 | Super Master seeding | ✅ Script ready | `cd server && npm run seed:master -- <mobile> <6-12 digit pin>` (now hashes the PIN — see `localDataStore.hashMasterPin`) |
-| AWS deployment (Cognito/DynamoDB/S3/App Runner live) | ⏳ Pending | follow `docs/AWS_SETUP_GUIDE.md`; AWS session-store/audit/license-action code paths are written and unit-tested against mocked AWS SDK clients but **not exercised against real AWS** this pass |
-| SNS SMS production access (India DLT) | ⏳ Pending (manual, AWS console) | sandbox works only for verified numbers |
-| Android release pointed at App Runner URL | ⏳ Pending | set `BACKEND_BASE_URL` in `android-app/release.properties` |
+| SNS SMS production access (India DLT) | ⏳ Pending (manual, AWS console + India TRAI DLT registration) | sandbox works only for verified numbers; this needs the business's own PAN/GST and cannot be done from this session — see guide §5 |
+| Android release pointed at the live HTTPS URL | ✅ Done 2026-09-17 | `android-app/release.properties.template` now defaults `BACKEND_BASE_URL` to the API Gateway URL above; update it once you have a custom domain |
 | Android on-device / emulator manual test | ⏳ Pending | this pass verified the server contract and that Android compiles against it; nobody has tapped through the actual app UI against this server build (see §7) |
 | Live staging verification | ⏳ Pending | `docs/testing/staging_verification_checklist.md` |
 | Firestore data migration | ✖ Not planned | design decision: fresh start on AWS, no dual-write |
 | Committing this work | ✅ Done | commit `b629686` (migration) + this hardening pass |
 
 ## 3. How to finish (short version)
+
+**The App Runner path below (`aws-infrastructure/setup-aws-resources.ps1`, `.github/workflows/deploy-server.yml`)
+does not work on the currently-used AWS account — App Runner is denied by an Organizations SCP. The
+account already has a working Elastic Beanstalk deployment instead; see `docs/AWS_SETUP_GUIDE.md` for
+what's actually live and how to deploy a new version to it.** The steps below are the *original* plan,
+kept for an account where App Runner isn't blocked:
 
 1. `aws login` (or `aws configure`) with an account that can create IAM roles, region `ap-south-1`.
 2. `cd aws-infrastructure && .\setup-aws-resources.ps1 -GitHubRepository "<owner>/<repo>"` → creates everything except App Runner, prints env block + GitHub secrets.
@@ -125,18 +133,19 @@ Hosting: App Runner (image from ECR, built by GitHub Actions), CloudWatch alarm 
 7. `android-app/release.properties` ← `BACKEND_BASE_URL=https://<apprunner>/` and keystore values; `./gradlew :app:assembleRelease`.
 8. Walk `docs/testing/staging_verification_checklist.md`; commit.
 
-Full detail: `docs/AWS_SETUP_GUIDE.md`. Local dev without AWS: `docs/LOCAL_DEVELOPMENT.md`.
+Full detail (what's actually deployed, App Runner/CloudFront blockers, HTTPS-without-a-domain,
+how to ship a new server version): `docs/AWS_SETUP_GUIDE.md`. Local dev without AWS: `docs/LOCAL_DEVELOPMENT.md`.
 
 ## 4. Environment variables (server)
 
-| Var | Local | AWS / App Runner |
+| Var | Local | AWS (live: Elastic Beanstalk) |
 |---|---|---|
 | `NODE_ENV` | development | production |
-| `PROVIDER_MODE` | local | aws |
-| `JWT_SECRET`, `RESET_SECRET` | any ≥32 chars | Secrets Manager (injected by App Runner) |
+| `PROVIDER_MODE` | local | aws — **the env var name itself must have no trailing whitespace**; see `docs/AWS_SETUP_GUIDE.md` §2 for the exact bug this caused live |
+| `JWT_SECRET`, `RESET_SECRET` | any ≥32 chars | injected via EB's environment-secrets feature from Secrets Manager (`/kadakutty-pos/production/{jwt-secret,reset-secret}`) — not plain EB env vars, don't try to set them as such (conflicts) |
 | `ALLOWED_ORIGINS` | empty = allow all | comma-separated browser origins (Android needs none) |
 | `LOCAL_DATA_DIR`, `LOCAL_DEV_OTP_CODE`, `LOCAL_DEV_OTP_BYPASS`, `MASTER_SUPPORT_PHONE`, `MASTER_ADMIN_PIN` | dev conveniences | ignored / seeded via script |
-| `AWS_REGION`, `AWS_COGNITO_USER_POOL_ID`, `AWS_COGNITO_CLIENT_ID`, `AWS_COGNITO_PHONE_COUNTRY_CODE`, `AWS_DYNAMODB_TABLE`, `AWS_S3_BACKUP_BUCKET`, `AWS_PRESIGNED_URL_SECONDS`, `AWS_MASTER_PIN_SECRET_ARN` | — | CloudFormation outputs (auto-wired into App Runner) |
+| `AWS_REGION`, `AWS_COGNITO_USER_POOL_ID`, `AWS_COGNITO_CLIENT_ID`, `AWS_COGNITO_PHONE_COUNTRY_CODE`, `AWS_DYNAMODB_TABLE`, `AWS_S3_BACKUP_BUCKET`, `AWS_PRESIGNED_URL_SECONDS`, `AWS_MASTER_PIN_SECRET_ARN` | — | plain EB environment variables, currently `ap-southeast-2` (not the CFN template's `ap-south-1` default) |
 
 `npm run check:release` in `server/` validates a production `.env`.
 
