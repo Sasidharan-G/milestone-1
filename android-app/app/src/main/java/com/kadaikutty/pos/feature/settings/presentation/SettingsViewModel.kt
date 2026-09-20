@@ -8,6 +8,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import androidx.room.withTransaction
 import com.kadaikutty.pos.core.preferences.AppPreferences
 import com.kadaikutty.pos.core.printer.data.PrinterManager
 import com.kadaikutty.pos.core.printer.domain.PrintDocument
@@ -21,7 +22,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 import com.kadaikutty.pos.core.backup.data.BackupManager
+import com.kadaikutty.pos.core.backup.data.LiveBackupWriter
 import com.kadaikutty.pos.core.backup.domain.BackupResult
+import com.kadaikutty.pos.core.sharing.ShareManager
 import com.kadaikutty.pos.core.sync.SyncScheduler
 
 data class BluetoothDeviceInfo(val name: String, val address: String)
@@ -40,16 +43,124 @@ class SettingsViewModel @Inject constructor(
     private val licenseManager: com.kadaikutty.pos.core.license.LicenseManager,
     private val sessionSecurityManager: com.kadaikutty.pos.core.auth.SessionSecurityManager,
     private val backendApi: com.kadaikutty.pos.core.network.BackendApiClient,
+    private val tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+    private val liveBackupWriter: LiveBackupWriter,
+    private val offlineCredentialStore: com.kadaikutty.pos.core.auth.OfflineCredentialStore,
+    private val shareManager: ShareManager,
 ) : ViewModel() {
 
     val isSessionTerminated: StateFlow<Boolean> = sessionSecurityManager.isSessionTerminated
     val terminationReason: StateFlow<String?> = sessionSecurityManager.terminationReason
+
+    val syncNotificationState: StateFlow<com.kadaikutty.pos.core.sync.SyncNotificationState> = syncScheduler.syncNotificationFlow
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5000),
+            initialValue = com.kadaikutty.pos.core.sync.SyncNotificationState.Idle
+        )
+
+    fun dismissSyncNotification() {
+        syncScheduler.dismissNotification()
+    }
+
+    fun retrySync() {
+        viewModelScope.launch {
+            val session = sessionStore.activeSession.first()
+            if (session != null) {
+                // Manual retry: ignore the dead-letter cap the background worker honours.
+                database.syncQueueDao().retryFailed(session.companyId, System.currentTimeMillis(), Int.MAX_VALUE)
+            }
+            syncScheduler.request(replaceExisting = true)
+        }
+    }
 
     init {
         viewModelScope.launch {
             sessionStore.activeSession.collectLatest { session ->
                 if (session != null && !session.sessionToken.isNullOrBlank()) {
                     sessionSecurityManager.startListeningToSession(session.userId, session.sessionToken)
+                }
+                if (session != null && (session.role == "ADMIN" || session.role == "SUPER_ADMIN")) {
+                    runCatching { reconcileStaffAccounts(session) }
+                }
+            }
+        }
+    }
+
+    // Self-heals staff accounts that diverged from the server (e.g. devices that created a staff
+    // member back when local Room IDs and server IDs weren't guaranteed to match). Runs whenever
+    // an admin's session becomes active; safe to call repeatedly and a no-op when nothing diverged.
+    // See server GET /staff (admin-only, company-scoped) for the authoritative staff list.
+    private suspend fun reconcileStaffAccounts(session: com.kadaikutty.pos.core.auth.Session) {
+        val token = resolveActiveToken() ?: return
+        val companyId = session.companyId
+        val serverStaffJson = runCatching { backendApi.listStaff(token) }.getOrNull() ?: return
+
+        val serverStaff = (0 until serverStaffJson.length()).map { index ->
+            val obj = serverStaffJson.getJSONObject(index)
+            val permsArray = obj.optJSONArray("permissions")
+            val perms = if (permsArray != null) (0 until permsArray.length()).joinToString(",") { permsArray.getString(it) } else ""
+            com.kadaikutty.pos.core.auth.ServerStaffRecord(
+                userId = obj.getString("userId"),
+                phone = obj.optString("phone"),
+                displayName = obj.optString("displayName"),
+                role = obj.optString("role", "CASHIER"),
+                permissions = perms,
+                status = obj.optString("status", "ACTIVE"),
+                isCloudTier = obj.optBoolean("isCloudTier", true),
+                cloudAccessGrantedUntilEpochMs = obj.optLong("cloudAccessGrantedUntilEpochMs", 0L).takeIf { it > 0L }
+            )
+        }
+
+        val targetDb = tenantDatabaseManager.getDatabase(companyId)
+        val localUsers = targetDb.userDao().getUsersByCompany(companyId)
+        val actions = com.kadaikutty.pos.core.auth.StaffReconciler.plan(localUsers, serverStaff, session.userId, companyId)
+        if (actions.isEmpty()) return
+
+        targetDb.withTransaction {
+            for (action in actions) {
+                when (action) {
+                    is com.kadaikutty.pos.core.auth.StaffReconciliationAction.Delete -> {
+                        targetDb.userDao().deleteUserById(action.localId)
+                    }
+                    is com.kadaikutty.pos.core.auth.StaffReconciliationAction.Rekey -> {
+                        targetDb.userDao().deleteUserById(action.local.id)
+                        targetDb.userDao().insertUser(action.local.copy(
+                            id = action.server.userId,
+                            displayName = action.server.displayName,
+                            permissions = action.server.permissions,
+                            isCloudTier = action.server.isCloudTier,
+                            cloudAccessGrantedUntilEpochMs = action.server.cloudAccessGrantedUntilEpochMs
+                        ))
+                        val existingCredential = offlineCredentialStore.getCredential(action.local.username).first()
+                        if (existingCredential != null && existingCredential.userId == action.local.id) {
+                            offlineCredentialStore.save(existingCredential.copy(userId = action.server.userId))
+                        }
+                    }
+                    is com.kadaikutty.pos.core.auth.StaffReconciliationAction.UpdateFields -> {
+                        targetDb.userDao().updateUser(action.local.copy(
+                            displayName = action.server.displayName,
+                            permissions = action.server.permissions,
+                            isCloudTier = action.server.isCloudTier,
+                            cloudAccessGrantedUntilEpochMs = action.server.cloudAccessGrantedUntilEpochMs
+                        ))
+                    }
+                    is com.kadaikutty.pos.core.auth.StaffReconciliationAction.InsertMissing -> {
+                        targetDb.userDao().insertUser(com.kadaikutty.pos.core.auth.UserEntity(
+                            id = action.server.userId,
+                            username = com.kadaikutty.pos.core.auth.StaffReconciler.normalizePhone(action.server.phone),
+                            displayName = action.server.displayName,
+                            salt = "",
+                            verifier = "",
+                            permissions = action.server.permissions,
+                            companyId = action.companyId,
+                            role = action.server.role,
+                            lastOnlineVerifiedAt = 0L,
+                            offlineValidUntil = 0L,
+                            isCloudTier = action.server.isCloudTier,
+                            cloudAccessGrantedUntilEpochMs = action.server.cloudAccessGrantedUntilEpochMs
+                        ))
+                    }
                 }
             }
         }
@@ -62,37 +173,99 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun loadDemoSampleData(onResult: (String) -> Unit) {
-        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            _isBackupRunning.value = true
-            _backupStatus.value = "Generating 100 demo retail records..."
-            try {
-                val session = sessionStore.activeSession.first()
-                if (session != null) {
-                    _backupStatus.value = "Demo data tooling is not included in production builds."
-                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult("Demo data is unavailable in this production build.") }
-                } else {
-                    _backupStatus.value = "Failed: No active merchant session."
-                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult("Error: Please log in first.") }
-                }
-            } catch (e: Exception) {
-                _backupStatus.value = "Demo population failed: ${e.message}"
-                withContext(kotlinx.coroutines.Dispatchers.Main) { onResult("Failed: ${e.message}") }
-            } finally {
-                _isBackupRunning.value = false
-            }
-        }
-    }
-
     fun clearAllDatabase(clearCloudToo: Boolean, onResult: (Boolean) -> Unit) {
         requireBiometricAuth {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 _isRestoreRunning.value = true
                 _restoreStatus.value = "Safely clearing database records..."
                 try {
+                    // Defense in depth: re-check here (not just at the UI layer) so this guard
+                    // can't be bypassed by any future or alternate caller of this function — and
+                    // check it before anything destructive runs, not after the local DB is wiped.
+                    if (clearCloudToo && !hasRecentSafetyBackup()) {
+                        throw Exception("Refusing to clear cloud data without a recent backup")
+                    }
+
+                    // Cancel any active sync workers so they don't upload/download stale data during reset
+                    syncScheduler.cancelAllWork()
+
                     val session = sessionStore.activeSession.first()
-                    _restoreStatus.value = "Database reset is disabled in production builds."
-                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false) }
+                    val companyId = session?.companyId ?: "company_main"
+                    val tenantDb = tenantDatabaseManager.getDatabase(companyId)
+                    val dbsToClear = listOfNotNull(tenantDb, if (tenantDb != database) database else null)
+
+                    val tables = listOf(
+                        "draft_cart",
+                        "sale_items",
+                        "sales",
+                        "purchase_items",
+                        "purchases",
+                        "stock_movements",
+                        "customer_credits",
+                        "supplier_credits",
+                        "products",
+                        "categories",
+                        "customers",
+                        "suppliers",
+                        "expenses",
+                        "sync_queue",
+                        "sync_dead_letter",
+                        "local_operations",
+                        "audit_logs",
+                        "shifts"
+                    )
+
+                    for (targetDb in dbsToClear) {
+                        val sqlite = targetDb.openHelper.writableDatabase
+                        sqlite.execSQL("PRAGMA foreign_keys = OFF")
+                        sqlite.beginTransaction()
+                        try {
+                            for (table in tables) {
+                                runCatching { sqlite.execSQL("DELETE FROM `$table`") }
+                            }
+                            runCatching { sqlite.execSQL("DELETE FROM `sqlite_sequence`") }
+                            sqlite.setTransactionSuccessful()
+                        } finally {
+                            sqlite.endTransaction()
+                            sqlite.execSQL("PRAGMA foreign_keys = ON")
+                        }
+                        runCatching { sqlite.execSQL("VACUUM") }
+                    }
+
+                    if (clearCloudToo) {
+                        _restoreStatus.value = "Purging cloud database records..."
+                        var activeToken = session?.accessToken?.trim()?.takeIf { it.isNotBlank() }
+                        if (activeToken.isNullOrBlank()) {
+                            val recovered = backendApi.autoRecoverSession(forceRefresh = false)
+                            activeToken = recovered?.first
+                        }
+
+                        if (!activeToken.isNullOrBlank()) {
+                            val purgeResult = runCatching {
+                                backendApi.purgeCloudData(activeToken)
+                            }
+                            if (purgeResult.isFailure) {
+                                val err = purgeResult.exceptionOrNull()?.message ?: "Unknown cloud error"
+                                android.util.Log.e("SettingsViewModel", "Failed to purge cloud records: $err", purgeResult.exceptionOrNull())
+                                throw Exception("Cloud database purge failed: $err")
+                            }
+                        } else {
+                            throw Exception("No active session found to purge cloud database records.")
+                        }
+
+                        for (targetDb in dbsToClear) {
+                            runCatching { targetDb.syncQueueDao().clearByCompany(companyId) }
+                            runCatching { targetDb.syncDeadLetterDao().deleteAllForCompany(companyId) }
+                        }
+                        runCatching { appPreferences.clearShopDetails() }
+                    }
+
+                    _restoreStatus.value = if (clearCloudToo) {
+                        "Database and cloud records cleared successfully. You can now start fresh."
+                    } else {
+                        "Database cleared successfully. You can now start fresh."
+                    }
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(true) }
                 } catch (e: Exception) {
                     _restoreStatus.value = "Clear error: ${e.message}"
                     withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false) }
@@ -181,11 +354,59 @@ class SettingsViewModel @Inject constructor(
         )
 
     val currentLicense: StateFlow<com.kadaikutty.pos.core.license.LicenseEntity?> = licenseManager.currentLicense
+    val isLicenseLoaded: StateFlow<Boolean> = licenseManager.isLicenseLoaded
     val isClockTampered: StateFlow<Boolean> = licenseManager.isClockTampered
+
+    // Checked only AFTER the company license lock passes (see BillingApp.kt) — this is the
+    // per-user rule, independent of the whole-company license.
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    private val currentUserCloudFields: StateFlow<com.kadaikutty.pos.core.auth.UserEntity?> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            if (session == null) flowOf(null) else database.userDao().getUserByIdFlow(session.userId)
+        }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
+
+    val isCloudAccessLocked: StateFlow<Boolean> = currentUserCloudFields
+        .map { user ->
+            user != null && com.kadaikutty.pos.core.security.CloudAccessPolicy.isExpiredLockout(
+                isCloudTier = user.isCloudTier,
+                cloudAccessGrantedUntilEpochMs = user.cloudAccessGrantedUntilEpochMs,
+                mustCheckInByEpochMs = user.mustCheckInByEpochMs
+            )
+        }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = false)
+
+    // For gating individual cloud-sync buttons (Settings screen), independent of the full lock screen.
+    val hasCloudAccess: StateFlow<Boolean> = currentUserCloudFields
+        .map { user ->
+            user == null || com.kadaikutty.pos.core.security.CloudAccessPolicy.isAllowed(
+                isCloudTier = user.isCloudTier,
+                cloudAccessGrantedUntilEpochMs = user.cloudAccessGrantedUntilEpochMs,
+                mustCheckInByEpochMs = user.mustCheckInByEpochMs
+            )
+        }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = true)
+
+    val cloudAccessDaysRemaining: StateFlow<Long?> = currentUserCloudFields
+        .map { user ->
+            user?.let {
+                com.kadaikutty.pos.core.security.CloudAccessPolicy.daysRemaining(
+                    isCloudTier = it.isCloudTier,
+                    cloudAccessGrantedUntilEpochMs = it.cloudAccessGrantedUntilEpochMs,
+                    mustCheckInByEpochMs = it.mustCheckInByEpochMs
+                )
+            }
+        }
+        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
+
+    private var lastLicenseRefreshMs = 0L
 
     fun shouldShowRenewalAlert(): Boolean = licenseManager.shouldShowDailyRenewalAlert()
     fun markRenewalAlertShown() = licenseManager.recordRenewalAlertShown()
     fun refreshLicenseStatus() {
+        val now = System.currentTimeMillis()
+        if (now - lastLicenseRefreshMs < 120_000L) return
+        lastLicenseRefreshMs = now
         val session = activeSession.value
         if (session != null) {
             licenseManager.startRealtimeLicenseSync(session.companyId, session.userId)
@@ -203,22 +424,15 @@ class SettingsViewModel @Inject constructor(
 
     init {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            val currentPref = appPreferences.shopName.first()
-            if (currentPref.isBlank() || currentPref == "My Shop") {
-                val lic = database.licenseDao().getActiveLicense()
-                if (lic != null && lic.businessName.isNotBlank() && lic.businessName != "My Shop") {
+            val companyId = sessionStore.activeSession.first()?.companyId ?: "company_main"
+            val targetDb = tenantDatabaseManager.getDatabase(companyId)
+            val lic = targetDb.licenseDao().getLicense(companyId) ?: database.licenseDao().getActiveLicense()
+            if (lic != null && lic.businessName.isNotBlank()) {
+                val currentPref = appPreferences.shopName.first()
+                if (currentPref.isBlank()) {
                     appPreferences.saveShopName(lic.businessName)
                     if (lic.ownerName.isNotBlank()) {
                         appPreferences.saveOwnerName(lic.ownerName)
-                    }
-                } else {
-                    val allLics = database.licenseDao().getAllLicenses()
-                    val validLic = allLics.firstOrNull { it.businessName.isNotBlank() && it.businessName != "My Shop" }
-                    if (validLic != null) {
-                        appPreferences.saveShopName(validLic.businessName)
-                        if (validLic.ownerName.isNotBlank()) {
-                            appPreferences.saveOwnerName(validLic.ownerName)
-                        }
                     }
                 }
             }
@@ -267,9 +481,41 @@ class SettingsViewModel @Inject constructor(
         initialValue = ""
     )
 
-    fun saveShopDetails(name: String, owner: String, gst: String, address: String, phone: String, email: String, logoPath: String) {
-        viewModelScope.launch {
-            appPreferences.saveShopDetails(name, owner, gst, address, phone, email, logoPath)
+    fun saveShopDetails(name: String, owner: String, gst: String, address: String, phone: String, email: String, logoPath: String, onResult: (Boolean, String?) -> Unit) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val session = sessionStore.activeSession.first()
+            val token = session?.accessToken
+            if (token.isNullOrBlank()) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false, "Please sign in again before saving shop details") }
+                return@launch
+            }
+            val response = runCatching { backendApi.updateShopProfile(token, name, owner, gst, address, phone, email) }
+            if (response.isFailure) {
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false, response.exceptionOrNull()?.message ?: "Cloud sync failed") }
+                return@launch
+            }
+            val profile = response.getOrThrow().optJSONObject("shopProfile")
+            val savedName = profile?.optString("shopName").orEmpty().ifBlank { name }
+            val savedOwner = profile?.optString("ownerName").orEmpty().ifBlank { owner }
+            appPreferences.saveShopDetails(savedName, savedOwner, profile?.optString("gstNumber") ?: gst, profile?.optString("address") ?: address, profile?.optString("phone") ?: phone, profile?.optString("email") ?: email, logoPath)
+            val companyId = session?.companyId ?: "company_main"
+            val targetDb = tenantDatabaseManager.getDatabase(companyId)
+            val lic = targetDb.licenseDao().getLicense(companyId) ?: database.licenseDao().getActiveLicense()
+            if (lic != null) {
+                val updated = lic.copy(businessName = savedName, ownerName = savedOwner)
+                targetDb.licenseDao().saveLicense(updated)
+                database.licenseDao().saveLicense(updated)
+            } else {
+                val newLic = com.kadaikutty.pos.core.license.LicenseEntity(
+                    companyId = companyId,
+                    businessName = savedName,
+                    ownerName = savedOwner,
+                    licenseStatus = "ACTIVE_PAID"
+                )
+                targetDb.licenseDao().saveLicense(newLic)
+                database.licenseDao().saveLicense(newLic)
+            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(true, null) }
         }
     }
 
@@ -303,12 +549,6 @@ class SettingsViewModel @Inject constructor(
             null
         }
     }
-
-    val googleAccount: StateFlow<String?> = appPreferences.googleAccount.stateIn(
-        scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5000),
-        initialValue = null
-    )
 
     private val _bluetoothDevices = MutableStateFlow<List<BluetoothDeviceInfo>>(emptyList())
     val bluetoothDevices: StateFlow<List<BluetoothDeviceInfo>> = _bluetoothDevices.asStateFlow()
@@ -368,6 +608,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun forceSyncNow() {
+        sessionSecurityManager.resetSessionTermination()
         requireBiometricAuth {
             viewModelScope.launch {
                 val session = sessionStore.activeSession.first()
@@ -390,15 +631,10 @@ class SettingsViewModel @Inject constructor(
                 return@launch
             }
 
-            val pType = if (typeStr == "Usb") PrinterManager.PrinterType.Usb else PrinterManager.PrinterType.Bluetooth
-            printerManager.selectDriver(pType)
-
-            _printStatus.value = "Connecting to printer..."
-            val connResult = printerManager.connect(deviceId)
-            if (connResult is PrinterResult.Failure) {
-                onResult("Connection failed: ${connResult.error.message}")
-                _printStatus.value = "Connection failed"
-                return@launch
+            val pType = when (typeStr) {
+                "Usb" -> PrinterManager.PrinterType.Usb
+                "Network" -> PrinterManager.PrinterType.Network
+                else -> PrinterManager.PrinterType.Bluetooth
             }
 
             _printStatus.value = "Printing test receipt..."
@@ -415,8 +651,10 @@ class SettingsViewModel @Inject constructor(
                 footer = "Thank you for verifying!"
             )
 
-            val printResult = printerManager.print(testDoc)
-            printerManager.disconnect()
+            // printJob holds PrinterJobLock and always disconnects in its finally block. The old
+            // unlocked connect/print/disconnect here raced printJob, so a second tap could close
+            // the first job's socket mid-write.
+            val printResult = printerManager.printJob(pType, deviceId, testDoc)
 
             if (printResult is PrinterResult.Success) {
                 onResult("Printed successfully!")
@@ -441,23 +679,54 @@ class SettingsViewModel @Inject constructor(
     private val _isRestoreRunning = MutableStateFlow(false)
     val isRestoreRunning: StateFlow<Boolean> = _isRestoreRunning.asStateFlow()
 
-    fun runBackup(uri: android.net.Uri) {
+    private val preRestoreSafetyFile: java.io.File
+        get() = java.io.File(context.filesDir, "pre_restore_safety.zip")
+
+    private val _canUndoLastRestore = MutableStateFlow(false)
+    val canUndoLastRestore: StateFlow<Boolean> = _canUndoLastRestore.asStateFlow()
+
+    init {
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            _isBackupRunning.value = true
-            _backupStatus.value = "Creating backup package..."
+            _canUndoLastRestore.value = preRestoreSafetyFile.exists()
+        }
+    }
+
+    // Best-effort: a failure here must never block the restore itself. Worst case, "Undo Last
+    // Restore" is unavailable afterward, which is strictly better than the old "no undo at all".
+    private suspend fun writePreRestoreSafetySnapshot() {
+        runCatching {
             when (val result = backupManager.createBackup()) {
                 is BackupResult.Success -> {
-                    try {
-                        context.contentResolver.openOutputStream(uri)?.use { os ->
-                            os.write(result.zipBytes)
-                        }
-                        _backupStatus.value = "Backup created successfully!"
-                    } catch (e: Exception) {
-                        _backupStatus.value = "Backup failed to write: ${e.message}"
+                    preRestoreSafetyFile.writeBytes(result.zipBytes)
+                    _canUndoLastRestore.value = true
+                }
+                is BackupResult.Failure -> Unit
+            }
+        }
+    }
+
+    // Makes a fresh snapshot and hands it straight to Android's share sheet, so it can go to
+    // WhatsApp/USB/Drive/email etc. with no folder setup and no internet dependency — the one
+    // backup path that works standalone, independent of Auto Backup or the cloud.
+    fun exportBackupNow(onFinished: (Boolean) -> Unit = {}) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isBackupRunning.value = true
+            _backupStatus.value = "Preparing backup to share..."
+            when (val result = backupManager.createBackup()) {
+                is BackupResult.Success -> {
+                    val filename = "billing_backup_${System.currentTimeMillis()}.zip"
+                    val shared = shareManager.shareFile(result.zipBytes, filename, "application/zip")
+                    if (shared) {
+                        appPreferences.saveLastBackupTimestamp(System.currentTimeMillis())
+                        _backupStatus.value = "Backup ready — choose where to save or send it."
+                    } else {
+                        _backupStatus.value = "Could not open the share screen. Please try again."
                     }
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(shared) }
                 }
                 is BackupResult.Failure -> {
                     _backupStatus.value = "Backup failed: ${result.exception.message}"
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
                 }
             }
             _isBackupRunning.value = false
@@ -477,6 +746,7 @@ class SettingsViewModel @Inject constructor(
                     bytes = inputStream.readBytes()
                 }
                 if (bytes != null) {
+                    writePreRestoreSafetySnapshot()
                     val success = backupManager.restoreBackup(bytes!!)
                     if (success) {
                         _restoreStatus.value = "Database restored successfully! App will restart."
@@ -499,44 +769,214 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun runRestoreFromCloud(onFinished: (Boolean) -> Unit) {
-        requireBiometricAuth {
-            viewModelScope.launch {
-                _isRestoreRunning.value = true
-                _restoreStatus.value = "Fetching data from cloud..."
-                val session = sessionStore.activeSession.first()
-                if (session == null) {
-                    _restoreStatus.value = "Restore failed: User not logged in."
-                    onFinished(false)
-                    return@launch
-                }
-                val result = runCatching {
-                    val accessToken = requireNotNull(session.accessToken) { "Restore failed: authentication token is missing." }
-                    val bytes = backendApi.downloadLatestBackup(accessToken)
-                    check(backupManager.restoreBackup(bytes)) { "Downloaded cloud backup is invalid." }
-                }
-                if (result.isSuccess) {
-                        _restoreStatus.value = "Cloud restore completed successfully! App will restart."
-                        _requireRestart.value = true
-                        onFinished(true)
-                } else {
-                        _restoreStatus.value = "Cloud restore failed: ${result.exceptionOrNull()?.message}"
-                        onFinished(false)
-                }
-                _isRestoreRunning.value = false
-            }
-        }
-    }
-
-    val geminiApiKey: StateFlow<String?> = appPreferences.geminiApi.stateIn(
+    val lastBackupAtEpochMs: StateFlow<Long?> = appPreferences.lastBackupAtEpochMs.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
         initialValue = null
     )
 
-    fun saveGeminiApiKey(key: String) {
-        viewModelScope.launch {
-            appPreferences.saveGeminiApiKey(if (key.isBlank()) null else key)
+    private suspend fun resolveActiveToken(): String? {
+        val session = sessionStore.activeSession.first()
+        val direct = session?.accessToken?.trim()?.takeIf { it.isNotBlank() }
+        if (!direct.isNullOrBlank()) return direct
+        return runCatching { backendApi.autoRecoverSession(forceRefresh = false)?.first }.getOrNull()
+    }
+
+    companion object {
+        // How fresh a backup must be to satisfy the "Clear Cloud Data" hard guard (Phase 5).
+        const val SAFETY_BACKUP_FRESHNESS_MS = 3 * 24 * 60 * 60 * 1000L
+    }
+
+    // True if any of: a manual local/cloud backup, an actively-mirroring live local backup, or a
+    // real cloud snapshot is fresher than SAFETY_BACKUP_FRESHNESS_MS. Used to hard-block "Clear
+    // Cloud Data" (see clearAllDatabase) so that action can never run without a recent recovery
+    // path already in place.
+    suspend fun hasRecentSafetyBackup(): Boolean {
+        val cutoff = System.currentTimeMillis() - SAFETY_BACKUP_FRESHNESS_MS
+
+        val lastManualBackup = appPreferences.lastBackupAtEpochMs.first()
+        if (lastManualBackup != null && lastManualBackup >= cutoff) return true
+
+        val lastLiveBackupWrite = appPreferences.liveBackupLastWriteAtEpochMs.first()
+        if (lastLiveBackupWrite != null && lastLiveBackupWrite >= cutoff) return true
+
+        val token = resolveActiveToken()
+        if (!token.isNullOrBlank()) {
+            val newestCloudBackupAt = runCatching {
+                val backups = backendApi.listBackups(token)
+                if (backups.length() > 0) backups.getJSONObject(0).optLong("createdAtEpochMs") else null
+            }.getOrNull()
+            if (newestCloudBackupAt != null && newestCloudBackupAt >= cutoff) return true
+        }
+
+        return false
+    }
+
+    fun runCloudBackup(onFinished: (Boolean) -> Unit = {}) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isBackupRunning.value = true
+            _backupStatus.value = "Creating backup package..."
+            try {
+                val token = resolveActiveToken()
+                if (token.isNullOrBlank()) {
+                    _backupStatus.value = "Backup failed: User not logged in."
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                    return@launch
+                }
+                when (val result = backupManager.createBackup()) {
+                    is BackupResult.Success -> {
+                        _backupStatus.value = "Uploading backup to cloud..."
+                        backendApi.uploadBackup(token, "billing_backup_${System.currentTimeMillis()}.zip", result.schemaVersion, result.zipBytes)
+                        appPreferences.saveLastBackupTimestamp(System.currentTimeMillis())
+                        _backupStatus.value = "Cloud backup created successfully!"
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
+                    }
+                    is BackupResult.Failure -> {
+                        _backupStatus.value = "Backup failed: ${result.exception.message}"
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                    }
+                }
+            } catch (e: Exception) {
+                _backupStatus.value = "Cloud backup failed: ${e.message}"
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+            } finally {
+                _isBackupRunning.value = false
+            }
+        }
+    }
+
+    fun runCloudRestore(onFinished: (Boolean) -> Unit) {
+        requireBiometricAuth {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                _isRestoreRunning.value = true
+                _restoreStatus.value = "Downloading latest cloud backup..."
+                try {
+                    val token = resolveActiveToken()
+                    if (token.isNullOrBlank()) {
+                        _restoreStatus.value = "Restore failed: User not logged in."
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                        return@launch
+                    }
+                    val bytes = backendApi.downloadLatestBackup(token)
+                    _restoreStatus.value = "Restoring database from cloud backup..."
+                    writePreRestoreSafetySnapshot()
+                    val success = backupManager.restoreBackup(bytes)
+                    if (success) {
+                        _restoreStatus.value = "Database restored from cloud successfully! App will restart."
+                        _requireRestart.value = true
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
+                    } else {
+                        _restoreStatus.value = "Restore failed: Invalid or corrupted cloud backup."
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                    }
+                } catch (e: IllegalArgumentException) {
+                    _restoreStatus.value = "No cloud backup found yet. Back up to cloud first."
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                } catch (e: Exception) {
+                    _restoreStatus.value = "Cloud restore failed: ${e.message}"
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                } finally {
+                    _isRestoreRunning.value = false
+                }
+            }
+        }
+    }
+
+    val liveBackupFolderUri: StateFlow<String?> = appPreferences.liveBackupFolderUri.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    val liveBackupLastWriteAtEpochMs: StateFlow<Long?> = appPreferences.liveBackupLastWriteAtEpochMs.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = null
+    )
+
+    fun setupLiveBackup(treeUri: android.net.Uri, onFinished: (Boolean) -> Unit) {
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            _isBackupRunning.value = true
+            _backupStatus.value = "Setting up live local backup..."
+            val result = liveBackupWriter.setup(treeUri)
+            if (result.isSuccess) {
+                _backupStatus.value = "Live local backup set up! Every change will now be mirrored to this folder automatically."
+                // Live local backup alone still leaves a single-device risk (phone lost/damaged).
+                // Closing that gap is not optional/opt-in: every setup also takes an immediate
+                // cloud snapshot and registers a daily one going forward.
+                syncScheduler.schedulePeriodicBackup()
+                runCloudBackup()
+            } else {
+                _backupStatus.value = "Live local backup setup failed: ${result.exceptionOrNull()?.message}"
+            }
+            _isBackupRunning.value = false
+            withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(result.isSuccess) }
+        }
+    }
+
+    // folderUri lets this restore from a folder that isn't (yet) this device's configured Auto
+    // Backup folder — e.g. one shared from another phone — without ever adopting or overwriting it.
+    // Omit it to restore from the folder this device already has set up.
+    fun restoreFromLiveBackup(folderUri: android.net.Uri? = null, onFinished: (Boolean) -> Unit) {
+        requireBiometricAuth {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                _isRestoreRunning.value = true
+                _restoreStatus.value = "Restoring from local backup..."
+                try {
+                    val companyId = sessionStore.activeSession.first()?.companyId
+                    if (companyId.isNullOrBlank()) {
+                        _restoreStatus.value = "Restore failed: User not logged in."
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                        return@launch
+                    }
+                    writePreRestoreSafetySnapshot()
+                    val result = liveBackupWriter.restoreFrom(companyId, folderUri?.toString())
+                    if (result.isSuccess) {
+                        _restoreStatus.value = "Database restored! App will restart."
+                        _requireRestart.value = true
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
+                    } else {
+                        _restoreStatus.value = "Restore failed: ${result.exceptionOrNull()?.message}"
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                    }
+                } catch (e: Exception) {
+                    _restoreStatus.value = "Restore failed: ${e.message}"
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                } finally {
+                    _isRestoreRunning.value = false
+                }
+            }
+        }
+    }
+
+    fun undoLastRestore(onFinished: (Boolean) -> Unit) {
+        requireBiometricAuth {
+            viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                _isRestoreRunning.value = true
+                _restoreStatus.value = "Undoing last restore..."
+                try {
+                    if (!preRestoreSafetyFile.exists()) {
+                        _restoreStatus.value = "Nothing to undo."
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                        return@launch
+                    }
+                    val bytes = preRestoreSafetyFile.readBytes()
+                    val success = backupManager.restoreBackup(bytes)
+                    if (success) {
+                        _restoreStatus.value = "Undo complete! App will restart."
+                        _requireRestart.value = true
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
+                    } else {
+                        _restoreStatus.value = "Undo failed: The safety snapshot is invalid."
+                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                    }
+                } catch (e: Exception) {
+                    _restoreStatus.value = "Undo failed: ${e.message}"
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                } finally {
+                    _isRestoreRunning.value = false
+                }
+            }
         }
     }
 

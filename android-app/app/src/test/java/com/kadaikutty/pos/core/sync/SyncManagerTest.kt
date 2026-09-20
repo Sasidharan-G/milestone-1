@@ -50,9 +50,11 @@ class SyncManagerTest {
         override suspend fun updateStatus(id: String, status: SyncStatus, updatedAtEpochMs: Long, error: String?) {}
         override suspend fun updateLastSyncedAt(id: String, lastSyncedAt: Long) {}
         override suspend fun updateAttemptCount(id: String, attemptCount: Int) {}
-        override suspend fun retryFailed(companyId: String, updatedAtEpochMs: Long) {}
+        override suspend fun retryFailed(companyId: String, updatedAtEpochMs: Long, maxAttempts: Int) {}
         override fun pendingCount(companyId: String): Flow<Int> = flowOf(0)
+        override fun oldestPendingCreatedAt(companyId: String): Flow<Long?> = flowOf(null)
         override suspend fun clearByCompany(companyId: String) {}
+        override suspend fun migrateTenantData(oldCompanyId: String, newCompanyId: String) {}
     }
 
     private lateinit var database: BillingDatabase
@@ -227,5 +229,44 @@ class SyncManagerTest {
         assertEquals(2, fakeSyncQueueDao.enqueuedItems.size)
         assertTrue(fakeSyncQueueDao.enqueuedItems.all { it.entityType == "Product" && it.operation == "INSERT" })
         verify(syncScheduler, times(1)).request()
+    }
+
+    @Test
+    fun `enqueueCategory mirrors the change into the live local backup writer`() = runBlocking {
+        val tenantDatabaseManager = mock(com.kadaikutty.pos.core.database.TenantDatabaseManager::class.java)
+        `when`(tenantDatabaseManager.getDatabase()).thenReturn(database)
+        val liveBackupWriter = mock(com.kadaikutty.pos.core.backup.data.LiveBackupWriter::class.java)
+        var capturedEntityType: String? = null
+        var capturedEntityId: String? = null
+        var capturedOperation: String? = null
+        var capturedPayload: String? = null
+        org.mockito.Mockito.doAnswer { invocation ->
+            capturedEntityType = invocation.getArgument(0)
+            capturedEntityId = invocation.getArgument(1)
+            capturedOperation = invocation.getArgument(2)
+            capturedPayload = invocation.getArgument(3)
+            null
+        }.`when`(liveBackupWriter).appendChange(
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString(),
+            org.mockito.ArgumentMatchers.anyString()
+        )
+        val syncManagerWithLiveBackup = SyncManager(tenantDatabaseManager, syncScheduler, sessionStore, liveBackupWriter)
+
+        val category = com.kadaikutty.pos.feature.masters.data.CategoryEntity(
+            id = "cat_1",
+            companyId = "company_100",
+            name = "Snacks",
+            createdAtEpochMs = 1_700_000_000_000L,
+            updatedAtEpochMs = 1_700_000_000_000L,
+            syncStatus = SyncStatus.LOCAL_ONLY
+        )
+        syncManagerWithLiveBackup.enqueueCategory(category, "INSERT")
+
+        assertEquals("Category", capturedEntityType)
+        assertEquals("cat_1", capturedEntityId)
+        assertEquals("INSERT", capturedOperation)
+        assertTrue(capturedPayload.orEmpty().contains("Snacks"))
     }
 }

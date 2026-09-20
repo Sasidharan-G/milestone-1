@@ -8,11 +8,30 @@ import kotlinx.coroutines.flow.first
 import com.kadaikutty.pos.core.auth.SessionStore
 
 class SyncManager(
-    private val database: BillingDatabase,
+    private val tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager?,
     private val syncScheduler: SyncScheduler,
     private val sessionStore: SessionStore,
-    private val scheduleEnabled: Boolean = true
+    private val liveBackupWriter: com.kadaikutty.pos.core.backup.data.LiveBackupWriter?,
+    private val scheduleEnabled: Boolean = true,
+    private val fallbackDatabase: BillingDatabase? = null,
 ) {
+    constructor(
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+        syncScheduler: SyncScheduler,
+        sessionStore: SessionStore,
+        liveBackupWriter: com.kadaikutty.pos.core.backup.data.LiveBackupWriter,
+        scheduleEnabled: Boolean = true
+    ) : this(tenantDatabaseManager, syncScheduler, sessionStore, liveBackupWriter, scheduleEnabled, null)
+
+    constructor(
+        database: BillingDatabase,
+        syncScheduler: SyncScheduler,
+        sessionStore: SessionStore,
+        scheduleEnabled: Boolean = true
+    ) : this(null, syncScheduler, sessionStore, null, scheduleEnabled, database)
+
+    private val database: BillingDatabase
+        get() = tenantDatabaseManager?.getDatabase() ?: fallbackDatabase ?: error("No BillingDatabase available")
 
     private fun requestSafely() {
         if (!scheduleEnabled) return
@@ -307,6 +326,10 @@ class SyncManager(
                 } else {
                     database.syncQueueDao().updatePending(existing.id, operation, payloadJson, now)
                 }
+                // Only record what the queue actually accepted. Appending a lower-precedence
+                // operation the queue rejected (an edit arriving after a queued DELETE) made the
+                // backup changelog disagree with the queue and resurrected deleted rows on restore.
+                liveBackupWriter?.appendChange(entityType, entityId, operation, payloadJson)
             }
             if (requestSync) requestSafely()
             return
@@ -325,6 +348,7 @@ class SyncManager(
             updatedAtEpochMs = now
         )
         database.syncQueueDao().enqueue(syncItem)
+        liveBackupWriter?.appendChange(entityType, entityId, operation, payloadJson)
         if (requestSync) requestSafely()
     }
 

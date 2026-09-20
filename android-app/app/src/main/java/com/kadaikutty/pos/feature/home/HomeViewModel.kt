@@ -13,6 +13,7 @@ import com.kadaikutty.pos.feature.reports.presentation.BillDetailData
 import com.kadaikutty.pos.feature.reports.presentation.BillDetailItem
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.Calendar
@@ -41,6 +42,7 @@ class HomeViewModel @Inject constructor(
 
     init {
         syncScheduler.schedulePeriodicSync()
+        syncScheduler.schedulePeriodicLiveBackupCompaction()
         // Keep a realtime channel open while an online session exists; any data_changed
         // event from the backend schedules an immediate pull instead of waiting 15 minutes.
         viewModelScope.launch {
@@ -64,6 +66,41 @@ class HomeViewModel @Inject constructor(
     }
 
     val activeSession: StateFlow<Session?> = sessionStore.activeSession
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    // Re-evaluates staleness periodically (not just on DB writes), so the banner still appears
+    // for a device that's simply been offline with nothing new happening locally either.
+    private val staleCheckTicker: Flow<Long> = flow {
+        while (true) {
+            emit(System.currentTimeMillis())
+            delay(15 * 60 * 1000L)
+        }
+    }
+
+    val hasStaleUnsyncedData: StateFlow<Boolean> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            val companyId = session?.companyId ?: ""
+            if (companyId.isEmpty()) flowOf(null) else database.syncQueueDao().oldestPendingCreatedAt(companyId)
+        }
+        .combine(staleCheckTicker) { oldestPendingCreatedAt, now ->
+            StaleSyncDetector.isStale(oldestPendingCreatedAt, now)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    // Null = unrestricted (offline-tier, or cloud-tier with no deadline set yet) — dashboard hides the ring.
+    val cloudAccessDaysRemaining: StateFlow<Long?> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            if (session == null) flowOf(null) else database.userDao().getUserByIdFlow(session.userId)
+        }
+        .map { user ->
+            user?.let {
+                com.kadaikutty.pos.core.security.CloudAccessPolicy.daysRemaining(
+                    isCloudTier = it.isCloudTier,
+                    cloudAccessGrantedUntilEpochMs = it.cloudAccessGrantedUntilEpochMs,
+                    mustCheckInByEpochMs = it.mustCheckInByEpochMs
+                )
+            }
+        }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val dashboardState: StateFlow<HomeDashboardUiState> = sessionStore.activeSession
@@ -100,7 +137,7 @@ class HomeViewModel @Inject constructor(
                     HomeDashboardUiState(
                         todaySalesMinorUnits = stats.second,
                         todayInvoicesCount = stats.first,
-                        lowStockCount = stockList.count { it.currentStock <= 5 },
+                        lowStockCount = stockList.count { it.minStockLevel > 0.0 && it.currentStock.toDouble() <= it.minStockLevel },
                         customerCreditDueMinorUnits = customerDue,
                         todayPurchasesMinorUnits = stats.third,
                         recentSales = recent,
@@ -110,11 +147,14 @@ class HomeViewModel @Inject constructor(
                     )
                 }
 
+                val isOnline = session != null && !session.accessToken.isNullOrBlank()
                 aggregatedFlow.combine(syncScheduler.isSyncingFlow) { state, isSyncing ->
+                    val actualSyncing = isOnline && isSyncing
                     state.copy(
-                        isSyncing = isSyncing,
+                        isSyncing = actualSyncing,
                         lastSyncMessage = when {
-                            isSyncing -> "Sync in progress..."
+                            !isOnline -> "Offline Mode (Local)"
+                            actualSyncing -> "Sync in progress..."
                             state.pendingSyncCount == 0 -> "All data backed up to cloud"
                             else -> "${state.pendingSyncCount} items ready to sync"
                         }
@@ -163,7 +203,9 @@ class HomeViewModel @Inject constructor(
     fun triggerCloudSync() {
         viewModelScope.launch {
             val session = sessionStore.activeSession.first() ?: return@launch
-            database.syncQueueDao().retryFailed(session.companyId, System.currentTimeMillis())
+            runCatching { database.syncQueueDao().migrateTenantData("company_main", session.companyId) }
+            // Manual retry: ignore the dead-letter cap the background worker honours.
+            database.syncQueueDao().retryFailed(session.companyId, System.currentTimeMillis(), Int.MAX_VALUE)
             syncScheduler.request(replaceExisting = true)
         }
     }
