@@ -228,8 +228,11 @@ export class LocalDataStore implements DataStore {
         count += 1;
       });
       state.changes = state.changes.filter(change => change.record.companyId !== companyId);
+      // operationKey joins with \u001f, not ':' - the old colon prefix never matched, so this
+      // cleanup silently never ran and stale idempotency rows outlived every purge.
+      const idempotencyPrefix = operationKey(companyId, '');
       Object.keys(state.idempotency).forEach(k => {
-        if (k.startsWith(`${companyId}:`)) delete state.idempotency[k];
+        if (k.startsWith(idempotencyPrefix)) delete state.idempotency[k];
       });
       return count;
     });
@@ -258,13 +261,23 @@ export class LocalDataStore implements DataStore {
 
   deleteCompany(companyId: string): Promise<void> {
     return this.store.write(state => {
+      const removedUserIds = new Set<string>();
       Object.values(state.users).filter(user => user.companyId === companyId).forEach(user => {
+        removedUserIds.add(user.userId);
         delete state.phoneIndex[user.phone]; delete state.credentials[user.userId]; delete state.users[user.userId];
       });
       delete state.licenses[companyId];
       delete state.shopProfiles[companyId];
       Object.entries(state.records).forEach(([key, record]) => { if (record.companyId === companyId) delete state.records[key]; });
       Object.entries(state.sessions).forEach(([key, session]) => { if (session.companyId === companyId) delete state.sessions[key]; });
+      // AWS deletes the company's whole partition, so local has to clear the same things or the
+      // two providers disagree about what a deleted company leaves behind.
+      state.changes = state.changes.filter(change => change.record.companyId !== companyId);
+      const idempotencyPrefix = operationKey(companyId, '');
+      Object.keys(state.idempotency).forEach(key => { if (key.startsWith(idempotencyPrefix)) delete state.idempotency[key]; });
+      Object.entries(state.backups).forEach(([key, backup]) => { if (backup.companyId === companyId) delete state.backups[key]; });
+      Object.entries(state.refreshTokens).forEach(([key, token]) => { if (removedUserIds.has(token.userId)) delete state.refreshTokens[key]; });
+      state.audits = state.audits.filter(entry => entry.companyId !== companyId);
     });
   }
 

@@ -256,6 +256,16 @@ export class AwsDataStore implements DataStore {
         Key: { pk: companyPk(companyId), sk: ch.sk }
       }));
     }
+    // applySyncOperation short-circuits on a cached operationId and returns DUPLICATE. Leaving
+    // these rows behind after a purge means a client replaying its outbox gets DUPLICATE for a
+    // record that no longer exists, so the entity is silently dropped.
+    const idempotency = await this.queryPartition<any>(companyPk(companyId), 'IDEMPOTENCY#');
+    for (const entry of idempotency) {
+      await this.client.send(new DeleteCommand({
+        TableName: this.tableName,
+        Key: { pk: companyPk(companyId), sk: entry.sk }
+      }));
+    }
     return count;
   }
 

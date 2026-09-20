@@ -160,3 +160,39 @@ test('local Master Control can set the shop OWNER\'s own cloud access, separate 
   // Wrong company must not be able to touch another company's owner.
   await assert.rejects(() => context.dataStore.updateAccountCloudAccess('someone-elses-company', owner.user.userId, { isCloudTier: false }));
 });
+
+test('purging company records clears idempotency so a replayed outbox is not silently dropped', async t => {
+  const context = await fixture();
+  t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
+  const companyId = 'company-a';
+  const insert = { operationId: 'operation-00000001', companyId, entityType: 'Product', entityId: 'product-1', operation: 'INSERT' as const, schemaVersion: 1, payload: { name: 'Tea' } };
+
+  assert.equal((await context.dataStore.applySyncBatch(companyId, [insert]))[0].status, 'APPLIED');
+  assert.equal(await context.dataStore.purgeCompanyRecords(companyId), 1);
+
+  // The device still holds this operation in its outbox. While the purge left the cached
+  // idempotency row behind, this replay came back DUPLICATE and the record stayed gone for good.
+  const replay = await context.dataStore.applySyncBatch(companyId, [insert]);
+  assert.equal(replay[0].status, 'APPLIED');
+
+  const page = await context.dataStore.pullSync(companyId, '0', 50);
+  assert.equal(page.records.filter(record => record.entityId === 'product-1' && !record.deleted).length, 1);
+});
+
+test('deleting a company leaves no change-log, idempotency, backup or audit rows behind', async t => {
+  const context = await fixture();
+  t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
+  const companyId = 'company-a';
+  const insert = { operationId: 'operation-00000001', companyId, entityType: 'Product', entityId: 'product-1', operation: 'INSERT' as const, schemaVersion: 1, payload: { name: 'Tea' } };
+  await context.dataStore.applySyncBatch(companyId, [insert]);
+  await context.dataStore.appendAudit({ companyId, action: 'TEST', actorUserId: 'user-1', actorRole: 'ADMIN' });
+
+  await context.dataStore.deleteCompany(companyId);
+
+  // AWS drops the company's entire partition; local has to match or the providers disagree
+  // about what a deleted company leaves behind.
+  assert.equal((await context.dataStore.listAudit(companyId, 100)).length, 0);
+  assert.equal((await context.dataStore.pullSync(companyId, '0', 50)).records.length, 0);
+  const replay = await context.dataStore.applySyncBatch(companyId, [insert]);
+  assert.equal(replay[0].status, 'APPLIED');
+});

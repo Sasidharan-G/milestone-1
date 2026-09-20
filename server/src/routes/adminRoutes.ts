@@ -2,8 +2,8 @@ import { Router } from 'express';
 import { AppError } from '../core/errors';
 import { audit } from '../core/audit';
 import { applyLicenseAction, parseLicenseAction, presentLicense } from '../core/license';
-import { emitToCompany, emitToUser } from '../core/realtime';
-import { AuthenticatedRequest, PLATFORM_COMPANY_ID, requireAuth, requireSuperAdmin } from '../middleware/authMiddleware';
+import { emitToCompany, emitToUser, revokeSessionSockets } from '../core/realtime';
+import { AuthenticatedRequest, MASTER_USER_ID, PLATFORM_COMPANY_ID, requireAuth, requireSuperAdmin } from '../middleware/authMiddleware';
 import { providers } from '../providers/providerRegistry';
 import { sendRouteError } from './http';
 
@@ -45,6 +45,7 @@ router.patch('/licenses/:companyId', async (req: AuthenticatedRequest, res) => {
     const license = await providers().dataStore.updateLicense(req.params.companyId, next);
     await audit(req, req.user!, `LICENSE_${action.action}`, req.params.companyId, { ...action, validUntilEpochMs: license.validUntilEpochMs }, req.params.companyId);
     emitToCompany(req.app.get('io'), req.params.companyId, 'license_changed', { license: presentLicense(license) });
+    emitToUser(req.app.get('io'), MASTER_USER_ID, 'master_overview_changed', { companyId: req.params.companyId });
     return res.json({ success: true, license: presentLicense(license) });
   } catch (error) { return sendRouteError(res, req, error); }
 });
@@ -65,6 +66,7 @@ router.patch('/companies/:companyId/cloud-access', async (req: AuthenticatedRequ
     });
     await audit(req, req.user!, 'OWNER_CLOUD_ACCESS_SET_BY_MASTER', admin.userId, { isCloudTier: updated.isCloudTier, cloudAccessGrantedUntilEpochMs: updated.cloudAccessGrantedUntilEpochMs }, req.params.companyId);
     emitToUser(req.app.get('io'), admin.userId, 'account_changed', { status: updated.status, permissions: updated.permissions });
+    emitToUser(req.app.get('io'), MASTER_USER_ID, 'master_overview_changed', { companyId: req.params.companyId });
     return res.json({ success: true, user: updated });
   } catch (error) { return sendRouteError(res, req, error); }
 });
@@ -80,10 +82,12 @@ router.delete('/companies/:companyId', async (req: AuthenticatedRequest, res) =>
     for (const user of companyUsers) {
       const revoked = await providers().sessionStore.revokeAllSessions(companyId, user.userId);
       for (const session of revoked) emitToUser(req.app.get('io'), user.userId, 'session_revoked', { sessionId: session.sessionId, reason: 'ACCOUNT_DELETED' });
+      revokeSessionSockets(req.app.get('io'), user.userId, revoked, 'ACCOUNT_DELETED');
       await providers().identityProvider.deleteUser(user.userId);
     }
     await providers().dataStore.deleteCompany(companyId);
     await audit(req, req.user!, 'COMPANY_DELETED', companyId, { users: companyUsers.map(user => user.userId), backups: backups.length });
+    emitToUser(req.app.get('io'), MASTER_USER_ID, 'master_overview_changed', { companyId });
     return res.status(204).send();
   } catch (error) { return sendRouteError(res, req, error); }
 });
@@ -109,10 +113,12 @@ router.patch('/staff/:userId', async (req: AuthenticatedRequest, res) => {
       await providers().identityProvider.revokeUser(user.userId);
       const revoked = await providers().sessionStore.revokeAllSessions(user.companyId, user.userId);
       for (const session of revoked) emitToUser(req.app.get('io'), user.userId, 'session_revoked', { sessionId: session.sessionId, reason: 'ACCOUNT_DISABLED' });
+      revokeSessionSockets(req.app.get('io'), user.userId, revoked, 'ACCOUNT_DISABLED');
     }
     await audit(req, req.user!, 'STAFF_STATUS_SET_BY_MASTER', user.userId, { status }, user.companyId);
     emitToUser(req.app.get('io'), user.userId, 'account_changed', { status: updated.status, permissions: updated.permissions });
     emitToCompany(req.app.get('io'), user.companyId, 'staff_changed', { userId: user.userId });
+    emitToUser(req.app.get('io'), MASTER_USER_ID, 'master_overview_changed', { companyId: user.companyId });
     return res.json({ success: true, user: updated });
   } catch (error) { return sendRouteError(res, req, error); }
 });
@@ -126,8 +132,10 @@ router.delete('/staff/:userId', async (req: AuthenticatedRequest, res) => {
     await providers().identityProvider.revokeUser(user.userId);
     const revoked = await providers().sessionStore.revokeAllSessions(user.companyId, user.userId);
     for (const session of revoked) emitToUser(req.app.get('io'), user.userId, 'session_revoked', { sessionId: session.sessionId, reason: 'ACCOUNT_DISABLED' });
+    revokeSessionSockets(req.app.get('io'), user.userId, revoked, 'ACCOUNT_DISABLED');
     await audit(req, req.user!, 'STAFF_DISABLED_BY_MASTER', user.userId, undefined, user.companyId);
     emitToCompany(req.app.get('io'), user.companyId, 'staff_changed', { userId: user.userId });
+    emitToUser(req.app.get('io'), MASTER_USER_ID, 'master_overview_changed', { companyId: user.companyId });
     return res.status(204).send();
   } catch (error) { return sendRouteError(res, req, error); }
 });

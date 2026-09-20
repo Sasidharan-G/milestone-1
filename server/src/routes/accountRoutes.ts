@@ -3,7 +3,7 @@ import crypto, { randomUUID } from 'node:crypto';
 import { AppError } from '../core/errors';
 import { audit } from '../core/audit';
 import { presentLicense } from '../core/license';
-import { emitToCompany, emitToUser } from '../core/realtime';
+import { emitToCompany, emitToUser, revokeSessionSockets } from '../core/realtime';
 import { normalizePhone, verifyResetToken } from '../controllers/otpController';
 import {
   AuthenticatedRequest, MASTER_USER_ID, PLATFORM_COMPANY_ID, requireActiveLicense, requireAuth, requireShopAdmin
@@ -73,6 +73,9 @@ router.post('/auth/register', limitOtpVerify, async (req, res) => {
       throw error;
     }
     await audit(req, { userId: result.user.userId, role: 'ADMIN', companyId: result.user.companyId }, 'ACCOUNT_REGISTERED', result.user.userId, { phone });
+    // Without this a brand new shop does not appear in Master Control until the operator
+    // manually refreshes.
+    emitToUser(req.app.get('io'), MASTER_USER_ID, 'master_overview_changed', { companyId: result.user.companyId });
     return res.status(201).json({ success: true, companyId: result.user.companyId, user: result.user, license: presentLicense(result.license) });
   } catch (error) { return sendRouteError(res, req, error); }
 });
@@ -149,6 +152,7 @@ router.post('/auth/password/reset', limitOtpVerify, async (req: AuthenticatedReq
     const revoked = await providers().sessionStore.revokeAllSessions(user.companyId, user.userId);
     const io = req.app.get('io');
     for (const session of revoked) emitToUser(io, user.userId, 'session_revoked', { sessionId: session.sessionId, reason: 'PASSWORD_RESET' });
+    revokeSessionSockets(io, user.userId, revoked, 'PASSWORD_RESET');
     await audit(req, { userId: user.userId, role: user.role, companyId: user.companyId }, 'PASSWORD_RESET', user.userId, { sessionsRevoked: revoked.length });
     return res.json({ success: true });
   } catch (error) { return sendRouteError(res, req, error); }
@@ -173,6 +177,7 @@ router.post('/auth/master/pin', limitOtpVerify, async (req: AuthenticatedRequest
     const revoked = await providers().sessionStore.revokeAllSessions(PLATFORM_COMPANY_ID, MASTER_USER_ID);
     const io = req.app.get('io');
     for (const session of revoked) emitToUser(io, MASTER_USER_ID, 'session_revoked', { sessionId: session.sessionId, reason: 'MASTER_PIN_CHANGED' });
+    revokeSessionSockets(io, MASTER_USER_ID, revoked, 'MASTER_PIN_CHANGED');
     await audit(req, { userId: MASTER_USER_ID, role: 'SUPER_ADMIN', companyId: PLATFORM_COMPANY_ID }, 'MASTER_PIN_CHANGED', MASTER_USER_ID, { mobileChanged: nextMobile !== mobile });
     return res.json({ success: true, mobile: nextMobile });
   } catch (error) { return sendRouteError(res, req, error); }
@@ -285,7 +290,8 @@ router.patch('/staff/:userId', requireAuth, requireActiveLicense, requireShopAdm
       if (!validPassword(req.body.password)) throw new AppError(400, 'AUTH_PASSWORD_INVALID', 'Password must be exactly 6 numeric digits');
       await providers().identityProvider.setPassword(user.userId, req.body.password);
       await providers().identityProvider.revokeUser(user.userId);
-      await providers().sessionStore.revokeAllSessions(user.companyId, user.userId);
+      const revoked = await providers().sessionStore.revokeAllSessions(user.companyId, user.userId);
+      revokeSessionSockets(req.app.get('io'), user.userId, revoked, 'PASSWORD_CHANGED');
     }
     await audit(req, req.user!, 'STAFF_UPDATED', user.userId, { permissions: user.permissions, passwordChanged: req.body?.password !== undefined });
     emitToUser(req.app.get('io'), user.userId, 'account_changed', { status: user.status, permissions: user.permissions });
@@ -300,6 +306,7 @@ const setStaffStatus = async (req: AuthenticatedRequest, status: 'ACTIVE' | 'INA
     await providers().identityProvider.revokeUser(user.userId);
     const revoked = await providers().sessionStore.revokeAllSessions(user.companyId, user.userId);
     for (const session of revoked) emitToUser(req.app.get('io'), user.userId, 'session_revoked', { sessionId: session.sessionId, reason: 'ACCOUNT_DISABLED' });
+    revokeSessionSockets(req.app.get('io'), user.userId, revoked, 'ACCOUNT_DISABLED');
   }
   await audit(req, req.user!, action, user.userId);
   emitToUser(req.app.get('io'), user.userId, 'account_changed', { status: user.status, permissions: user.permissions });
