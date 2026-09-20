@@ -51,7 +51,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             return Result.retry()
         }
         val queue = database.syncQueueDao()
-        runCatching { queue.migrateTenantData("company_main", session.companyId) }
+        runCatching { LegacyTenantMigration.runOnce(database, session.companyId) }
         runCatching { queue.retryFailed(session.companyId, System.currentTimeMillis(), MAX_SYNC_ATTEMPTS) }
         var synced = 0
         return try {

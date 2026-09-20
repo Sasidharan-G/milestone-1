@@ -19,7 +19,9 @@ object ReceiptEncoder {
         require(content.sumOf { it.length.toLong() } <= 200_000) { "Receipt too large; split the print job" }
         if (content.all { text -> text.all { it.code < 128 } }) return EscPosFormatter().format(doc)
         val columns = doc.paperWidth.takeIf { it in 24..64 } ?: 32
-        val dots = columns * 12
+        // Snapped down to a whole byte: the raster packing below walks the row in steps of 8 and
+        // reads pixels[x + 7], so an odd column count (33 -> 396 dots) would run past the array.
+        val dots = (columns * 12) / 8 * 8
         val output = ByteArrayOutputStream()
         output.write(EscPosFormatter.INIT)
         val paint = TextPaint().apply {

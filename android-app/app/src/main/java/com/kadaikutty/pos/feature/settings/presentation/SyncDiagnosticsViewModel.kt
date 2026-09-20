@@ -65,7 +65,7 @@ class SyncDiagnosticsViewModel @Inject constructor(
                 .flatMapLatest { session ->
                     if (session == null) flowOf(emptyList())
                     else {
-                        runCatching { database.syncQueueDao().migrateTenantData("company_main", session.companyId) }
+                        runCatching { com.kadaikutty.pos.core.sync.LegacyTenantMigration.runOnce(database, session.companyId) }
                         database.syncQueueDao().unresolved(session.companyId, 100)
                     }
                 }
@@ -107,7 +107,7 @@ class SyncDiagnosticsViewModel @Inject constructor(
                 val effectiveToken = token
                 val effectiveSessionToken = sessionToken
 
-                runCatching { database.syncQueueDao().migrateTenantData("company_main", currentCompanyId) }
+                runCatching { com.kadaikutty.pos.core.sync.LegacyTenantMigration.runOnce(database, currentCompanyId) }
                 // Manual retry: ignore the dead-letter cap the background worker honours.
                 database.syncQueueDao().retryFailed(currentCompanyId, System.currentTimeMillis(), Int.MAX_VALUE)
 

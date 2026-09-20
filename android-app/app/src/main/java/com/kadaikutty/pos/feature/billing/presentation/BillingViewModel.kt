@@ -545,7 +545,8 @@ class BillingViewModel @Inject constructor(
                             com.kadaikutty.pos.core.analytics.AnalyticsEvents.EVENT_SALE_COMPLETED,
                             mapOf(
                                 com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_CART_SIZE to draft.lines.size,
-                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.lines.sumOf { (it.unitPrice.minorUnits * it.quantity) / (if (it.unitType == "KG" || it.unitType == "LITER") 1000 else 1) },
+                                // draft.total is the amount actually charged: it applies the per-line and cart discounts this sum used to ignore.
+                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.total.minorUnits,
                                 com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_PAYMENT_METHOD to paymentMode
                             )
                         ) }
@@ -620,7 +621,8 @@ class BillingViewModel @Inject constructor(
                             com.kadaikutty.pos.core.analytics.AnalyticsEvents.EVENT_SALE_COMPLETED,
                             mapOf(
                                 com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_CART_SIZE to draft.lines.size,
-                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.lines.sumOf { (it.unitPrice.minorUnits * it.quantity) / (if (it.unitType == "KG" || it.unitType == "LITER") 1000 else 1) },
+                                // draft.total is the amount actually charged: it applies the per-line and cart discounts this sum used to ignore.
+                                com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_TOTAL_AMOUNT to draft.total.minorUnits,
                                 com.kadaikutty.pos.core.analytics.AnalyticsEvents.PARAM_PAYMENT_METHOD to paymentMode
                             )
                         ) }
@@ -746,7 +748,12 @@ class BillingViewModel @Inject constructor(
     fun printBill(context: android.content.Context, billNumber: String) {
         viewModelScope.launch(errors) {
             val macAddress = appPreferences.printerDeviceId.first()
-            if (macAddress.isNullOrBlank()) return@launch // Printer not configured
+            if (macAddress.isNullOrBlank()) {
+                // Returning silently made Print Bill look broken: the sale is saved, the button
+                // does nothing and nothing says why.
+                _operationError.value = "No printer configured. Add one in Settings to print bills."
+                return@launch
+            }
 
             val session = sessionStore.activeSession.first() ?: return@launch
             val companyId = session.companyId

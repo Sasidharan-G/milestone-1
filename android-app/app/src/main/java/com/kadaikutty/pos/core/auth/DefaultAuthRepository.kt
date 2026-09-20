@@ -66,7 +66,7 @@ class DefaultAuthRepository(
                 val remoteSessionId = sessionSecurityManager.registerSession(session.userId, session.companyId, session.role, "")
                 val sessionWithToken = session.copy(sessionToken = remoteSessionId)
                 sessions.save(sessionWithToken)
-                runCatching { targetDb.syncQueueDao().migrateTenantData("company_main", session.companyId) }
+                runCatching { com.kadaikutty.pos.core.sync.LegacyTenantMigration.runOnce(targetDb, session.companyId) }
                 syncScheduler?.requestPull()
                 LoginResult.Success(sessionWithToken)
             } catch (e: Exception) {

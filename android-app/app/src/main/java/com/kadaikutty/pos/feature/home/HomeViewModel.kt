@@ -203,7 +203,7 @@ class HomeViewModel @Inject constructor(
     fun triggerCloudSync() {
         viewModelScope.launch {
             val session = sessionStore.activeSession.first() ?: return@launch
-            runCatching { database.syncQueueDao().migrateTenantData("company_main", session.companyId) }
+            runCatching { com.kadaikutty.pos.core.sync.LegacyTenantMigration.runOnce(database, session.companyId) }
             // Manual retry: ignore the dead-letter cap the background worker honours.
             database.syncQueueDao().retryFailed(session.companyId, System.currentTimeMillis(), Int.MAX_VALUE)
             syncScheduler.request(replaceExisting = true)

@@ -143,8 +143,13 @@ fun SearchableProductSelectorDialog(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                onProductSelected(suggestedProduct)
-                                onDismiss()
+                                // The same guard the list rows apply: the suggestion banner is
+                                // another way to pick a product, not an exemption from it.
+                                val suggestedStock = stockMap[suggestedProduct.id] ?: 0L
+                                if (suggestedStock > 0L || allowOutOfStockSelection) {
+                                    onProductSelected(suggestedProduct)
+                                    onDismiss()
+                                }
                             }
                     ) {
                         Row(
