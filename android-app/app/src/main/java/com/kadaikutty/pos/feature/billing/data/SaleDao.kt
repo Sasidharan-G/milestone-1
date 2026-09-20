@@ -23,18 +23,12 @@ import kotlinx.coroutines.flow.Flow
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSale(sale: SaleEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSales(items: List<SaleEntity>)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertSalesSync(items: List<SaleEntity>)
     @Query("DELETE FROM sales WHERE companyId = :companyId") suspend fun deleteSalesByCompany(companyId: String)
-    @Query("DELETE FROM sales WHERE companyId = :companyId") fun deleteSalesByCompanySync(companyId: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertItems(items: List<SaleItemEntity>)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertItemsSync(items: List<SaleItemEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStockMovements(movements: List<StockMovementEntity>)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertStockMovementsSync(movements: List<StockMovementEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertCustomerCredit(credit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity)
     @Query("DELETE FROM sale_items WHERE companyId = :companyId") suspend fun deleteSaleItemsByCompany(companyId: String)
-    @Query("DELETE FROM sale_items WHERE companyId = :companyId") fun deleteSaleItemsByCompanySync(companyId: String)
     @Query("DELETE FROM stock_movements WHERE companyId = :companyId") suspend fun deleteStockMovementsByCompany(companyId: String)
-    @Query("DELETE FROM stock_movements WHERE companyId = :companyId") fun deleteStockMovementsByCompanySync(companyId: String)
 
     @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
     fun getSales(companyId: String): Flow<List<SaleEntity>>

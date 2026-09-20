@@ -17,6 +17,11 @@ object ReceiptEncoder {
             doc.lines.flatMap { listOf(it.name, it.quantityText, it.price, it.total) } +
             doc.totals.flatMap { listOf(it.first, it.second) }
         require(content.sumOf { it.length.toLong() } <= 200_000) { "Receipt too large; split the print job" }
+        // Unreachable in practice today: Money.toString() always prefixes the rupee sign, which is
+        // not ASCII, so any receipt carrying a total or a price fails this check and rasterizes.
+        // Reaching the faster text path would mean printing amounts as "Rs." instead, which changes
+        // what every receipt looks like and needs a real printer to sign off - so it is left alone
+        // rather than quietly switched.
         if (content.all { text -> text.all { it.code < 128 } }) return EscPosFormatter().format(doc)
         val columns = doc.paperWidth.takeIf { it in 24..64 } ?: 32
         // Snapped down to a whole byte: the raster packing below walks the row in steps of 8 and

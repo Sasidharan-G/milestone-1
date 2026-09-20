@@ -23,16 +23,12 @@ interface PurchaseDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertPurchase(purchase: PurchaseEntity)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertPurchases(items: List<PurchaseEntity>)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertPurchasesSync(items: List<PurchaseEntity>)
     @Query("DELETE FROM purchases WHERE companyId = :companyId") suspend fun deletePurchasesByCompany(companyId: String)
-    @Query("DELETE FROM purchases WHERE companyId = :companyId") fun deletePurchasesByCompanySync(companyId: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertItems(items: List<PurchaseItemEntity>)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertItemsSync(items: List<PurchaseItemEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStockMovements(movements: List<StockMovementEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSupplierCredit(credit: com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity)
     
     @Query("DELETE FROM purchase_items WHERE companyId = :companyId") suspend fun deletePurchaseItemsByCompany(companyId: String)
-    @Query("DELETE FROM purchase_items WHERE companyId = :companyId") fun deletePurchaseItemsByCompanySync(companyId: String)
 
     @Query("""
         SELECT 
