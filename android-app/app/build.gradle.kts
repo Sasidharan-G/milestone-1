@@ -37,13 +37,15 @@ android {
             ?: "+919962255661"
         buildConfigField("String", "MASTER_SUPPORT_PHONE", "\"$masterSupportPhone\"")
 
-        // Release signing certificate SHA-256, colon-separated. Blank disables the integrity check
-        // (see SecurityShield.verifyBinaryIntegrity) - set it in release.properties to enforce.
-        val signingCertSha256 = releaseValue("SIGNING_CERT_SHA256")
-            ?: (project.findProperty("SIGNING_CERT_SHA256") as? String)
-            ?: ""
-        buildConfigField("String", "SIGNING_CERT_SHA256", "\"$signingCertSha256\"")
     }
+
+    // Release signing certificate SHA-256, colon-separated. Blank disables the integrity check
+    // (see SecurityShield.verifyBinaryIntegrity) - set it in release.properties to enforce.
+    // Only the release build type carries it: a debug build is signed with the debug key, so a
+    // value in defaultConfig would make every debug install fail its own integrity check.
+    val signingCertSha256 = releaseValue("SIGNING_CERT_SHA256")
+        ?: (project.findProperty("SIGNING_CERT_SHA256") as? String)
+        ?: ""
 
     signingConfigs {
         create("release") {
@@ -63,6 +65,10 @@ android {
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             signingConfig = signingConfigs.getByName("release")
+            buildConfigField("String", "SIGNING_CERT_SHA256", "\"$signingCertSha256\"")
+        }
+        debug {
+            buildConfigField("String", "SIGNING_CERT_SHA256", "\"\"")
         }
     }
 
