@@ -45,7 +45,12 @@ object CheckoutMath {
         var previous = 0L
         return weights.map {
             cumulative = Math.addExact(cumulative, it)
-            val next = BigInteger.valueOf(amount).multiply(BigInteger.valueOf(cumulative)).divide(BigInteger.valueOf(sum)).longValueExact()
+            val share = BigInteger.valueOf(amount).multiply(BigInteger.valueOf(cumulative)).divide(BigInteger.valueOf(sum))
+            // Not longValueExact(): that is API 31 and minSdk is 26, so on Android 8-11 it would
+            // throw NoSuchMethodError at checkout. bitLength() gives the same overflow guarantee
+            // for a non-negative value on every release we support.
+            require(share.bitLength() < 64) { "Allocation overflowed" }
+            val next = share.toLong()
             (next - previous).also { previous = next }
         }
     }

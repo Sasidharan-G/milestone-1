@@ -3,6 +3,7 @@ package com.kadaikutty.pos.core.common
 import com.kadaikutty.pos.feature.billing.domain.SaleLine
 import com.kadaikutty.pos.feature.purchase.domain.PurchaseLine
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CheckoutValidationTest {
@@ -36,6 +37,18 @@ class CheckoutValidationTest {
     @Test fun allocationPreservesEveryPaise() {
         assertEquals(listOf(0L, 1L, 1L), CheckoutMath.allocate(2, listOf(1, 1, 1)))
         assertEquals(10001L, CheckoutMath.allocate(10001, listOf(19, 37, 83)).sum())
+    }
+
+    @Test
+    fun `allocate keeps every paise at the largest amount the app accepts`() {
+        // The intermediate amount * cumulative overflows a Long here, which is why the division
+        // runs in BigInteger; this pins that the API-26-safe conversion back to Long still holds.
+        val max = CheckoutMath.MAX_AMOUNT
+        val weights = listOf(19L, 37L, 83L, 1L)
+        val parts = CheckoutMath.allocate(max, weights)
+        assertEquals(max, parts.sum())
+        assertEquals(weights.size, parts.size)
+        assertTrue(parts.all { it >= 0 })
     }
     @Test(expected = IllegalArgumentException::class) fun upiOverpaymentRejected() { CheckoutMath.payment(100, 0, 101, false) }
 }

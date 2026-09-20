@@ -39,10 +39,10 @@ object RecordApplier {
         when (type) {
             "Category" -> database.masterDao().insertCategory(CategoryEntity(id, companyId, data.optString("name"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
             "Product" -> {
-                fun cName(s: String): String = s.replace("﻿", "").replace("​", "").trim().replace("\\s+".toRegex(), " ").lowercase()
+                fun cName(s: String): String = s.replace("\uFEFF", "").replace("\u200B", "").trim().replace("\\s+".toRegex(), " ").lowercase()
                 fun cBarcode(s: String?): String? {
                     if (s.isNullOrBlank()) return null
-                    var b = s.replace("﻿", "").replace("​", "").trim()
+                    var b = s.replace("\uFEFF", "").replace("\u200B", "").trim()
                     if (b.endsWith(".0") || b.endsWith(".00")) b = b.substringBefore(".")
                     return if (b.isBlank()) null else b
                 }
