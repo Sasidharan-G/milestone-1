@@ -360,3 +360,15 @@ val migration21To22 = object : Migration(21, 22) {
         db.execSQL("UPDATE supplier_credits SET referenceId = (SELECT MIN(id) FROM purchases p WHERE p.companyId = supplier_credits.companyId AND p.supplierId = supplier_credits.supplierId AND supplier_credits.terms = 'Purchase ' || CASE WHEN p.invoiceNumber IS NOT NULL AND TRIM(p.invoiceNumber) != '' THEN 'Bill #' || p.invoiceNumber ELSE 'Order #' || p.orderNumber END || ' (' || p.paymentMode || ')' HAVING COUNT(*) = 1)")
     }
 }
+
+// isCloudTier defaults to 1 (true) for every existing row so upgrading the app never strips
+// cloud access from a shop that already had it — the new restriction only applies going forward,
+// to accounts explicitly registered/granted as offline-tier. The two deadline columns default to
+// NULL ("no restriction yet") for the same reason.
+val migration22To23 = object : Migration(22, 23) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE users ADD COLUMN isCloudTier INTEGER NOT NULL DEFAULT 1")
+        db.execSQL("ALTER TABLE users ADD COLUMN cloudAccessGrantedUntilEpochMs INTEGER")
+        db.execSQL("ALTER TABLE users ADD COLUMN mustCheckInByEpochMs INTEGER")
+    }
+}

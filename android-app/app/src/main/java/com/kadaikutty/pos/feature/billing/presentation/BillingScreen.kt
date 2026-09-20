@@ -32,6 +32,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.sp
 import com.kadaikutty.pos.feature.billing.domain.SaleLine
+import com.kadaikutty.pos.core.common.CheckoutMath
 import com.kadaikutty.pos.core.common.Money
 import com.kadaikutty.pos.feature.billing.data.SaleEntity
 import java.text.SimpleDateFormat
@@ -104,7 +105,12 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
         showDialog = showProductSearchDialog,
         products = products,
         stockMap = stockMap,
+        allowOutOfStockSelection = true,
         onProductSelected = { prod ->
+            val pStock = stockMap[prod.id] ?: 0L
+            if (pStock <= 0L) {
+                message = "${prod.name} is out of stock!"
+            }
             selectedProductId = prod.id
         },
     ) { showProductSearchDialog = false }
@@ -438,7 +444,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                 } else if (priceDouble == null || priceDouble <= 0.0) {
                                     message = "Unit price must be > 0"
                                 } else if (currentStockUnits <= 0L) {
-                                    message = "${selectedProduct.name} stock illa. Sale cart-la add panna mudiyadhu."
+                                    message = "${selectedProduct.name} is out of stock!"
                                 } else if (parsedQty > currentStockUnits) {
                                     val stockText = if (isDecimalUnit) {
                                         String.format(Locale.US, "%.3f", currentStockUnits / 1000.0)
@@ -447,7 +453,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                     }
                                     message = "Enough stock illa. Available: $stockText ${selectedProduct.unitType}"
                                 } else {
-                                    val priceMoney = Money((priceDouble * 100).toLong())
+                                    val priceMoney = Money(CheckoutMath.rupeesToMinorUnits(priceDouble))
                                     val addError = viewModel.addLine(selectedProductId, selectedProduct.name, parsedQty, priceMoney, selectedProduct.unitType)
                                     if (addError == null) {
                                         selectedProductId = ""
@@ -829,7 +835,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                     items(count = pagedSales.itemCount, key = pagedSales.itemKey { it.id }, contentType = pagedSales.itemContentType { "Sale" }) { index ->
                         val sale = pagedSales[index] ?: return@items
                         val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(sale.createdAtEpochMs))
-                        val customerName = customers.find { it.id == sale.customerId }?.name ?: "Walk-in"
+                        val customerName = if (sale.customerId == "online") "Online Order" else (customers.find { it.id == sale.customerId }?.name ?: "Walk-in")
                         Card(
                             modifier = Modifier
                                 .fillMaxWidth()

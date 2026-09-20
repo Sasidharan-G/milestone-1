@@ -16,22 +16,30 @@ class SessionStore(private val store: DataStore<Preferences>) {
     private val roleKey = stringPreferencesKey("session_role")
     private val sessionTokenKey = stringPreferencesKey("session_token")
     private val accessTokenKey = stringPreferencesKey("session_access_token")
+    private val refreshTokenKey = stringPreferencesKey("session_refresh_token")
     private val deviceIdKey = stringPreferencesKey("session_device_id")
 
     val activeSession: Flow<Session?> = store.data.map { preferences ->
         val id = preferences[userId] ?: return@map null
+        val role = preferences[roleKey] ?: "ADMIN"
         val permsString = preferences[permissionsKey].orEmpty()
-        val perms = if (permsString.isBlank()) emptySet() else permsString.split(",")
+        val parsedPerms = if (permsString.isBlank()) emptySet() else permsString.split(",")
             .mapNotNull {
                 try { Permission.valueOf(it.trim()) } catch (e: Exception) { null }
             }.toSet()
+        val perms = if (role == "ADMIN" || role == "SUPER_ADMIN" || parsedPerms.isEmpty()) {
+            Permission.ALL_ACTIVE
+        } else {
+            parsedPerms
+        }
         Session(
             userId = id,
             displayName = preferences[displayName]?.ifBlank { "User" } ?: "User",
             permissions = perms,
             companyId = preferences[companyIdKey]?.ifBlank { "company_main" } ?: "company_main",
-            role = preferences[roleKey] ?: "CASHIER",
+            role = role,
             accessToken = preferences[accessTokenKey],
+            refreshToken = preferences[refreshTokenKey],
             sessionToken = preferences[sessionTokenKey],
             deviceId = preferences[deviceIdKey]
         )
@@ -39,22 +47,42 @@ class SessionStore(private val store: DataStore<Preferences>) {
 
     suspend fun save(session: Session) {
         store.edit {
+            val previousUserId = it[userId]
             it[userId] = session.userId
             it[displayName] = session.displayName
             it[permissionsKey] = session.permissions.joinToString(",") { it.name }
             it[companyIdKey] = session.companyId
             it[roleKey] = session.role
-            if (session.accessToken != null) it[accessTokenKey] = session.accessToken else it.remove(accessTokenKey)
+
+            if (session.accessToken != null) {
+                it[accessTokenKey] = session.accessToken
+            } else if (previousUserId != session.userId) {
+                it.remove(accessTokenKey)
+            }
+
+            if (session.refreshToken != null) {
+                it[refreshTokenKey] = session.refreshToken
+            } else if (previousUserId != session.userId) {
+                it.remove(refreshTokenKey)
+            }
+
             if (session.sessionToken != null) {
                 it[sessionTokenKey] = session.sessionToken
-            } else {
+            } else if (previousUserId != session.userId) {
                 it.remove(sessionTokenKey)
             }
+
             if (session.deviceId != null) {
                 it[deviceIdKey] = session.deviceId
-            } else {
-                it.remove(deviceIdKey)
             }
+        }
+    }
+
+    suspend fun updateTokens(accessToken: String, refreshToken: String? = null, sessionToken: String? = null) {
+        store.edit {
+            it[accessTokenKey] = accessToken
+            if (!refreshToken.isNullOrBlank()) it[refreshTokenKey] = refreshToken
+            if (!sessionToken.isNullOrBlank()) it[sessionTokenKey] = sessionToken
         }
     }
 
@@ -71,6 +99,7 @@ class SessionStore(private val store: DataStore<Preferences>) {
             it.remove(roleKey)
             it.remove(sessionTokenKey)
             it.remove(accessTokenKey)
+            it.remove(refreshTokenKey)
             it.remove(deviceIdKey)
         }
     }

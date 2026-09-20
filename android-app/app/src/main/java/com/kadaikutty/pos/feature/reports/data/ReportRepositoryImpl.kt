@@ -11,10 +11,25 @@ import com.kadaikutty.pos.core.auth.SessionStore
 import kotlinx.coroutines.flow.first
 
 class ReportRepositoryImpl(
-    private val reportDao: ReportDao,
+    private val tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager?,
     private val costingStrategy: CostingStrategy,
-    private val sessionStore: SessionStore
+    private val sessionStore: SessionStore,
+    private val fallbackReportDao: ReportDao? = null,
 ) : ReportRepository {
+    constructor(
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+        costingStrategy: CostingStrategy,
+        sessionStore: SessionStore,
+    ) : this(tenantDatabaseManager, costingStrategy, sessionStore, null)
+
+    constructor(
+        reportDao: ReportDao,
+        costingStrategy: CostingStrategy,
+        sessionStore: SessionStore,
+    ) : this(null, costingStrategy, sessionStore, reportDao)
+
+    private val reportDao: ReportDao
+        get() = tenantDatabaseManager?.getDatabase()?.reportDao() ?: fallbackReportDao ?: error("No ReportDao available")
 
     override suspend fun query(query: ReportQuery): ReportData {
         val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")

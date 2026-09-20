@@ -4,13 +4,13 @@ import java.security.SecureRandom
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 
-data class OfflineCredential(val username: String, val userId: String, val displayName: String, val salt: ByteArray, val verifier: ByteArray)
+data class OfflineCredential(val username: String, val userId: String, val displayName: String, val salt: ByteArray, val verifier: ByteArray, val companyId: String = "company_main")
 
 /** Stores a derived verifier only; raw online passwords are never persisted. */
 class OfflineCredentialVerifier {
-    fun create(username: String, password: CharArray, userId: String, displayName: String): OfflineCredential {
+    fun create(username: String, password: CharArray, userId: String, displayName: String, companyId: String = "company_main"): OfflineCredential {
         val salt = ByteArray(SALT_BYTES).also(SecureRandom()::nextBytes)
-        return OfflineCredential(username, userId, displayName, salt, derive(password, salt))
+        return OfflineCredential(username, userId, displayName, salt, derive(password, salt), companyId)
     }
     fun matches(credential: OfflineCredential, password: CharArray): Boolean = constantTimeEquals(credential.verifier, derive(password, credential.salt))
     private fun derive(password: CharArray, salt: ByteArray): ByteArray = PBEKeySpec(password, salt, ITERATIONS, KEY_BITS).let { spec -> try { SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded } finally { spec.clearPassword() } }

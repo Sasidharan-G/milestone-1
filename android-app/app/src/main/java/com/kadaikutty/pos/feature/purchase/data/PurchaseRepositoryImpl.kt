@@ -13,12 +13,34 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
 
 class PurchaseRepositoryImpl(
-    private val purchaseDao: PurchaseDao,
+    private val tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager?,
     private val syncManager: SyncManager,
     private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
     private val appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences,
-    private val database: BillingDatabase
+    private val fallbackDatabase: BillingDatabase? = null,
+    private val fallbackPurchaseDao: PurchaseDao? = null,
 ) : PurchaseRepository {
+    constructor(
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+        syncManager: SyncManager,
+        sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
+        appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences,
+    ) : this(tenantDatabaseManager, syncManager, sessionStore, appPreferences, null, null)
+
+    constructor(
+        purchaseDao: PurchaseDao,
+        syncManager: SyncManager,
+        sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
+        appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences,
+        database: BillingDatabase,
+    ) : this(null, syncManager, sessionStore, appPreferences, database, purchaseDao)
+
+    private val database: BillingDatabase
+        get() = tenantDatabaseManager?.getDatabase() ?: fallbackDatabase ?: error("No database available")
+
+    private val purchaseDao: PurchaseDao
+        get() = tenantDatabaseManager?.getDatabase()?.purchaseDao() ?: fallbackPurchaseDao ?: database.purchaseDao()
+
     override suspend fun save(draft: PurchaseDraft): AppResult<String> = when (val result = saveBatch(listOf(draft))) {
         is AppResult.Success -> AppResult.Success(result.value.single())
         is AppResult.Failure -> result

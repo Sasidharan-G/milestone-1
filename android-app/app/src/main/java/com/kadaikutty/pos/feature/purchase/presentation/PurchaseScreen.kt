@@ -21,6 +21,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import com.kadaikutty.pos.core.common.CheckoutMath
 import com.kadaikutty.pos.core.common.Money
 import androidx.compose.foundation.border
 import androidx.compose.material.icons.filled.QrCodeScanner
@@ -72,7 +73,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                 val matched = products.find { it.barcode == barcode }
                 if (matched != null) {
                     selectedProductId = matched.id
-                    costText = String.format(Locale.US, "%.2f", matched.purchasePriceMinorUnits / 100.0)
+                    costText = if (matched.purchasePriceMinorUnits > 0L) String.format(Locale.US, "%.2f", matched.purchasePriceMinorUnits / 100.0) else ""
                     message = "Selected: ${matched.name}"
                 } else {
                     message = "Barcode not found in stock: $barcode"
@@ -89,6 +90,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
         showDialog = showProductSearchDialog,
         products = products,
         stockMap = uiState.stocks.associate { it.productId to it.currentStock },
+        allowOutOfStockSelection = true,
         onProductSelected = { prod ->
             selectedProductId = prod.id
             expandedProduct = false
@@ -401,7 +403,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                 } else if (costDouble == null || costDouble <= 0.0) {
                                     message = "Validation Error: Unit cost must be a valid number greater than 0"
                                 } else {
-                                    viewModel.addLine(selectedProductId, parsedQty, Money((costDouble * 100).toLong()), selectedProduct?.unitType ?: "PIECE", selectedSupplierId)
+                                    viewModel.addLine(selectedProductId, parsedQty, Money(CheckoutMath.rupeesToMinorUnits(costDouble)), selectedProduct?.unitType ?: "PIECE", selectedSupplierId)
                                     val suppName = suppliers.find { it.id == selectedSupplierId }?.name ?: "Supplier"
                                     val prodName = selectedProduct?.name ?: "Product"
                                     selectedProductId = ""
@@ -535,8 +537,8 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                     var splitUpiText by remember { mutableStateOf("") }
 
                     if (showPaymentDialog) {
-                        val cashVal = ((splitCashText.toDoubleOrNull() ?: 0.0) * 100).toLong()
-                        val upiVal = ((splitUpiText.toDoubleOrNull() ?: 0.0) * 100).toLong()
+                        val cashVal = CheckoutMath.rupeesToMinorUnits(splitCashText.toDoubleOrNull() ?: 0.0)
+                        val upiVal = CheckoutMath.rupeesToMinorUnits(splitUpiText.toDoubleOrNull() ?: 0.0)
                         val paidTotalMinor = cashVal + upiVal
                         val remainingCreditMinor = maxOf(0L, purchaseTotal.minorUnits - paidTotalMinor)
 

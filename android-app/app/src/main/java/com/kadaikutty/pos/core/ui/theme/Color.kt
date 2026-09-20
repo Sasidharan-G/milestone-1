@@ -30,7 +30,7 @@ val OnCoralErrorContainer = Color(0xFF991B1B)
 val LightAppBackground = Color(0xFFF8FAFC)      // Ultra-clean grey-slate canvas
 val LightCardSurface = Color(0xFFFFFFFF)        // Crisp pure white card
 val LightSurfaceVariant = Color(0xFFF1F5F9)     // Soft neutral container
-val LightOutline = Color(0xFFE2E8F0)            // Subtle modern border
+val LightOutline = Color(0xFF5C151A)            // App brand Maroon input border
 
 val DarkAppBackground = Color(0xFF090D16)       // Ultra-deep slate dark canvas
 val DarkCardSurface = Color(0xFF111827)         // Deep obsidian card surface

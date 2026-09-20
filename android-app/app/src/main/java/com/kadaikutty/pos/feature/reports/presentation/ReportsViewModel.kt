@@ -247,7 +247,12 @@ class ReportsViewModel @Inject constructor(
     fun deleteSale(saleId: String, billNumber: String, reason: String = "Cancelled in Reports", onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             val session = sessionStore.activeSession.first()
-            val sale = if (session != null) database.saleDao().getSaleById(session.companyId, saleId) else null
+            val isAdminOrManager = session?.role in listOf("ADMIN", "SUPER_ADMIN", "OWNER") || session?.permissions?.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE) == true
+            if (session == null || !isAdminOrManager) {
+                onError(Exception("Only admin or manager can delete sales."))
+                return@launch
+            }
+            val sale = database.saleDao().getSaleById(session.companyId, saleId)
             val amount = sale?.totalMinorUnits ?: 0L
 
             when (val result = saleRepository.deleteSale(saleId, billNumber)) {

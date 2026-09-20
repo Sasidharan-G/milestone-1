@@ -43,7 +43,10 @@ data class RegisterUiState(
     val complete: Boolean = false,
     val showOtpDialog: Boolean = false,
     val otp: String = "",
-    val verificationId: String? = null
+    val verificationId: String? = null,
+    // Online = full cloud sync + backup from day one. Offline = local-only; Master Control can
+    // upgrade this later, but this account never gets auto-granted cloud access via its role.
+    val isCloudTier: Boolean = true
 )
 
 @HiltViewModel
@@ -59,6 +62,7 @@ class RegisterViewModel @Inject constructor(
     fun updatePassword(value: String) = _state.update { it.copy(passwordString = value, error = null) }
     fun updateConfirmPassword(value: String) = _state.update { it.copy(confirmPasswordString = value, error = null) }
     fun updateOtp(value: String) = _state.update { it.copy(otp = value, error = null) }
+    fun updateCloudTier(isCloudTier: Boolean) = _state.update { it.copy(isCloudTier = isCloudTier) }
     fun dismissOtpDialog() = _state.update { it.copy(showOtpDialog = false, otp = "", verificationId = null) }
 
     fun register(activity: android.app.Activity) {
@@ -73,8 +77,8 @@ class RegisterViewModel @Inject constructor(
             _state.update { it.copy(error = "Please provide a valid 10-digit mobile number") }
             return
         }
-        if (current.passwordString.length < 6) {
-            _state.update { it.copy(error = "Password must be at least 6 characters") }
+        if (current.passwordString.length != 6 || !current.passwordString.all { it.isDigit() }) {
+            _state.update { it.copy(error = "Password must be exactly 6 numeric digits") }
             return
         }
         if (current.passwordString != current.confirmPasswordString) {
@@ -117,8 +121,8 @@ class RegisterViewModel @Inject constructor(
             _state.update { it.copy(error = "Please provide a valid 10-digit mobile number") }
             return
         }
-        if (current.passwordString.length < 6) {
-            _state.update { it.copy(error = "Password must be at least 6 characters") }
+        if (current.passwordString.length != 6 || !current.passwordString.all { it.isDigit() }) {
+            _state.update { it.copy(error = "Password must be exactly 6 numeric digits") }
             return
         }
         if (current.passwordString != current.confirmPasswordString) {
@@ -173,17 +177,20 @@ class RegisterViewModel @Inject constructor(
                 mobileNumber = phoneWithCode,
                 password = passChars,
                 ownerName = current.ownerName.trim(),
-                businessName = current.businessName.trim()
+                businessName = current.businessName.trim(),
+                isCloudTier = current.isCloudTier
             )
             passChars.fill('\u0000')
 
-            _state.update {
-                when (result) {
-                    is RegisterResult.Success -> {
-                        onSuccess(result.companyId)
-                        it.copy(loading = false, showOtpDialog = false, complete = true, passwordString = "", confirmPasswordString = "")
+            when (result) {
+                is RegisterResult.Success -> {
+                    _state.update {
+                        it.copy(loading = true, showOtpDialog = false, complete = true, passwordString = "", confirmPasswordString = "")
                     }
-                    is RegisterResult.Failure -> {
+                    onSuccess(result.companyId)
+                }
+                is RegisterResult.Failure -> {
+                    _state.update {
                         it.copy(loading = false, error = result.message)
                     }
                 }
@@ -294,11 +301,12 @@ fun RegisterScreenContent(
 
                 OutlinedTextField(
                     value = state.passwordString,
-                    onValueChange = { viewModel.updatePassword(it) },
-                    label = { Text("Password", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    onValueChange = { if (it.length <= 6 && it.all { ch -> ch.isDigit() }) viewModel.updatePassword(it) },
+                    label = { Text("6-Digit Password (PIN)", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    placeholder = { Text("Enter 6-digit numeric PIN", color = Color.White.copy(alpha = 0.5f)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     shape = glassShape,
                     colors = glassColors,
                     modifier = Modifier.fillMaxWidth(),
@@ -319,11 +327,12 @@ fun RegisterScreenContent(
 
                 OutlinedTextField(
                     value = state.confirmPasswordString,
-                    onValueChange = { viewModel.updateConfirmPassword(it) },
-                    label = { Text("Confirm", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    onValueChange = { if (it.length <= 6 && it.all { ch -> ch.isDigit() }) viewModel.updateConfirmPassword(it) },
+                    label = { Text("Confirm 6-Digit Password", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
+                    placeholder = { Text("Re-enter 6-digit numeric PIN", color = Color.White.copy(alpha = 0.5f)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     visualTransformation = if (confirmPasswordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     shape = glassShape,
                     colors = glassColors,
                     modifier = Modifier.fillMaxWidth(),
@@ -342,9 +351,36 @@ fun RegisterScreenContent(
                     }
                 )
 
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Local", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+                    Switch(
+                        checked = state.isCloudTier,
+                        onCheckedChange = { viewModel.updateCloudTier(it) },
+                        modifier = Modifier.padding(horizontal = 8.dp),
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.White,
+                            checkedTrackColor = Color(0xFF8E2128),
+                            uncheckedThumbColor = Color.White,
+                            uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
+                        )
+                    )
+                    Text("Cloud", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
+                }
+                Text(
+                    if (state.isCloudTier) "Cloud: full cloud backup & sync from day one."
+                    else "Local: local-only. Ask Master Control to enable cloud access later.",
+                    fontSize = 11.sp,
+                    color = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.fillMaxWidth(),
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                )
 
                 Button(
-                    onClick = { 
+                    onClick = {
                         if (activity != null) {
                             triggerAnimation { viewModel.register(activity) }
                         } else {
@@ -393,57 +429,34 @@ fun RegisterScreenContent(
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(28.dp),
                     color = Color(0xFF5C151A),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.25f)),
-                    shadowElevation = 16.dp,
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.35f)),
+                    shadowElevation = 24.dp,
                     modifier = Modifier
-                        .widthIn(max = 460.dp)
+                        .widthIn(max = 440.dp)
                         .fillMaxWidth()
                         .padding(horizontal = 16.dp)
                 ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .verticalScroll(rememberScrollState())
-                            .padding(bottom = 16.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Mobile Verification", color = Color.White, fontWeight = FontWeight.ExtraBold, fontSize = 16.sp)
-                            IconButton(onClick = { viewModel.dismissOtpDialog() }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.8f))
+                    com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
+                        otpLength = 6,
+                        otpValue = state.otp,
+                        phoneNumber = state.mobileNumber,
+                        onOtpChange = { viewModel.updateOtp(it) },
+                        onVerifyTriggered = {
+                            viewModel.verifyOtpAndCompleteRegistration {
+                                onRegisterSuccess()
                             }
-                        }
-
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
-                        Spacer(modifier = Modifier.height(6.dp))
-
-                        com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
-                            otpLength = 6,
-                            otpValue = state.otp,
-                            phoneNumber = state.mobileNumber,
-                            onOtpChange = { viewModel.updateOtp(it) },
-                            onVerifyTriggered = {
-                                viewModel.verifyOtpAndCompleteRegistration {
-                                    onRegisterSuccess()
-                                }
-                            },
-                            onResendClick = {
-                                if (activity != null) {
-                                    viewModel.register(activity)
-                                }
-                            },
-                            isLoading = state.loading,
-                            errorMessage = state.error
-                        )
-                    }
+                        },
+                        onResendClick = {
+                            if (activity != null) {
+                                viewModel.register(activity)
+                            }
+                        },
+                        onCloseClick = { viewModel.dismissOtpDialog() },
+                        isLoading = state.loading,
+                        errorMessage = state.error
+                    )
                 }
             }
         }

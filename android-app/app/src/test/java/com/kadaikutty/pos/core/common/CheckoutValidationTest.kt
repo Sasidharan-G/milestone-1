@@ -26,6 +26,13 @@ class CheckoutValidationTest {
         assertEquals(null, CheckoutMath.parseAmount("1.001"))
         assertEquals(null, CheckoutMath.parseAmount("1e10"))
     }
+    @Test fun rupeesToMinorUnitsRoundsAwayFloatingPointTruncation() {
+        // 19.99 as a Double is actually 19.989999999999998..., so (rupees * 100).toLong() truncates to 1998.
+        assertEquals(1999L, CheckoutMath.rupeesToMinorUnits(19.99))
+        assertEquals(290L, CheckoutMath.rupeesToMinorUnits(2.90))
+        assertEquals(1L, CheckoutMath.rupeesToMinorUnits(0.01))
+        assertEquals(0L, CheckoutMath.rupeesToMinorUnits(0.0))
+    }
     @Test fun allocationPreservesEveryPaise() {
         assertEquals(listOf(0L, 1L, 1L), CheckoutMath.allocate(2, listOf(1, 1, 1)))
         assertEquals(10001L, CheckoutMath.allocate(10001, listOf(19, 37, 83)).sum())

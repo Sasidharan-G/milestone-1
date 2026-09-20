@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.kadaikutty.pos.core.common.CheckoutMath
 import com.kadaikutty.pos.core.common.Money
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -611,8 +612,6 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                 contentPadding = PaddingValues(top = 4.dp, bottom = 24.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                item { LowStockAlertsBanner(lowStockProducts) }
-                
                 // Bulk Import / Template Export Card
                 item {
                     Card(
@@ -755,7 +754,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             OutlinedTextField(
                                 value = minStockLevel,
                                 onValueChange = { minStockLevel = it },
-                                label = { Text("Min Stock Level (Alerts)") },
+                                label = { Text("Low Stock Alert Threshold (Optional)") },
+                                placeholder = { Text("0 = No alert") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth(),
@@ -799,8 +799,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         android.widget.Toast.makeText(context, "Please enter Product Name", android.widget.Toast.LENGTH_SHORT).show()
                                     } else if (!isSubmitting) {
                                         isSubmitting = true
-                                        val purVal = ((purchasePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
-                                        val saleVal = ((salePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
+                                        val purVal = CheckoutMath.rupeesToMinorUnits(purchasePrice.toDoubleOrNull() ?: 0.0)
+                                        val saleVal = CheckoutMath.rupeesToMinorUnits(salePrice.toDoubleOrNull() ?: 0.0)
                                         val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
                                         viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
                                             isSubmitting = false
@@ -808,7 +808,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                             purchasePrice = ""
                                             salePrice = ""
                                             barcode = ""
-                                            minStockLevel = "5.0"
+                                            minStockLevel = ""
                                             message = "Product added successfully"
                                             android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                         }, onError = {
@@ -870,6 +870,12 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         val purText = Money(product.purchasePriceMinorUnits).toString()
                         val saleText = Money(product.salePriceMinorUnits).toString()
                         val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Piece"
+                        val formattedStock = if (product.unitType == "KG" || product.unitType == "LITER") {
+                            val valDouble = curStock / 1000.0
+                            if (valDouble % 1.0 == 0.0) "${valDouble.toLong()}" else String.format(java.util.Locale.US, "%.3f", valDouble).dropLastWhile { it == '0' }.removeSuffix(".")
+                        } else {
+                            "$curStock"
+                        }
                         val isExpanded = expandedProductId == product.id
                         Card(
                             onClick = { expandedProductId = if (isExpanded) null else product.id },
@@ -892,7 +898,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
                                         Text(saleText, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
-                                        Text("Stock: $curStock $unitLabel", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = if (curStock.toDouble() <= product.minStockLevel) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("Stock: $formattedStock $unitLabel", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = if (product.minStockLevel > 0.0 && curStock.toDouble() <= product.minStockLevel) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
 
@@ -904,10 +910,11 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text("Purchase: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
-                                        val margin = if (product.salePriceMinorUnits > 0L) {
-                                            ((product.salePriceMinorUnits - product.purchasePriceMinorUnits).toDouble() / product.salePriceMinorUnits * 100).toInt()
-                                        } else 0
-                                        Text("Margin: $margin%", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF059669))
+                                        val marginText = if (product.salePriceMinorUnits > 0L) {
+                                            val m = Math.round((product.salePriceMinorUnits - product.purchasePriceMinorUnits).toDouble() / product.salePriceMinorUnits * 100).toInt()
+                                            "Margin: $m%"
+                                        } else "Margin: N/A"
+                                        Text(marginText, fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF059669))
                                     }
 
                                     if (!product.barcode.isNullOrBlank()) {
@@ -949,8 +956,6 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
         } else {
             Row(modifier = Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 Column(modifier = Modifier.weight(1.2f).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    LowStockAlertsBanner(lowStockProducts)
-                    
                     // Bulk Import / Template Export Card (Tablet Layout)
                     Card(
                         shape = RoundedCornerShape(14.dp),
@@ -1075,7 +1080,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             OutlinedTextField(
                                 value = minStockLevel,
                                 onValueChange = { minStockLevel = it },
-                                label = { Text("Min Stock Level (Alerts)") },
+                                label = { Text("Low Stock Alert Threshold (Optional)") },
+                                placeholder = { Text("0 = No alert") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth(),
@@ -1119,8 +1125,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     message = "Product name cannot be empty"
                                 } else if (!isSubmitting) {
                                     isSubmitting = true
-                                    val purVal = ((purchasePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
-                                    val saleVal = ((salePrice.toDoubleOrNull() ?: 0.0) * 100).toLong()
+                                    val purVal = CheckoutMath.rupeesToMinorUnits(purchasePrice.toDoubleOrNull() ?: 0.0)
+                                    val saleVal = CheckoutMath.rupeesToMinorUnits(salePrice.toDoubleOrNull() ?: 0.0)
                                     val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
                                     viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
                                         isSubmitting = false
@@ -1203,7 +1209,13 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                             Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
-                                            Text("Stock: $curStock $unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                            val formattedStockTablet = if (product.unitType == "KG" || product.unitType == "LITER") {
+                                                val valDouble = curStock / 1000.0
+                                                if (valDouble % 1.0 == 0.0) "${valDouble.toLong()}" else String.format(java.util.Locale.US, "%.3f", valDouble).dropLastWhile { it == '0' }.removeSuffix(".")
+                                            } else {
+                                                "$curStock"
+                                            }
+                                            Text("Stock: $formattedStockTablet $unitLabel • Sale: $saleText • Pur: $purText", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                         }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             IconButton(onClick = { adjustingStockProduct = product }) {
@@ -1338,7 +1350,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                     val trimmed = name.trim()
                                     if (trimmed.isNotBlank() && !isSubmitting) {
                                         isSubmitting = true
-                                        val initialDebtVal = ((initialDebtText.toDoubleOrNull() ?: 0.0) * 100).toLong()
+                                        val initialDebtVal = CheckoutMath.rupeesToMinorUnits(initialDebtText.toDoubleOrNull() ?: 0.0)
                                         viewModel.addCustomer(
                                             name = trimmed,
                                             phone = phone.trim().takeIf { it.isNotBlank() },
@@ -1511,7 +1523,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                                 val trimmed = name.trim()
                                 if (trimmed.isNotBlank() && !isSubmitting) {
                                     isSubmitting = true
-                                    val initialDebtVal = ((initialDebtText.toDoubleOrNull() ?: 0.0) * 100).toLong()
+                                    val initialDebtVal = CheckoutMath.rupeesToMinorUnits(initialDebtText.toDoubleOrNull() ?: 0.0)
                                     viewModel.addCustomer(
                                         name = trimmed,
                                         phone = phone.trim().takeIf { it.isNotBlank() },
@@ -2121,7 +2133,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                                     val amountDouble = amountText.toDoubleOrNull()
                                     if (trimmed.isNotBlank() && amountDouble != null && !isSubmitting) {
                                         isSubmitting = true
-                                        val minorUnits = (amountDouble * 100).toLong()
+                                        val minorUnits = CheckoutMath.rupeesToMinorUnits(amountDouble)
                                         viewModel.addExpense(minorUnits, trimmed, onSuccess = {
                                             isSubmitting = false
                                             description = ""
@@ -2229,7 +2241,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                                 val amountDouble = amountText.toDoubleOrNull()
                                 if (trimmed.isNotBlank() && amountDouble != null && !isSubmitting) {
                                     isSubmitting = true
-                                    val minorUnits = (amountDouble * 100).toLong()
+                                    val minorUnits = CheckoutMath.rupeesToMinorUnits(amountDouble)
                                     viewModel.addExpense(minorUnits, trimmed, onSuccess = {
                                         isSubmitting = false
                                         description = ""
@@ -2475,7 +2487,7 @@ fun CustomerCreditDetailDialog(
                                     enabled = !isActionSubmitting,
                                     onClick = {
                                         if (isActionSubmitting) return@Button
-                                        val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        val amtMinor = amountText.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }
                                         if (amtMinor != null && amtMinor > 0 && reasonText.isNotBlank()) {
                                             isActionSubmitting = true
                                             viewModel.addCustomerCredit(customer.id, amtMinor, reasonText, onSuccess = {
@@ -2527,7 +2539,7 @@ fun CustomerCreditDetailDialog(
                                     enabled = !isActionSubmitting,
                                     onClick = {
                                         if (isActionSubmitting) return@Button
-                                        val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        val amtMinor = amountText.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }
                                         if (amtMinor != null && amtMinor > 0) {
                                             isActionSubmitting = true
                                             val reasonString = "Payment Received" + if (reasonText.isNotBlank()) " - $reasonText" else ""
@@ -2573,7 +2585,7 @@ fun CustomerCreditDetailDialog(
                                     enabled = !isActionSubmitting,
                                     onClick = {
                                         if (isActionSubmitting) return@Button
-                                        val limitMinor = limitText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        val limitMinor = limitText.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }
                                         if (limitMinor != null && limitMinor >= 0) {
                                             isActionSubmitting = true
                                             viewModel.updateCustomerCreditLimit(customer.id, limitMinor, onSuccess = {
@@ -2811,7 +2823,7 @@ fun SupplierCreditDetailDialog(
                                     enabled = !isActionSubmitting,
                                     onClick = {
                                         if (isActionSubmitting) return@Button
-                                        val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        val amtMinor = amountText.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }
                                         val days = repaymentDaysText.toLongOrNull() ?: 30L
                                         if (amtMinor != null && amtMinor > 0 && termsText.isNotBlank()) {
                                             isActionSubmitting = true
@@ -2866,7 +2878,7 @@ fun SupplierCreditDetailDialog(
                                     enabled = !isActionSubmitting,
                                     onClick = {
                                         if (isActionSubmitting) return@Button
-                                        val amtMinor = amountText.toDoubleOrNull()?.let { (it * 100).toLong() }
+                                        val amtMinor = amountText.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }
                                         if (amtMinor != null && amtMinor > 0) {
                                             isActionSubmitting = true
                                             val termString = "Repayment Paid" + if (termsText.isNotBlank()) " - $termsText" else ""
@@ -2916,8 +2928,9 @@ fun SupplierCreditDetailDialog(
                             sb.append("TRANSACTION HISTORY:\n\n")
                             
                             ledger.reversed().forEach { entry ->
-                                val sign = if (entry.creditMinorUnits > 0) "[PURCHASE/CREDIT RECEIVED]" else "[PAYMENT MADE]"
-                                val amt = if (entry.creditMinorUnits > 0) entry.creditMinorUnits else entry.debitMinorUnits
+                                val isPurchase = entry.debitMinorUnits > 0
+                                val sign = if (isPurchase) "[PURCHASE/CREDIT RECEIVED]" else "[PAYMENT MADE]"
+                                val amt = if (isPurchase) entry.debitMinorUnits else entry.creditMinorUnits
                                 sb.append("${df.format(Date(entry.dateEpochMs))}\n")
                                 sb.append("  Type: $sign\n")
                                 sb.append("  Amt: ${Money(amt)}\n")
@@ -2940,8 +2953,8 @@ fun SupplierCreditDetailDialog(
                 } else {
                     ledger.forEach { entry ->
                         val df = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
-                        val isCredit = entry.creditMinorUnits > 0
-                        val amt = if (isCredit) entry.creditMinorUnits else entry.debitMinorUnits
+                        val isPurchase = entry.debitMinorUnits > 0
+                        val amt = if (isPurchase) entry.debitMinorUnits else entry.creditMinorUnits
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -2952,10 +2965,10 @@ fun SupplierCreditDetailDialog(
                                     Text(entry.description, fontWeight = FontWeight.SemiBold, fontSize = 13.sp, modifier = Modifier.weight(1f))
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                                         Text(
-                                            text = if (isCredit) "+${Money(amt)}" else "-${Money(amt)}",
+                                            text = if (isPurchase) "+${Money(amt)}" else "-${Money(amt)}",
                                             fontWeight = FontWeight.Bold,
                                             fontSize = 13.sp,
-                                            color = if (isCredit) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                            color = if (isPurchase) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
                                         )
                                         if (!entry.description.startsWith("Purchase") && !entry.description.startsWith("Order #")) {
                                             IconButton(
@@ -3326,7 +3339,7 @@ fun ProductEditDialog(
     var salePrice by remember { mutableStateOf(String.format(java.util.Locale.US, "%.2f", product.salePriceMinorUnits / 100.0)) }
     var unitType by remember { mutableStateOf(product.unitType) }
     var barcode by remember { mutableStateOf(product.barcode ?: "") }
-    var minStockLevel by remember { mutableStateOf(product.minStockLevel.toString()) }
+    var minStockLevel by remember { mutableStateOf(if (product.minStockLevel > 0.0) product.minStockLevel.toString() else "") }
     
     var catExpanded by remember { mutableStateOf(false) }
     var unitExpanded by remember { mutableStateOf(false) }
@@ -3433,17 +3446,18 @@ fun ProductEditDialog(
                     shape = RoundedCornerShape(12.dp),
                     enabled = !isSubmitting
                 )
-
+                
                 OutlinedTextField(
                     value = minStockLevel,
                     onValueChange = { minStockLevel = it },
-                    label = { Text("Min Stock Level (Alerts)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    label = { Text("Low Stock Alert Threshold (Optional)") },
+                    placeholder = { Text("0 = No alert") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     enabled = !isSubmitting
                 )
-                
+
                 ExposedDropdownMenuBox(
                     expanded = unitExpanded,
                     onExpandedChange = { if (!isSubmitting) unitExpanded = it }
@@ -3484,8 +3498,8 @@ fun ProductEditDialog(
                 enabled = !isSubmitting,
                 onClick = {
                     if (isSubmitting) return@Button
-                    val pPrice = purchasePrice.toDoubleOrNull()?.let { (it * 100).toLong() }
-                    val sPrice = salePrice.toDoubleOrNull()?.let { (it * 100).toLong() }
+                    val pPrice = purchasePrice.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }
+                    val sPrice = salePrice.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }
                     val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
                     if (name.isBlank() || selectedCategoryId.isBlank() || pPrice == null || sPrice == null) {
                         error = "Please fill in all fields correctly"
@@ -3758,7 +3772,7 @@ fun ExpenseEditDialog(
                 enabled = !isSubmitting,
                 onClick = {
                     if (isSubmitting) return@Button
-                    val amt = amount.toDoubleOrNull()?.let { (it * 100).toLong() }
+                    val amt = amount.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }
                     if (amt == null || description.isBlank()) {
                         error = "Please fill in all fields correctly"
                     } else {
@@ -3797,7 +3811,7 @@ fun ExpenseEditDialog(
 
 @Composable
 fun LowStockAlertsBanner(lowStockProducts: List<com.kadaikutty.pos.core.database.LowStockRow>) {
-    if (lowStockProducts.isEmpty()) return
+    return
     
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -3807,17 +3821,27 @@ fun LowStockAlertsBanner(lowStockProducts: List<com.kadaikutty.pos.core.database
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Text(
-                text = "Low Stock Alerts",
+                text = "Low Stock Alerts (${lowStockProducts.size} Items)",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onErrorContainer,
                 fontWeight = FontWeight.Bold
             )
             Spacer(modifier = Modifier.height(8.dp))
-            lowStockProducts.forEach { item ->
+            val displayList = lowStockProducts.take(8)
+            displayList.forEach { item ->
                 Text(
-                    text = "• ${item.productName}: ${item.currentStock} remaining (Min: ${item.minStockLevel})",
+                    text = "• ${item.productName}: ${item.currentStock} remaining (Threshold: ${item.minStockLevel})",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer
+                )
+            }
+            if (lowStockProducts.size > 8) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = "+ ${lowStockProducts.size - 8} more items needing restock",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+                    fontWeight = FontWeight.SemiBold
                 )
             }
         }

@@ -1,5 +1,6 @@
 package com.kadaikutty.pos.core.backup
 
+import com.kadaikutty.pos.core.backup.domain.BackupResult
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -97,5 +98,13 @@ class BackupManagerLogicTest {
         assertTrue(order.indexOf("sales") < order.indexOf("sale_items"))
         assertTrue(order.indexOf("purchases") < order.indexOf("purchase_items"))
         assertTrue(order.indexOf("products") < order.indexOf("sale_items"))
+    }
+
+    @Test
+    fun `backup success result carries the schema version used to create it`() {
+        val result = BackupResult.Success(zipBytes = byteArrayOf(1, 2, 3), schemaVersion = 22)
+
+        assertEquals(22, result.schemaVersion)
+        assertEquals(3, result.zipBytes.size)
     }
 }

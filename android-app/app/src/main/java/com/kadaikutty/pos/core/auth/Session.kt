@@ -7,6 +7,7 @@ data class Session(
     val displayName: String,
     val permissions: Set<Permission>,
     val accessToken: String? = null,
+    val refreshToken: String? = null,
     val companyId: String,
     val role: String,
     val sessionToken: String? = null,
@@ -27,7 +28,7 @@ interface AuthRepository {
 
     // Registration Flow (OTP)
     fun sendRegistrationOtp(mobileNumber: String, activity: android.app.Activity, onCodeSent: (String) -> Unit, onVerificationFailed: (String) -> Unit)
-    suspend fun verifyRegistrationOtpAndRegister(verificationId: String, otp: String, mobileNumber: String, password: CharArray, ownerName: String, businessName: String): RegisterResult
+    suspend fun verifyRegistrationOtpAndRegister(verificationId: String, otp: String, mobileNumber: String, password: CharArray, ownerName: String, businessName: String, isCloudTier: Boolean = true): RegisterResult
 
     // Password Recovery Flow
     fun sendPasswordResetOtp(mobileNumber: String, activity: android.app.Activity, onCodeSent: (String) -> Unit, onVerificationFailed: (String) -> Unit)

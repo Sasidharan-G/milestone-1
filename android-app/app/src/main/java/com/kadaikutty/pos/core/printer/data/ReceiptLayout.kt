@@ -25,7 +25,7 @@ object ReceiptLayout {
     fun columns(left: String, right: String, width: Int): List<String> {
         val l = wrap(left, width)
         val r = wrap(right, width)
-        return if (l.size == 1 && r.size == 1 && l[0].length + r[0].length < width) {
+        return if (l.size == 1 && r.size == 1 && l[0].length + r[0].length <= width) {
             listOf(l[0] + " ".repeat(width - l[0].length - r[0].length) + r[0])
         } else l + r.map { it.padStart(width) }
     }

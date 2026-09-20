@@ -117,7 +117,8 @@ fun LoginScreenContent(
                 OutlinedTextField(
                     value = state.password,
                     onValueChange = { viewModel.updatePassword(it) },
-                    label = { Text(stringResource(com.kadaikutty.pos.R.string.password), color = Color.White.copy(alpha = 0.8f)) },
+                    label = { Text("Password (6-Digit PIN)", color = Color.White.copy(alpha = 0.8f)) },
+                    placeholder = { Text("Enter 6-digit PIN or existing password", color = Color.White.copy(alpha = 0.5f)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     trailingIcon = {
                         if (state.password.isNotEmpty()) {
@@ -132,7 +133,7 @@ fun LoginScreenContent(
                         }
                     },
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     shape = RoundedCornerShape(percent = 50),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = Color.White,
@@ -337,6 +338,7 @@ fun LoginScreenContent(
                                                 masterResetVerificationId = vId
                                                 masterResetTargetPhone = targetPhone
                                                 showMasterPinDialog = false
+                                                enteredMasterPin = ""
                                                 showMasterOtpResetDialog = true
                                             },
                                             onError = { err ->
@@ -511,12 +513,13 @@ fun LoginScreenContent(
                 properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)
             ) {
                 Surface(
-                    shape = RoundedCornerShape(24.dp),
+                    shape = RoundedCornerShape(28.dp),
                     color = Color(0xFF5C151A),
-                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.25f)),
+                    border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.35f)),
+                    shadowElevation = 24.dp,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .widthIn(max = 460.dp)
+                        .widthIn(max = 440.dp)
                         .padding(horizontal = 16.dp)
                 ) {
                     Column(
@@ -526,22 +529,6 @@ fun LoginScreenContent(
                             .padding(bottom = 20.dp),
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 14.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text("Reset Password / PIN", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            IconButton(onClick = { viewModel.dismissResetDialog() }, modifier = Modifier.size(28.dp)) {
-                                Icon(Icons.Default.Close, contentDescription = "Close", tint = Color.White.copy(alpha = 0.8f))
-                            }
-                        }
-
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.15f))
-                        Spacer(modifier = Modifier.height(8.dp))
-
                         com.kadaikutty.pos.core.ui.otp.OrbitOtpVerificationView(
                             otpLength = 6,
                             otpValue = state.resetOtp,
@@ -554,6 +541,7 @@ fun LoginScreenContent(
                                     }, onError = { err -> message = "" })
                                 }
                             },
+                            onCloseClick = { viewModel.dismissResetDialog() },
                             isLoading = state.loading,
                             errorMessage = state.error,
                             showVerifyButton = false

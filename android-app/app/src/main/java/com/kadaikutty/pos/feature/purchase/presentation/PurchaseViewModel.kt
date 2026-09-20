@@ -12,7 +12,6 @@ import com.kadaikutty.pos.feature.masters.data.SupplierEntity
 import com.kadaikutty.pos.feature.masters.data.ProductEntity
 import com.kadaikutty.pos.feature.purchase.data.PurchaseEntity
 import com.kadaikutty.pos.feature.purchase.data.PurchaseItemEntity
-import com.kadaikutty.pos.core.preferences.AppPreferences
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -32,7 +31,6 @@ import javax.inject.Inject
 class PurchaseViewModel @Inject constructor(
     private val database: BillingDatabase,
     private val purchaseRepository: PurchaseRepository,
-    private val appPreferences: AppPreferences,
     private val sessionStore: SessionStore
 ) : ViewModel() {
 
@@ -67,9 +65,6 @@ class PurchaseViewModel @Inject constructor(
             val companyId = session?.companyId ?: ""
             purchaseRepository.getStockBalances(companyId)
         }
-
-    val geminiApiKey: StateFlow<String?> = appPreferences.geminiApi
-        .stateIn(viewModelScope, SharingStarted.Lazily, null)
 
     private val _selectedSupplierId = MutableStateFlow<String?>(null)
 

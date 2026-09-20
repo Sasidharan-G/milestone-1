@@ -53,7 +53,7 @@ import com.kadaikutty.pos.feature.billing.data.AuditLogDao
         AuditLogEntity::class,
         LocalOperationEntity::class
     ],
-    version = 22,
+    version = 23,
     exportSchema = true
 )
 @TypeConverters(SyncStatusConverter::class)

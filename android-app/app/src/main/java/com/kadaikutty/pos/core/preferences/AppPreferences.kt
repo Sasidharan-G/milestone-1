@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.edit
 import kotlinx.coroutines.flow.Flow
@@ -24,13 +25,6 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             SavedPrinter(item.getString("type"), item.getString("deviceId"), item.getInt("paperWidth"))
         }
     } catch (_: org.json.JSONException) { emptyList() }
-    private val onboardingCompleted = booleanPreferencesKey("onboarding_completed")
-    val isOnboardingCompleted: Flow<Boolean> = dataStore.data.map { it[onboardingCompleted] ?: false }
-    suspend fun markOnboardingCompleted() { dataStore.edit { it[onboardingCompleted] = true } }
-
-    private val devicePrefixKey = stringPreferencesKey("device_prefix")
-    val devicePrefix: Flow<String?> = dataStore.data.map { it[devicePrefixKey] }
-    suspend fun saveDevicePrefix(prefix: String) { dataStore.edit { it[devicePrefixKey] = prefix } }
 
     private val printerTypeKey = stringPreferencesKey("printer_type")
     val printerType: Flow<String?> = dataStore.data.map { it[printerTypeKey] }
@@ -44,15 +38,8 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     private val autoPrintReceiptKey = booleanPreferencesKey("auto_print_receipt")
     val autoPrintReceipt: Flow<Boolean> = dataStore.data.map { it[autoPrintReceiptKey] ?: false }
 
-    private val allowNegativeStockKey = booleanPreferencesKey("allow_negative_stock")
-    val allowNegativeStock: Flow<Boolean> = dataStore.data.map { it[allowNegativeStockKey] ?: true }
-
     suspend fun saveAutoPrintReceipt(enabled: Boolean) {
         dataStore.edit { it[autoPrintReceiptKey] = enabled }
-    }
-
-    suspend fun saveAllowNegativeStock(enabled: Boolean) {
-        dataStore.edit { it[allowNegativeStockKey] = enabled }
     }
 
     suspend fun savePrinterSettings(type: String, deviceId: String, paperWidth: Int) {
@@ -79,32 +66,6 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     suspend fun saveLayoutMode(mode: String) {
         dataStore.edit {
             it[layoutModeKey] = mode
-        }
-    }
-
-    private val googleAccountKey = stringPreferencesKey("google_account")
-    val googleAccount: Flow<String?> = dataStore.data.map { it[googleAccountKey] }
-
-    suspend fun saveGoogleAccount(email: String?) {
-        dataStore.edit {
-            if (email != null) {
-                it[googleAccountKey] = email
-            } else {
-                it.remove(googleAccountKey)
-            }
-        }
-    }
-
-    private val geminiApiKey = stringPreferencesKey("gemini_api_key")
-    val geminiApi: Flow<String?> = dataStore.data.map { it[geminiApiKey] }
-
-    suspend fun saveGeminiApiKey(key: String?) {
-        dataStore.edit {
-            if (key != null) {
-                it[geminiApiKey] = key
-            } else {
-                it.remove(geminiApiKey)
-            }
         }
     }
 
@@ -162,6 +123,18 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         }
     }
 
+    suspend fun clearShopDetails() {
+        dataStore.edit {
+            it.remove(shopNameKey)
+            it.remove(ownerNameKey)
+            it.remove(gstNumberKey)
+            it.remove(shopAddressKey)
+            it.remove(shopPhoneKey)
+            it.remove(shopEmailKey)
+            it.remove(shopLogoPathKey)
+        }
+    }
+
     private val installationDeviceIdKey = stringPreferencesKey("installation_device_id")
     val installationDeviceId: Flow<String?> = dataStore.data.map { it[installationDeviceIdKey] }
 
@@ -172,6 +145,29 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             it[installationDeviceIdKey] = id
         }
         return id
+    }
+
+    private val lastBackupAtEpochMsKey = longPreferencesKey("last_backup_at_epoch_ms")
+    val lastBackupAtEpochMs: Flow<Long?> = dataStore.data.map { it[lastBackupAtEpochMsKey] }
+
+    suspend fun saveLastBackupTimestamp(epochMs: Long) {
+        dataStore.edit { it[lastBackupAtEpochMsKey] = epochMs }
+    }
+
+    private val liveBackupFolderUriKey = stringPreferencesKey("live_backup_folder_uri")
+    val liveBackupFolderUri: Flow<String?> = dataStore.data.map { it[liveBackupFolderUriKey] }
+
+    suspend fun saveLiveBackupFolderUri(uri: String?) {
+        dataStore.edit {
+            if (uri.isNullOrBlank()) it.remove(liveBackupFolderUriKey) else it[liveBackupFolderUriKey] = uri
+        }
+    }
+
+    private val liveBackupLastWriteAtEpochMsKey = longPreferencesKey("live_backup_last_write_at_epoch_ms")
+    val liveBackupLastWriteAtEpochMs: Flow<Long?> = dataStore.data.map { it[liveBackupLastWriteAtEpochMsKey] }
+
+    suspend fun saveLiveBackupLastWriteTimestamp(epochMs: Long) {
+        dataStore.edit { it[liveBackupLastWriteAtEpochMsKey] = epochMs }
     }
 
     fun getDeviceModelName(): String {

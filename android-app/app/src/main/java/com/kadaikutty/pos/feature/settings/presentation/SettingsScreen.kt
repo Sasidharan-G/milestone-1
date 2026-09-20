@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 enum class SettingsCategory(val title: String, val icon: ImageVector) {
     SHOP_PROFILE("Store Profile", Icons.Default.AccountBox),
@@ -84,6 +85,9 @@ fun SettingsScreen(
     val requireRestart by viewModel.requireRestart.collectAsState()
     val biometricAuthPending by viewModel.biometricAuthPending.collectAsState()
     val activeSession by viewModel.activeSession.collectAsState()
+    val liveBackupFolderUri by viewModel.liveBackupFolderUri.collectAsState()
+    val liveBackupLastWriteAtEpochMs by viewModel.liveBackupLastWriteAtEpochMs.collectAsState()
+    val canUndoLastRestore by viewModel.canUndoLastRestore.collectAsState()
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var selectedType by remember { mutableStateOf("Bluetooth") }
@@ -118,14 +122,6 @@ fun SettingsScreen(
         selectedPaperWidth = printerPaperWidth
     }
 
-    val createBackupLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("application/zip")
-    ) { uri ->
-        if (uri != null) {
-            viewModel.runBackup(uri)
-        }
-    }
-
     val restoreLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri ->
@@ -136,11 +132,29 @@ fun SettingsScreen(
         }
     }
 
+    // Restores from an arbitrary folder (e.g. shared from another phone) without adopting it as
+    // this device's Auto Backup folder — separate from liveBackupFolderPicker below, which does adopt it.
+    val restoreFromFolderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.restoreFromLiveBackup(uri) { }
+        }
+    }
+
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestMultiplePermissions()
     ) { permissions ->
         if (permissions.values.all { it }) {
             viewModel.loadPairedBluetoothDevices()
+        }
+    }
+
+    val liveBackupFolderPicker = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocumentTree()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.setupLiveBackup(uri) { }
         }
     }
 
@@ -160,17 +174,23 @@ fun SettingsScreen(
     // Handle biometric authentication callbacks
     LaunchedEffect(biometricAuthPending) {
         biometricAuthPending?.let { onAuthenticated ->
-            BiometricAuthenticator.authenticate(
-                activity = context as androidx.fragment.app.FragmentActivity,
-                onSuccess = {
-                    onAuthenticated()
-                    viewModel.clearBiometricAuthPending()
-                },
-                onError = { error ->
-                    viewModel.clearBiometricAuthPending()
-                    viewModel.onBiometricAuthFailed(error)
-                }
-            )
+            val activity = context as? androidx.fragment.app.FragmentActivity
+            if (activity != null && BiometricAuthenticator.isBiometricAvailable(activity)) {
+                BiometricAuthenticator.authenticate(
+                    activity = activity,
+                    onSuccess = {
+                        onAuthenticated()
+                        viewModel.clearBiometricAuthPending()
+                    },
+                    onError = { error ->
+                        viewModel.clearBiometricAuthPending()
+                        viewModel.onBiometricAuthFailed(error)
+                    }
+                )
+            } else {
+                onAuthenticated()
+                viewModel.clearBiometricAuthPending()
+            }
         }
     }
 
@@ -244,9 +264,9 @@ fun SettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("Cloud Backup & Sync", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Cloud Sync Status", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text(
-                            "Securely backup and synchronize your store's transaction database to cloud storage.",
+                            "Your store's transaction database synchronizes with the cloud automatically. For backup/restore, see \"Database Maintenance & Backup\" below.",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
@@ -263,94 +283,12 @@ fun SettingsScreen(
                                     Text(currentSession.displayName, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                                 }
                             }
-
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                var showRestoreDialog by remember { mutableStateOf(false) }
-
-                                Button(
-                                    onClick = {
-                                        viewModel.forceSyncNow()
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Backup Now", fontWeight = FontWeight.Bold)
-                                }
-
-                                OutlinedButton(
-                                    onClick = {
-                                        showRestoreDialog = true
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(8.dp)
-                                ) {
-                                    Text("Restore", fontWeight = FontWeight.Bold)
-                                }
-
-                                if (showRestoreDialog) {
-                                    AlertDialog(
-                                        onDismissRequest = { showRestoreDialog = false },
-                                        title = { Text("Restore from Cloud?") },
-                                        text = {
-                                            Text("Are you sure you want to restore your data from cloud backup? This will replace your local database with cloud records.")
-                                        },
-                                        confirmButton = {
-                                            TextButton(onClick = { 
-                                                showRestoreDialog = false
-                                                viewModel.runRestoreFromCloud { } 
-                                            }) {
-                                                Text("Yes, Restore", color = MaterialTheme.colorScheme.error)
-                                            }
-                                        },
-                                        dismissButton = {
-                                            TextButton(onClick = { showRestoreDialog = false }) {
-                                                Text("Cancel")
-                                            }
-                                        }
-                                    )
-                                }
-                            }
-
-                            if (isRestoreRunning) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Row(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                    horizontalArrangement = Arrangement.Center,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                                    Spacer(modifier = Modifier.width(8.dp))
-                                    Text("Restoring data from cloud...", fontSize = 13.sp, fontWeight = FontWeight.Medium)
-                                }
-                            }
-
-                            if (!restoreStatus.isNullOrBlank()) {
-                                Spacer(modifier = Modifier.height(8.dp))
-                                Card(
-                                    colors = CardDefaults.cardColors(
-                                        containerColor = if (restoreStatus!!.contains("failed", ignoreCase = true) || restoreStatus!!.contains("error", ignoreCase = true) || restoreStatus!!.contains("cancelled", ignoreCase = true))
-                                            MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.7f)
-                                        else MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                                    ),
-                                    modifier = Modifier.fillMaxWidth()
-                                ) {
-                                    Text(
-                                        text = restoreStatus!!,
-                                        modifier = Modifier.padding(10.dp),
-                                        fontSize = 12.sp,
-                                        fontWeight = FontWeight.Medium
-                                    )
-                                }
-                            }
                         } else {
                             Box(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("Offline: Please log in to enable Cloud Backup & Sync.", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                                Text("Offline: Please log in to enable Cloud Sync.", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
                             }
                         }
 
@@ -1266,7 +1204,7 @@ fun SettingsScreen(
 
 
 
-            val dbMaintenanceCard: @Composable (Modifier) -> Unit = { modifier ->
+            val backupCard: @Composable (Modifier) -> Unit = { modifier ->
                 Card(
                     modifier = modifier.border(
                         width = 1.dp,
@@ -1281,97 +1219,292 @@ fun SettingsScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Text("Database Maintenance & Backup", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Text("Backup & Restore", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text(
-                            "Create a local, transaction-safe compressed backup archive of your billing database. You can restore this backup on this or other devices to recover transactions.",
+                            "Turn on Auto Backup once and every change is mirrored automatically. You can also export or restore a backup by hand anytime — no internet needed.",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurface
                         )
 
                         val backupStatus by viewModel.backupStatus.collectAsState()
                         val restoreStatus by viewModel.restoreStatus.collectAsState()
+                        val lastBackupAtEpochMs by viewModel.lastBackupAtEpochMs.collectAsState()
 
-                        var showLocalRestoreDialog by remember { mutableStateOf(false) }
+                        var showRestoreChooserDialog by remember { mutableStateOf(false) }
+                        var showFileRestoreDialog by remember { mutableStateOf(false) }
+                        var showFolderRestoreDialog by remember { mutableStateOf(false) }
+                        var showCloudRestoreDialog by remember { mutableStateOf(false) }
+                        var showLiveRestoreDialog by remember { mutableStateOf(false) }
 
                         var showClearDatabaseDialog by remember { mutableStateOf(false) }
                         var clearCloudOption by remember { mutableStateOf(false) }
 
-                        if (isMobile) {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(
-                                    onClick = {
-                                        createBackupLauncher.launch("billing_backup_${System.currentTimeMillis()}.zip")
-                                    },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Create Backup Archive", fontWeight = FontWeight.Bold)
-                                }
+                        val lastBackupLabel = lastBackupAtEpochMs?.let { epochMs ->
+                            "Last backup: ${android.text.format.DateUtils.getRelativeTimeSpanString(epochMs, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS)}"
+                        } ?: "Last backup: never"
 
-                                Button(
-                                    onClick = { showLocalRestoreDialog = true },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                                ) {
-                                    Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
-                                }
-
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-
-                                OutlinedButton(
-                                    onClick = { showClearDatabaseDialog = true },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                                ) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Reset / Clear Database", fontWeight = FontWeight.Bold)
-                                }
+                        // Auto Backup: set once, mirrors every change automatically (and bootstraps cloud backup too).
+                        if (liveBackupFolderUri.isNullOrBlank()) {
+                            Button(
+                                onClick = { liveBackupFolderPicker.launch(null) },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Enable Auto Backup", fontWeight = FontWeight.Bold)
                             }
                         } else {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Button(
-                                        onClick = {
-                                            createBackupLauncher.launch("billing_backup_${System.currentTimeMillis()}.zip")
-                                        },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(12.dp)
-                                    ) {
-                                        Text("Create Backup Archive", fontWeight = FontWeight.Bold)
-                                    }
-
-                                    Button(
-                                        onClick = { showLocalRestoreDialog = true },
-                                        modifier = Modifier.weight(1f),
-                                        shape = RoundedCornerShape(12.dp),
-                                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary)
-                                    ) {
-                                        Text("Restore Backup Archive", fontWeight = FontWeight.Bold)
-                                    }
-                                }
-
-                                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
-
+                            val lastMirroredLabel = liveBackupLastWriteAtEpochMs?.let { epochMs ->
+                                "Last mirrored: ${android.text.format.DateUtils.getRelativeTimeSpanString(epochMs, System.currentTimeMillis(), android.text.format.DateUtils.MINUTE_IN_MILLIS)}"
+                            } ?: "Set up, waiting for the first change"
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                                Text("Auto Backup active — $lastMirroredLabel", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                            }
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 OutlinedButton(
-                                    onClick = { showClearDatabaseDialog = true },
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp),
-                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                                    onClick = { liveBackupFolderPicker.launch(null) },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
                                 ) {
-                                    Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
-                                    Spacer(Modifier.width(8.dp))
-                                    Text("Reset / Clear Database", fontWeight = FontWeight.Bold)
+                                    Text("Change Folder", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { showLiveRestoreDialog = true },
+                                    enabled = !isRestoreRunning,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Restore This Folder", fontWeight = FontWeight.Bold)
                                 }
                             }
                         }
 
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        // Manual, portable path: works fully offline, one file, safe to move to a new phone.
+                        if (isMobile) {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = { viewModel.exportBackupNow() },
+                                    enabled = !isBackupRunning,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Export Backup Now", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { showRestoreChooserDialog = true },
+                                    enabled = !isRestoreRunning,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Restore Backup", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = { viewModel.exportBackupNow() },
+                                    enabled = !isBackupRunning,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Export Backup Now", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { showRestoreChooserDialog = true },
+                                    enabled = !isRestoreRunning,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Restore Backup", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+
+                        Text(lastBackupLabel, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+
+                        // Cloud: off-site protection against a lost, stolen, or damaged phone. Hidden
+                        // entirely (not just disabled) for an offline-tier account — there is nothing
+                        // cloud-related this account can ever do, so the buttons simply don't exist.
+                        val hasCloudAccess by viewModel.hasCloudAccess.collectAsState()
+                        if (hasCloudAccess) {
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        if (isMobile) {
+                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = { viewModel.runCloudBackup() },
+                                    enabled = session != null && !isBackupRunning,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Back Up to Cloud", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { showCloudRestoreDialog = true },
+                                    enabled = session != null && !isRestoreRunning,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Restore Latest Cloud Backup", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        } else {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Button(
+                                    onClick = { viewModel.runCloudBackup() },
+                                    enabled = session != null && !isBackupRunning,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Back Up to Cloud", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { showCloudRestoreDialog = true },
+                                    enabled = session != null && !isRestoreRunning,
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Text("Restore Latest Cloud Backup", fontWeight = FontWeight.Bold)
+                                }
+                            }
+                        }
+                        }
+
+                        HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+
+                        OutlinedButton(
+                            onClick = { showClearDatabaseDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                        ) {
+                            Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Reset / Clear Database", fontWeight = FontWeight.Bold)
+                        }
+
+                        if (showRestoreChooserDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showRestoreChooserDialog = false },
+                                title = { Text("Restore From") },
+                                text = {
+                                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        TextButton(
+                                            onClick = {
+                                                showRestoreChooserDialog = false
+                                                showFileRestoreDialog = true
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("A Backup File (.zip)", modifier = Modifier.fillMaxWidth())
+                                        }
+                                        TextButton(
+                                            onClick = {
+                                                showRestoreChooserDialog = false
+                                                showFolderRestoreDialog = true
+                                            },
+                                            modifier = Modifier.fillMaxWidth()
+                                        ) {
+                                            Text("An Auto-Backup Folder", modifier = Modifier.fillMaxWidth())
+                                        }
+                                    }
+                                },
+                                confirmButton = {},
+                                dismissButton = {
+                                    TextButton(onClick = { showRestoreChooserDialog = false }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            )
+                        }
+
+                        if (showFileRestoreDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showFileRestoreDialog = false },
+                                title = { Text("Restore from a Backup File?") },
+                                text = { Text("Are you sure you want to restore from a backup .zip file? This will completely overwrite your current database.") },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showFileRestoreDialog = false
+                                        restoreLauncher.launch("application/zip")
+                                    }) {
+                                        Text("Yes, Restore", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showFileRestoreDialog = false }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            )
+                        }
+
+                        if (showFolderRestoreDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showFolderRestoreDialog = false },
+                                title = { Text("Restore from an Auto-Backup Folder?") },
+                                text = { Text("Pick a folder that has an Auto Backup in it (from this or another phone). This replays its baseline and change history, completely overwriting your current local database.") },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showFolderRestoreDialog = false
+                                        restoreFromFolderPicker.launch(null)
+                                    }) {
+                                        Text("Choose Folder", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showFolderRestoreDialog = false }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            )
+                        }
+
+                        if (showLiveRestoreDialog) {
+                            AlertDialog(
+                                onDismissRequest = { showLiveRestoreDialog = false },
+                                title = { Text("Restore from This Folder?") },
+                                text = { Text("This replays your Auto Backup folder's baseline and change history, completely overwriting your current local database.") },
+                                confirmButton = {
+                                    TextButton(onClick = {
+                                        showLiveRestoreDialog = false
+                                        viewModel.restoreFromLiveBackup { }
+                                    }) {
+                                        Text("Yes, Restore", color = MaterialTheme.colorScheme.error)
+                                    }
+                                },
+                                dismissButton = {
+                                    TextButton(onClick = { showLiveRestoreDialog = false }) {
+                                        Text("Cancel")
+                                    }
+                                }
+                            )
+                        }
+
                         if (showClearDatabaseDialog) {
+                            var hasRecentBackupForClear by remember { mutableStateOf<Boolean?>(null) }
+                            var isCheckingSafetyBackup by remember { mutableStateOf(false) }
+                            val coroutineScope = rememberCoroutineScope()
+
+                            fun recheckSafetyBackup() {
+                                isCheckingSafetyBackup = true
+                                coroutineScope.launch {
+                                    hasRecentBackupForClear = viewModel.hasRecentSafetyBackup()
+                                    isCheckingSafetyBackup = false
+                                }
+                            }
+
+                            LaunchedEffect(clearCloudOption) {
+                                if (clearCloudOption) {
+                                    recheckSafetyBackup()
+                                } else {
+                                    hasRecentBackupForClear = null
+                                }
+                            }
+
+                            val isBlockedByMissingBackup = clearCloudOption && hasRecentBackupForClear == false
+
                             AlertDialog(
                                 onDismissRequest = { showClearDatabaseDialog = false },
                                 title = { Text("Reset Database Records?") },
@@ -1388,17 +1521,47 @@ fun SettingsScreen(
                                             )
                                             Text("Also clear backend cloud sync data", fontSize = 13.sp)
                                         }
+                                        if (clearCloudOption && isCheckingSafetyBackup) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp)
+                                                Text("Checking for a recent backup...", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                            }
+                                        }
+                                        if (isBlockedByMissingBackup) {
+                                            Text(
+                                                "You need a backup less than 3 days old before clearing cloud data.",
+                                                fontSize = 13.sp,
+                                                color = MaterialTheme.colorScheme.error,
+                                                fontWeight = FontWeight.Medium
+                                            )
+                                        }
                                     }
                                 },
                                 confirmButton = {
-                                    TextButton(onClick = {
-                                        showClearDatabaseDialog = false
-                                        viewModel.clearAllDatabase(clearCloudOption) { success ->
-                                            val msg = if (success) "Database cleared successfully!" else "Failed to clear database."
-                                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                    if (isBlockedByMissingBackup) {
+                                        TextButton(
+                                            enabled = !isBackupRunning,
+                                            onClick = {
+                                                viewModel.runCloudBackup { success ->
+                                                    if (success) recheckSafetyBackup()
+                                                }
+                                            }
+                                        ) {
+                                            Text("Back Up to Cloud Now", fontWeight = FontWeight.Bold)
                                         }
-                                    }) {
-                                        Text("Yes, Clear Data", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                    } else {
+                                        TextButton(
+                                            enabled = !isCheckingSafetyBackup,
+                                            onClick = {
+                                                showClearDatabaseDialog = false
+                                                viewModel.clearAllDatabase(clearCloudOption) { success ->
+                                                    val msg = if (success) "Database cleared successfully!" else "Failed to clear database."
+                                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        ) {
+                                            Text("Yes, Clear Data", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold)
+                                        }
                                     }
                                 },
                                 dismissButton = {
@@ -1409,25 +1572,56 @@ fun SettingsScreen(
                             )
                         }
 
-                        if (showLocalRestoreDialog) {
+                        if (showCloudRestoreDialog) {
                             AlertDialog(
-                                onDismissRequest = { showLocalRestoreDialog = false },
-                                title = { Text("Restore Local Backup?") },
-                                text = { Text("Are you sure you want to restore from a local backup file? This will completely overwrite your current database.") },
+                                onDismissRequest = { showCloudRestoreDialog = false },
+                                title = { Text("Restore Latest Cloud Backup?") },
+                                text = { Text("This downloads your most recent cloud backup and completely overwrites your current local database with it.") },
                                 confirmButton = {
                                     TextButton(onClick = {
-                                        showLocalRestoreDialog = false
-                                        restoreLauncher.launch("application/zip")
+                                        showCloudRestoreDialog = false
+                                        viewModel.runCloudRestore { }
                                     }) {
                                         Text("Yes, Restore", color = MaterialTheme.colorScheme.error)
                                     }
                                 },
                                 dismissButton = {
-                                    TextButton(onClick = { showLocalRestoreDialog = false }) {
+                                    TextButton(onClick = { showCloudRestoreDialog = false }) {
                                         Text("Cancel")
                                     }
                                 }
                             )
+                        }
+
+                        if (canUndoLastRestore) {
+                            var showUndoDialog by remember { mutableStateOf(false) }
+                            OutlinedButton(
+                                onClick = { showUndoDialog = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Undo Last Restore", fontWeight = FontWeight.Bold)
+                            }
+                            if (showUndoDialog) {
+                                AlertDialog(
+                                    onDismissRequest = { showUndoDialog = false },
+                                    title = { Text("Undo Last Restore?") },
+                                    text = { Text("This rolls back to the state your database was in immediately before your most recent restore, overwriting anything since.") },
+                                    confirmButton = {
+                                        TextButton(onClick = {
+                                            showUndoDialog = false
+                                            viewModel.undoLastRestore { }
+                                        }) {
+                                            Text("Yes, Undo", color = MaterialTheme.colorScheme.error)
+                                        }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { showUndoDialog = false }) {
+                                            Text("Cancel")
+                                        }
+                                    }
+                                )
+                            }
                         }
 
                         if (!backupStatus.isNullOrBlank() || !restoreStatus.isNullOrBlank()) {
@@ -1476,17 +1670,31 @@ fun SettingsScreen(
                 var inputShopPhone by remember { mutableStateOf("") }
                 var inputShopEmail by remember { mutableStateOf("") }
                 var inputShopLogoPath by remember { mutableStateOf("") }
+                // A delayed DataStore/license refresh must never overwrite text the user is editing.
+                // Once the saved values catch up with this draft, the form resumes normal syncing.
+                var hasPendingShopDetailEdits by remember { mutableStateOf(false) }
 
                 var isProcessingImage by remember { mutableStateOf(false) }
 
                 LaunchedEffect(currentShopName, currentOwnerName, currentGstNumber, currentShopAddress, currentShopPhone, currentShopEmail, currentShopLogoPath) {
-                    inputShopName = currentShopName
-                    inputOwnerName = currentOwnerName
-                    inputGstNumber = currentGstNumber
-                    inputShopAddress = currentShopAddress
-                    inputShopPhone = currentShopPhone
-                    inputShopEmail = currentShopEmail
-                    inputShopLogoPath = currentShopLogoPath
+                    val storedValuesMatchDraft =
+                        currentShopName == inputShopName &&
+                            currentOwnerName == inputOwnerName &&
+                            currentGstNumber == inputGstNumber &&
+                            currentShopAddress == inputShopAddress &&
+                            currentShopPhone == inputShopPhone &&
+                            currentShopEmail == inputShopEmail &&
+                            currentShopLogoPath == inputShopLogoPath
+                    if (!hasPendingShopDetailEdits || storedValuesMatchDraft) {
+                        inputShopName = currentShopName
+                        inputOwnerName = currentOwnerName
+                        inputGstNumber = currentGstNumber
+                        inputShopAddress = currentShopAddress
+                        inputShopPhone = currentShopPhone
+                        inputShopEmail = currentShopEmail
+                        inputShopLogoPath = currentShopLogoPath
+                        hasPendingShopDetailEdits = false
+                    }
                 }
 
                 val logoPickerLauncher = rememberLauncherForActivityResult(
@@ -1507,6 +1715,7 @@ fun SettingsScreen(
                             android.widget.Toast.makeText(context, "Oversized Image: Maximum limit is 5MB!", android.widget.Toast.LENGTH_LONG).show()
                         } else if (res != null) {
                             inputShopLogoPath = res
+                            hasPendingShopDetailEdits = true
                             android.widget.Toast.makeText(context, "Logo processed successfully. Preview below!", android.widget.Toast.LENGTH_SHORT).show()
                         } else {
                             android.widget.Toast.makeText(context, "Image Processing Failure: Failed to load image.", android.widget.Toast.LENGTH_LONG).show()
@@ -1545,7 +1754,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputShopName,
-                            onValueChange = { inputShopName = it },
+                            onValueChange = { inputShopName = it; hasPendingShopDetailEdits = true },
                             label = { Text("Shop Name") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1554,7 +1763,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputOwnerName,
-                            onValueChange = { inputOwnerName = it },
+                            onValueChange = { inputOwnerName = it; hasPendingShopDetailEdits = true },
                             label = { Text("Owner Name") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1563,7 +1772,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputGstNumber,
-                            onValueChange = { inputGstNumber = it },
+                            onValueChange = { inputGstNumber = it; hasPendingShopDetailEdits = true },
                             label = { Text("GST Number") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1572,7 +1781,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputShopAddress,
-                            onValueChange = { inputShopAddress = it },
+                            onValueChange = { inputShopAddress = it; hasPendingShopDetailEdits = true },
                             label = { Text("Shop Address") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = false,
@@ -1582,7 +1791,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputShopPhone,
-                            onValueChange = { inputShopPhone = it },
+                            onValueChange = { inputShopPhone = it; hasPendingShopDetailEdits = true },
                             label = { Text("Shop Phone Number") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1592,7 +1801,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputShopEmail,
-                            onValueChange = { inputShopEmail = it },
+                            onValueChange = { inputShopEmail = it; hasPendingShopDetailEdits = true },
                             label = { Text("Shop Email ID") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1700,6 +1909,7 @@ fun SettingsScreen(
                             TextButton(
                                 onClick = {
                                     inputShopLogoPath = ""
+                                    hasPendingShopDetailEdits = true
                                 },
                                 colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
                             ) {
@@ -1715,9 +1925,15 @@ fun SettingsScreen(
                                 } else if (!isEmailValid) {
                                     android.widget.Toast.makeText(context, "Validation Error: Please enter a valid Email ID!", android.widget.Toast.LENGTH_LONG).show()
                                 } else {
-                                    viewModel.saveShopDetails(inputShopName, inputOwnerName, gstTrimmed, inputShopAddress, inputShopPhone, inputShopEmail, inputShopLogoPath)
-                                    keyboardController?.hide()
-                                    android.widget.Toast.makeText(context, "Shop details saved successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                                    viewModel.saveShopDetails(inputShopName, inputOwnerName, gstTrimmed, inputShopAddress, inputShopPhone, inputShopEmail, inputShopLogoPath) { saved, error ->
+                                        if (saved) {
+                                            hasPendingShopDetailEdits = false
+                                            keyboardController?.hide()
+                                            android.widget.Toast.makeText(context, "Shop details saved and synced to cloud!", android.widget.Toast.LENGTH_SHORT).show()
+                                        } else {
+                                            android.widget.Toast.makeText(context, error ?: "Shop details could not be synced", android.widget.Toast.LENGTH_LONG).show()
+                                        }
+                                    }
                                 }
                             },
                             modifier = Modifier.align(Alignment.End),
@@ -1840,7 +2056,7 @@ fun SettingsScreen(
                             themePreferencesCard(Modifier.fillMaxWidth())
                         }
                         SettingsCategory.MAINTENANCE -> {
-                            dbMaintenanceCard(Modifier.fillMaxWidth())
+                            backupCard(Modifier.fillMaxWidth())
                         }
                         null -> {}
                     }
@@ -1977,9 +2193,9 @@ fun AddUserDialog(
                 // Password / PIN
                 OutlinedTextField(
                     value = password,
-                    onValueChange = { password = it },
-                    label = { Text("Temporary Password / PIN *") },
-                    placeholder = { Text("Min 4 characters") },
+                    onValueChange = { if (it.length <= 6 && it.all { ch -> ch.isDigit() }) password = it },
+                    label = { Text("6-Digit Temporary Password (PIN) *") },
+                    placeholder = { Text("Enter 6-digit numeric PIN") },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(
@@ -1994,7 +2210,7 @@ fun AddUserDialog(
                         }
                     },
                     visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -2065,8 +2281,8 @@ fun AddUserDialog(
                         errorMsg = "Please fill in all mandatory fields"
                     } else if (cleanDigits.length < 10) {
                         errorMsg = "Please enter a valid 10-digit mobile number"
-                    } else if (password.length < 6) {
-                        errorMsg = "Password / PIN must be at least 6 characters"
+                    } else if (password.length != 6 || !password.all { it.isDigit() }) {
+                        errorMsg = "Password / PIN must be exactly 6 numeric digits"
                     } else {
                         isSubmitting = true
                         val pSet = buildSet {
@@ -2274,9 +2490,9 @@ fun EditUserDialog(
                 // Password Reset
                 OutlinedTextField(
                     value = newPassword,
-                    onValueChange = { newPassword = it },
-                    label = { Text("Reset Password / PIN") },
-                    placeholder = { Text("Leave blank to keep current") },
+                    onValueChange = { if (it.length <= 6 && it.all { ch -> ch.isDigit() }) newPassword = it },
+                    label = { Text("Reset 6-Digit Password (PIN)") },
+                    placeholder = { Text("Enter 6-digit PIN or leave blank") },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                     trailingIcon = {
                         IconButton(
@@ -2291,7 +2507,7 @@ fun EditUserDialog(
                         }
                     },
                     visualTransformation = if (showPassword) androidx.compose.ui.text.input.VisualTransformation.None else androidx.compose.ui.text.input.PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),

@@ -52,7 +52,8 @@ interface PurchaseDao {
             p.id as productId, 
             p.name as productName, 
             c.name as categoryName, 
-            COALESCE(SUM(sm.quantityDelta), 0) as currentStock
+            COALESCE(SUM(sm.quantityDelta), 0) as currentStock,
+            p.minStockLevel as minStockLevel
         FROM products p
         INNER JOIN categories c ON p.categoryId = c.id
         LEFT JOIN stock_movements sm ON p.id = sm.productId AND sm.companyId = :companyId
@@ -92,8 +93,8 @@ interface PurchaseDao {
     @Query("DELETE FROM stock_movements WHERE companyId = :companyId AND referenceId = :purchaseId")
     suspend fun deletePurchaseStockMovements(companyId: String, purchaseId: String)
 
-    @Query("DELETE FROM supplier_credits WHERE companyId = :companyId AND referenceId = :termsPattern")
-    suspend fun deleteSupplierCreditsByTerms(companyId: String, termsPattern: String)
+    @Query("DELETE FROM supplier_credits WHERE companyId = :companyId AND (referenceId = :referenceId OR terms LIKE '%' || :referenceId || '%')")
+    suspend fun deleteSupplierCreditsByTerms(companyId: String, referenceId: String)
 
     @Transaction
     suspend fun deletePurchaseCascade(companyId: String, purchaseId: String, orderOrInvoice: String) {

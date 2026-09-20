@@ -7,6 +7,16 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import androidx.activity.compose.setContent
 import androidx.fragment.app.FragmentActivity
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.kadaikutty.pos.core.ui.BillingApp
 import com.kadaikutty.pos.core.security.SecurityShield
 import com.kadaikutty.pos.BuildConfig
@@ -26,7 +36,30 @@ class MainActivity : FragmentActivity() {
         // Enable edge-to-edge layout; system bars appearance will be driven dynamically by theme
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
 
-        setContent { androidx.compose.material3.MaterialTheme { androidx.compose.material3.Text("Opening your shop?") } }
+        setContent {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xFF5C151A)),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                ) {
+                    Text(
+                        text = "Kadaikutty POS",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    CircularProgressIndicator(
+                        color = Color.White,
+                        modifier = Modifier.size(32.dp)
+                    )
+                }
+            }
+        }
         lifecycleScope.launch {
             val failure = withContext(Dispatchers.IO) {
                 try {

@@ -11,12 +11,34 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.first
 
 class SaleRepositoryImpl(
-    private val saleDao: SaleDao,
+    private val tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager?,
     private val syncManager: SyncManager,
     private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
     private val appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences,
-    private val database: BillingDatabase
+    private val fallbackDatabase: BillingDatabase? = null,
+    private val fallbackSaleDao: SaleDao? = null,
 ) : SaleRepository {
+    constructor(
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+        syncManager: SyncManager,
+        sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
+        appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences,
+    ) : this(tenantDatabaseManager, syncManager, sessionStore, appPreferences, null, null)
+
+    constructor(
+        saleDao: SaleDao,
+        syncManager: SyncManager,
+        sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
+        appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences,
+        database: BillingDatabase,
+    ) : this(null, syncManager, sessionStore, appPreferences, database, saleDao)
+
+    private val database: BillingDatabase
+        get() = tenantDatabaseManager?.getDatabase() ?: fallbackDatabase ?: error("No database available")
+
+    private val saleDao: SaleDao
+        get() = tenantDatabaseManager?.getDatabase()?.saleDao() ?: fallbackSaleDao ?: database.saleDao()
+
     override suspend fun save(draft: SaleDraft): AppResult<String> = try {
         val session = sessionStore.activeSession.first() ?: error("Sign in before billing")
         require(Permission.SALE_CREATE in session.permissions && Permission.ACCOUNT_INACTIVE !in session.permissions) { "Sale permission required" }
@@ -58,7 +80,7 @@ class SaleRepositoryImpl(
                 val available = saleDao.stock(company, line.productId) + (oldItems[line.productId]?.quantity ?: 0)
                 require(available >= line.quantity) { "Insufficient stock for ${line.productName}" }
                 val unitCost = database.purchaseDao().getAveragePurchasePrice(company, line.productId) ?: product.purchasePriceMinorUnits.toDouble()
-                val cost = (unitCost * line.quantity / if (line.unitType in listOf("KG", "LITER")) 1000 else 1).toLong()
+                val cost = Math.round(unitCost * line.quantity / if (line.unitType in listOf("KG", "LITER")) 1000.0 else 1.0)
                 SaleItemEntity(company, id, line.productId, line.quantity, line.unitPrice.minorUnits,
                     line.lineTotal.minorUnits, line.discount.minorUnits, line.unitType, line.productName, cost, line.lineTotal.minorUnits - discounts[index])
             }

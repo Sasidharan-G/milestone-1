@@ -391,8 +391,8 @@ class BillingViewModel @Inject constructor(
         val totalRequested = currentInCart + requestedQuantity
         if (totalRequested > com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) return "Quantity exceeds the supported limit"
         return when {
-            available <= 0L -> "$productName stock illa. Available: ${formatStock(available, unitType)}"
-            totalRequested > available -> "$productName-ku enough stock illa. Available: ${formatStock(available, unitType)}, Cart request: ${formatStock(totalRequested, unitType)}"
+            available <= 0L -> "$productName is out of stock!"
+            totalRequested > available -> "$productName is out of stock! Available: ${formatStock(available, unitType)}, Cart: ${formatStock(totalRequested, unitType)}"
             else -> null
         }
     }
@@ -422,14 +422,25 @@ class BillingViewModel @Inject constructor(
     }
 
     fun updateQuantity(productId: String, newQty: Long) {
-        if (_isSaving.value || newQty > com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) return
+        if (_isSaving.value) return
+        if (newQty > com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) {
+            _operationError.value = "Quantity exceeds the supported limit"
+            return
+        }
         if (newQty <= 0) {
             removeLine(productId)
             return
         }
-        _lines.value.firstOrNull { it.productId == productId } ?: return
+        val line = _lines.value.firstOrNull { it.productId == productId } ?: return
         val available = (uiState.value.stockBalances[productId] ?: 0L) + (originalQuantities[productId] ?: 0L)
-        if (available <= 0L || newQty > available) return
+        if (available <= 0L) {
+            _operationError.value = "${line.productName} is out of stock!"
+            return
+        }
+        if (newQty > available) {
+            _operationError.value = "${line.productName} is out of stock! Available: ${formatStock(available, line.unitType)}, Cart: ${formatStock(newQty, line.unitType)}"
+            return
+        }
         val updated = _lines.value.map { if (it.productId == productId) it.copy(quantity = newQty) else it }
         if (runCatching { updated.forEach { it.lineTotal } }.isFailure) { _operationError.value = "Line amount exceeds the supported limit"; return }
         _lines.value = updated
@@ -635,8 +646,9 @@ class BillingViewModel @Inject constructor(
     fun deleteSale(saleId: String, billNumber: String, reason: String = "Cancelled by cashier", onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch(errors) {
             val session = sessionStore.activeSession.first()
-            if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.SALE_CREATE)) {
-                onError(Exception("You do not have permission to modify sales."))
+            val isAdminOrManager = session?.role in listOf("ADMIN", "SUPER_ADMIN", "OWNER") || session?.permissions?.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE) == true
+            if (session == null || !isAdminOrManager) {
+                onError(Exception("Only admin or manager can delete sales."))
                 return@launch
             }
             val sale = saleDao.getSaleById(session.companyId, saleId)

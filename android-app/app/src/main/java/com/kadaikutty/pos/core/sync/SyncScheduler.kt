@@ -21,6 +21,19 @@ class SyncScheduler(private val context: Context) {
         _manualDismissed.value = true
     }
 
+    fun cancelAllWork() {
+        _manualDismissed.value = true
+        val workManager = WorkManager.getInstance(context)
+        workManager.cancelUniqueWork("billing-sync")
+        workManager.cancelUniqueWork("billing-pull")
+        // Also cancel periodic workers so they don't push deletions to cloud
+        // or pull cloud data back into a deliberately wiped local database
+        workManager.cancelUniqueWork("billing-periodic-sync")
+        workManager.cancelUniqueWork("billing-periodic-pull")
+        workManager.cancelUniqueWork("billing-periodic-live-backup-compaction")
+        workManager.cancelUniqueWork("billing-periodic-cloud-backup")
+    }
+
     val isSyncingFlow: Flow<Boolean> = WorkManager.getInstance(context)
         .getWorkInfosForUniqueWorkFlow("billing-sync")
         .map { workInfos ->
@@ -115,6 +128,28 @@ class SyncScheduler(private val context: Context) {
             "billing-periodic-sync",
             ExistingPeriodicWorkPolicy.KEEP,
             pushRequest
+        )
+    }
+
+    fun schedulePeriodicLiveBackupCompaction() {
+        val compactionRequest = PeriodicWorkRequestBuilder<LiveBackupCompactionWorker>(1, TimeUnit.DAYS).build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "billing-periodic-live-backup-compaction",
+            ExistingPeriodicWorkPolicy.KEEP,
+            compactionRequest
+        )
+    }
+
+    fun schedulePeriodicBackup() {
+        val constraints = Constraints(requiredNetworkType = NetworkType.CONNECTED)
+        val backupRequest = PeriodicWorkRequestBuilder<BackupWorker>(1, TimeUnit.DAYS)
+            .setConstraints(constraints)
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 2, TimeUnit.MINUTES)
+            .build()
+        WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+            "billing-periodic-cloud-backup",
+            ExistingPeriodicWorkPolicy.KEEP,
+            backupRequest
         )
     }
 }

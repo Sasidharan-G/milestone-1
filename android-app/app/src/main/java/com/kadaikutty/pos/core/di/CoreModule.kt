@@ -66,18 +66,12 @@ private val Context.billingDataStore by preferencesDataStore("billing_preference
 @Module
 @InstallIn(SingletonComponent::class)
 object CoreModule {
-    @Provides @Singleton fun database(@ApplicationContext context: Context): BillingDatabase {
-        val keyBytes = com.kadaikutty.pos.core.security.SecurityShield.getOrCreateDatabaseKey(context)
-        val factory = net.zetetic.database.sqlcipher.SupportOpenHelperFactory(keyBytes)
-        
-        val db = Room.databaseBuilder(context, BillingDatabase::class.java, "billing.db")
-            .openHelperFactory(factory)
-            .setJournalMode(androidx.room.RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
-            .addMigrations(migration1To2, migration2To3, migration3To4, migration4To5, migration5To6, migration6To7, migration7To8, migration8To9, migration9To10, migration10To11, migration11To12, migration12To13, migration13To14, migration14To15, migration15To16, migration16To17, migration17To18, migration18To19, migration19To20, migration20To21, migration21To22)
-            .build()
-            
-        return db
-    }
+    @Provides @Singleton fun tenantDatabaseManager(@ApplicationContext context: Context, sessionStore: SessionStore): com.kadaikutty.pos.core.database.TenantDatabaseManager =
+        com.kadaikutty.pos.core.database.TenantDatabaseManager(context, sessionStore)
+
+    @Provides fun database(tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager): BillingDatabase =
+        tenantDatabaseManager.getDatabase()
+
     @Provides @Singleton fun preferences(@ApplicationContext context: Context) = AppPreferences(context.billingDataStore)
     @Provides @Singleton fun sessionStore(@ApplicationContext context: Context) = SessionStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialStore(@ApplicationContext context: Context) = OfflineCredentialStore(context.billingDataStore)
@@ -86,26 +80,55 @@ object CoreModule {
         backendApi: com.kadaikutty.pos.core.network.BackendApiClient,
         sessionStore: SessionStore,
         appPreferences: AppPreferences,
+        webSocketManager: com.kadaikutty.pos.core.network.WebSocketManager,
     ): com.kadaikutty.pos.core.auth.SessionSecurityManager =
-        com.kadaikutty.pos.core.auth.SessionSecurityManager(backendApi, sessionStore, appPreferences)
+        com.kadaikutty.pos.core.auth.SessionSecurityManager(backendApi, sessionStore, appPreferences, webSocketManager)
 
     @Provides @Singleton fun authRepository(
         sessions: SessionStore, 
         credentials: OfflineCredentialStore, 
         verifier: OfflineCredentialVerifier, 
-        database: BillingDatabase,
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
         backendApi: com.kadaikutty.pos.core.network.BackendApiClient,
         sessionSecurityManager: com.kadaikutty.pos.core.auth.SessionSecurityManager,
-    ): AuthRepository = DefaultAuthRepository(sessions, credentials, verifier, database, backendApi, sessionSecurityManager)
+        appPreferences: AppPreferences,
+        syncScheduler: SyncScheduler,
+    ): AuthRepository = DefaultAuthRepository(sessions, credentials, verifier, tenantDatabaseManager, backendApi, sessionSecurityManager, appPreferences, syncScheduler)
     @Provides @Singleton fun logger(): AppLogger = AndroidLogger()
     @Provides @Singleton fun analyticsManager() = com.kadaikutty.pos.core.analytics.AnalyticsManager()
     @Provides @Singleton fun syncScheduler(@ApplicationContext context: Context) = SyncScheduler(context)
-    @Provides @Singleton fun syncManager(database: BillingDatabase, syncScheduler: SyncScheduler, sessionStore: SessionStore) = SyncManager(database, syncScheduler, sessionStore)
+    @Provides @Singleton fun syncManager(
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+        syncScheduler: SyncScheduler,
+        sessionStore: SessionStore,
+        liveBackupWriter: com.kadaikutty.pos.core.backup.data.LiveBackupWriter,
+    ) = SyncManager(tenantDatabaseManager, syncScheduler, sessionStore, liveBackupWriter)
 
-    @Provides @Singleton fun saleRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore, appPreferences: AppPreferences): SaleRepository = SaleRepositoryImpl(database.saleDao(), syncManager, sessionStore, appPreferences, database)
-    @Provides @Singleton fun purchaseRepository(database: BillingDatabase, syncManager: SyncManager, sessionStore: SessionStore, appPreferences: AppPreferences): PurchaseRepository = PurchaseRepositoryImpl(database.purchaseDao(), syncManager, sessionStore, appPreferences, database)
-    @Provides @Singleton fun costingStrategy(database: BillingDatabase, sessionStore: SessionStore): CostingStrategy = DefaultCostingStrategy(database.purchaseDao(), database.masterDao(), sessionStore)
-    @Provides @Singleton fun reportRepository(database: BillingDatabase, costingStrategy: CostingStrategy, sessionStore: SessionStore): ReportRepository = ReportRepositoryImpl(database.reportDao(), costingStrategy, sessionStore)
+    @Provides @Singleton fun saleRepository(
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+        syncManager: SyncManager,
+        sessionStore: SessionStore,
+        appPreferences: AppPreferences
+    ): SaleRepository = SaleRepositoryImpl(tenantDatabaseManager, syncManager, sessionStore, appPreferences)
+
+    @Provides @Singleton fun purchaseRepository(
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+        syncManager: SyncManager,
+        sessionStore: SessionStore,
+        appPreferences: AppPreferences
+    ): PurchaseRepository = PurchaseRepositoryImpl(tenantDatabaseManager, syncManager, sessionStore, appPreferences)
+
+    @Provides @Singleton fun costingStrategy(
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+        sessionStore: SessionStore
+    ): CostingStrategy = DefaultCostingStrategy(tenantDatabaseManager, sessionStore)
+
+    @Provides @Singleton fun reportRepository(
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+        costingStrategy: CostingStrategy,
+        sessionStore: SessionStore
+    ): ReportRepository = ReportRepositoryImpl(tenantDatabaseManager, costingStrategy, sessionStore)
+
     @Provides @Singleton fun reportService(reportRepository: ReportRepository): ReportService = DefaultReportService(reportRepository)
     @Provides @Singleton fun pdfExporter(): PdfExporter = AndroidPdfExporter()
     @Provides @Singleton fun excelExporter(): ExcelExporter = CsvExcelExporter()
@@ -113,5 +136,8 @@ object CoreModule {
     @Provides @Singleton fun usbPrinterDriver(@ApplicationContext context: Context): UsbPrinterDriver = UsbPrinterDriver(context)
     @Provides @Singleton fun printerManager(btDriver: BluetoothPrinterDriver, usbDriver: UsbPrinterDriver): PrinterManager = PrinterManager(btDriver, usbDriver)
     @Provides @Singleton fun shareManager(@ApplicationContext context: Context) = ShareManager(context)
-    @Provides @Singleton fun backupManager(@ApplicationContext context: Context, database: BillingDatabase) = BackupManager(context, database)
+    @Provides @Singleton fun backupManager(
+        @ApplicationContext context: Context,
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager
+    ) = BackupManager(context, tenantDatabaseManager)
 }

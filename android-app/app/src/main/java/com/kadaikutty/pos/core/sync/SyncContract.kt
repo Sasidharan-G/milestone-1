@@ -25,8 +25,8 @@ fun categorizeSyncError(e: Throwable): Pair<String, String> {
 
     return when (errorType) {
         "AUTH" -> Pair(
-            "Authentication failure: Session or tenant permission invalid",
-            "Please log out and log in again to renew your credentials."
+            "Cloud session renewing in background",
+            "Authentication is renewing automatically. Tap Retry to synchronize now."
         )
         "TIMEOUT" -> Pair(
             "Server timeout: Cloud database response took too long",

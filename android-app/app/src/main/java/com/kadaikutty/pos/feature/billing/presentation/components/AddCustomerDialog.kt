@@ -10,6 +10,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
+import com.kadaikutty.pos.core.common.CheckoutMath
 
 @Composable
 fun AddCustomerDialog(
@@ -80,7 +81,7 @@ fun AddCustomerDialog(
                         android.widget.Toast.makeText(context, "Please enter customer name", android.widget.Toast.LENGTH_SHORT).show()
                     } else {
                         isSubmitting = true
-                        val openingDueVal = ((newCustOpeningDue.toDoubleOrNull() ?: 0.0) * 100).toLong()
+                        val openingDueVal = CheckoutMath.rupeesToMinorUnits(newCustOpeningDue.toDoubleOrNull() ?: 0.0)
                         onSaveCustomer(newCustName, newCustPhone, newCustAddress, openingDueVal)
                         newCustName = ""
                         newCustPhone = ""

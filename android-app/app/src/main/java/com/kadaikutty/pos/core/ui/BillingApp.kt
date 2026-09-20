@@ -25,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.BorderStroke
+import com.kadaikutty.pos.core.common.CheckoutMath
 import com.kadaikutty.pos.core.common.Money
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -93,6 +94,7 @@ fun BillingApp() {
     val activeSession by settingsViewModel.activeSession.collectAsState()
 
     val currentLicense by settingsViewModel.currentLicense.collectAsState()
+    val isLicenseLoaded by settingsViewModel.isLicenseLoaded.collectAsState()
     val isClockTampered by settingsViewModel.isClockTampered.collectAsState()
     var showRenewalDailyDialog by remember { mutableStateOf(value = false) }
 
@@ -107,7 +109,14 @@ fun BillingApp() {
     val isSessionTerminated by settingsViewModel.isSessionTerminated.collectAsState()
     val terminationReason by settingsViewModel.terminationReason.collectAsState()
 
-    if (isLoggedIn == null) {
+    val isLicenseLoading = (isLoggedIn == true) && (activeSession?.role != "SUPER_ADMIN") && (!isLicenseLoaded || currentLicense == null)
+    val isLicenseLocked = (isLoggedIn == true) && (activeSession?.role != "SUPER_ADMIN") && ((currentLicense?.isExpired == true) || isClockTampered)
+
+    // Checked only once the company-wide license lock above has already passed, so a shop that's
+    // simply mid-renewal never sees two different lock screens fighting for the same problem.
+    val isCloudAccessLocked by settingsViewModel.isCloudAccessLocked.collectAsState()
+
+    if (isLoggedIn == null || isLicenseLoading) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -162,6 +171,37 @@ fun BillingApp() {
                         }
                     }
                 )
+            }
+
+            if (isLicenseLocked) {
+                com.kadaikutty.pos.feature.subscription.LicenseExpiredLockScreen(
+                    license = currentLicense,
+                    shopName = shopName,
+                    onRefreshStatus = { settingsViewModel.refreshLicenseStatus() },
+                    onLogout = {
+                        settingsViewModel.logout {
+                            navController.navigate(AppRoute.Login.path) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    }
+                )
+                return@BillingTheme
+            }
+
+            if (isLoggedIn == true && activeSession?.role != "SUPER_ADMIN" && isCloudAccessLocked) {
+                com.kadaikutty.pos.feature.subscription.CloudAccessLockScreen(
+                    shopName = shopName,
+                    onRefreshStatus = { settingsViewModel.refreshLicenseStatus() },
+                    onLogout = {
+                        settingsViewModel.logout {
+                            navController.navigate(AppRoute.Login.path) {
+                                popUpTo(0) { inclusive = true }
+                            }
+                        }
+                    }
+                )
+                return@BillingTheme
             }
 
             val startDest = if (isLoggedIn == true) AppRoute.Home.path else AppRoute.Login.path
@@ -312,7 +352,7 @@ fun BillingApp() {
                                         enabled = shiftCashInput.isNotBlank(),
                                         onClick = {
                                             val declared = shiftCashInput.toDoubleOrNull() ?: 0.0
-                                            val minorUnits = (declared * 100).toLong()
+                                            val minorUnits = CheckoutMath.rupeesToMinorUnits(declared)
                                             vm.closeShift(
                                                 declaredCashMinorUnits = minorUnits,
                                                 onSuccess = {
@@ -407,23 +447,6 @@ fun BillingApp() {
 
             }
 
-            // Strict Offline/Online Expiry Lock Screen
-            val isLicenseLocked = (isLoggedIn == true) && (activeSession?.role != "SUPER_ADMIN") && ((currentLicense?.isExpired == true) || isClockTampered)
-            if (isLicenseLocked) {
-                com.kadaikutty.pos.feature.subscription.LicenseExpiredLockScreen(
-                    license = currentLicense,
-                    shopName = shopName,
-                    onRefreshStatus = { settingsViewModel.refreshLicenseStatus() },
-                    onLogout = {
-                        settingsViewModel.logout {
-                            navController.navigate(AppRoute.Login.path) {
-                                popUpTo(0) { inclusive = true }
-                            }
-                        }
-                    }
-                )
-            }
-
             // 7-Day Expiry Renewal Reminder Dialog (Max 2 times per day)
             if (showRenewalDailyDialog && (currentLicense != null)) {
                 val context = LocalContext.current
@@ -471,10 +494,58 @@ fun BillingApp() {
                     }
                 )
             }
+
+            val syncNotificationState by settingsViewModel.syncNotificationState.collectAsState()
+            SyncNotificationOverlay(
+                state = syncNotificationState,
+                onRetry = { settingsViewModel.retrySync() },
+                onDismiss = { settingsViewModel.dismissSyncNotification() },
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 16.dp)
+            )
         } // Close Box
         } // Close BillingTheme
     } // Close CompositionLocalProvider
 } // Close BillingApp function
+
+// Persistent, glanceable "days until access needs renewing" — replaces interrupting warning
+// popups. Caps its visual fullness at 30 days so a far-off deadline still reads as "healthy"
+// rather than needing to know which of the two underlying rules produced this number.
+@Composable
+private fun CloudAccessCountdownRing(daysRemaining: Long, modifier: Modifier = Modifier) {
+    val ringWindowDays = 30f
+    val fraction = (daysRemaining.toFloat() / ringWindowDays).coerceIn(0f, 1f)
+    val ringColor = when {
+        daysRemaining <= 1 -> Color(0xFFEF4444)
+        daysRemaining <= 3 -> Color(0xFFF59E0B)
+        else -> Color(0xFF10B981)
+    }
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(
+                progress = { fraction },
+                modifier = Modifier.fillMaxSize(),
+                color = ringColor,
+                trackColor = ringColor.copy(alpha = 0.15f),
+                strokeWidth = 4.dp
+            )
+            Text(daysRemaining.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ringColor)
+        }
+        Column {
+            Text("Access renews soon", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
+            Text(
+                if (daysRemaining <= 1) "Connect to the internet today to keep access active" else "$daysRemaining day${if (daysRemaining == 1L) "" else "s"} left — connect to the internet before then",
+                fontSize = 11.sp,
+                color = MaterialTheme.colorScheme.outline
+            )
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -488,13 +559,16 @@ fun HomeScreen(
 ) {
     val context = LocalContext.current
     val dashboardState by viewModel.dashboardState.collectAsState()
+    val hasStaleUnsyncedData by viewModel.hasStaleUnsyncedData.collectAsState()
+
     val permissions = session?.permissions ?: emptySet()
+    val isAdmin = session?.role == "ADMIN" || session?.role == "SUPER_ADMIN"
     
-    val showMasters = permissions.any { (it == Permission.CATEGORY_VIEW) || (it == Permission.PRODUCT_VIEW) || (it == Permission.USER_MANAGE) }
-    val showSales = permissions.any { it == Permission.SALE_CREATE || it == Permission.SALE_VIEW }
-    val showPurchases = permissions.any { it == Permission.PURCHASE_CREATE || it == Permission.PURCHASE_VIEW }
-    val showReports = permissions.any { it == Permission.REPORT_SALES || it == Permission.REPORT_STOCK || it == Permission.REPORT_PROFIT }
-    val showSettings = permissions.any { it == Permission.SETTINGS_VIEW || it == Permission.USER_MANAGE }
+    val showMasters = isAdmin || permissions.any { (it == Permission.CATEGORY_VIEW) || (it == Permission.PRODUCT_VIEW) || (it == Permission.USER_MANAGE) }
+    val showSales = isAdmin || permissions.any { it == Permission.SALE_CREATE || it == Permission.SALE_VIEW }
+    val showPurchases = isAdmin || permissions.any { it == Permission.PURCHASE_CREATE || it == Permission.PURCHASE_VIEW }
+    val showReports = isAdmin || permissions.any { it == Permission.REPORT_SALES || it == Permission.REPORT_STOCK || it == Permission.REPORT_PROFIT }
+    val showSettings = isAdmin || permissions.any { it == Permission.SETTINGS_VIEW || it == Permission.USER_MANAGE }
 
     // Live Infinite Rotation Animation for Cloud Sync Button
     val infiniteTransition = rememberInfiniteTransition(label = "CloudSyncRotation")
@@ -553,6 +627,15 @@ fun HomeScreen(
                 }
             }
         )
+    }
+
+    // Guard: show loading spinner if session not yet loaded from DataStore.
+    // All remember/composable hooks above run unconditionally. This return is safe.
+    if (session == null) {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = Color(0xFF5C151A))
+        }
+        return
     }
 
     Scaffold(
@@ -792,17 +875,31 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(0.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        viewModel.triggerCloudSync()
-                        Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
-                    }) {
-                        val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
-                        Icon(
-                            imageVector = if (dashboardState.pendingSyncCount == 0 && !dashboardState.isSyncing) Icons.Default.CloudDone else Icons.Default.Sync,
-                            contentDescription = "Cloud Sync",
-                            tint = if (dashboardState.isSyncing) Color(0xFF38BDF8) else Color(0xFF5C151A),
-                            modifier = Modifier.size(24.dp).then(syncIconModifier)
-                        )
+                    val isOnline = !session?.accessToken.isNullOrBlank()
+                    if (isOnline) {
+                        IconButton(onClick = {
+                            viewModel.triggerCloudSync()
+                            Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
+                        }) {
+                            val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
+                            Icon(
+                                imageVector = if (dashboardState.pendingSyncCount == 0 && !dashboardState.isSyncing) Icons.Default.CloudDone else Icons.Default.Sync,
+                                contentDescription = "Cloud Sync",
+                                tint = if (dashboardState.isSyncing) Color(0xFF38BDF8) else Color(0xFF5C151A),
+                                modifier = Modifier.size(24.dp).then(syncIconModifier)
+                            )
+                        }
+                    } else {
+                        IconButton(onClick = {
+                            Toast.makeText(context, "Offline mode - Sync requires online connection", Toast.LENGTH_SHORT).show()
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.CloudOff,
+                                contentDescription = "Offline Mode",
+                                tint = Color(0xFF5C151A).copy(alpha = 0.5f),
+                                modifier = Modifier.size(24.dp)
+                            )
+                        }
                     }
                     IconButton(onClick = onCloseShiftClick) {
                         Icon(Icons.Default.Lock, contentDescription = "Close Shift", tint = Color(0xFF5C151A))
@@ -844,6 +941,33 @@ fun HomeScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
+
+            val cloudAccessDaysRemaining by viewModel.cloudAccessDaysRemaining.collectAsState()
+            cloudAccessDaysRemaining?.let { days ->
+                CloudAccessCountdownRing(daysRemaining = days)
+            }
+
+            if (hasStaleUnsyncedData) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.CloudOff, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                        Text(
+                            "You have unsynced changes and haven't connected in over a day — connect to Wi-Fi or mobile data soon to keep your backups current.",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
 
             // 2. Hero Point of Sale Card
             if (showSales) {

@@ -28,9 +28,9 @@ private val LightColors = lightColorScheme(
     surface = LightCardSurface,
     onSurface = Color(0xFF0F172A),
     surfaceVariant = LightSurfaceVariant,
-    onSurfaceVariant = Color(0xFF334155),
+    onSurfaceVariant = Color(0xFF0F172A),
     outline = LightOutline,
-    outlineVariant = Color(0xFFCBD5E1)
+    outlineVariant = Color(0xFF8B252C)
 )
 
 private val DarkColors = darkColorScheme(

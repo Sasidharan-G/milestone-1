@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.kadaikutty.pos.core.database.BillingDatabase
 import com.kadaikutty.pos.core.sync.SyncStatus
 import com.kadaikutty.pos.core.sync.SyncManager
+import com.kadaikutty.pos.core.common.CheckoutMath
 import com.kadaikutty.pos.core.common.newRecordId
 import com.kadaikutty.pos.feature.masters.data.CategoryEntity
 import com.kadaikutty.pos.feature.masters.data.ProductEntity
@@ -156,6 +157,48 @@ class ProductViewModel @Inject constructor(
     private val dao = database.masterDao()
     private val reportDao = database.reportDao()
     private val searchQuery = MutableStateFlow("")
+
+    init {
+        viewModelScope.launch {
+            try {
+                val session = sessionStore.activeSession.first()
+                if (session != null && session.companyId.isNotEmpty()) {
+                    deduplicateProducts(session.companyId)
+                }
+            } catch (e: Exception) {
+                android.util.Log.e("ProductViewModel", "Error deduplicating products", e)
+            }
+        }
+    }
+
+    private suspend fun deduplicateProducts(companyId: String) {
+        val products = dao.getAllProducts(companyId)
+        val seenKeys = mutableSetOf<String>()
+        val duplicatesToDelete = mutableListOf<ProductEntity>()
+
+        for (product in products) {
+            val normName = product.name.trim().lowercase()
+            val normBarcode = product.barcode?.trim()?.takeIf { it.isNotBlank() }
+            val key = if (normBarcode != null) "bc:$normBarcode" else "name:$normName"
+
+            if (seenKeys.contains(key) || (normBarcode != null && seenKeys.contains("name:$normName"))) {
+                duplicatesToDelete.add(product)
+            } else {
+                seenKeys.add(key)
+                if (normBarcode != null) {
+                    seenKeys.add("bc:$normBarcode")
+                }
+                seenKeys.add("name:$normName")
+            }
+        }
+
+        if (duplicatesToDelete.isNotEmpty()) {
+            for (dup in duplicatesToDelete) {
+                dao.deleteProduct(dup)
+                syncManager.enqueueProduct(dup, "DELETE")
+            }
+        }
+    }
 
     val lowStockProducts: StateFlow<List<com.kadaikutty.pos.core.database.LowStockRow>> = sessionStore.activeSession
         .flatMapLatest { session ->
@@ -441,14 +484,21 @@ class ProductViewModel @Inject constructor(
                     generalCatId = generalCat.id
                 }
 
+                // Helpers to normalize names and barcodes for collision checking
+                fun cleanName(s: String): String = s.replace("\uFEFF", "").replace("\u200B", "").trim().replace("\\s+".toRegex(), " ").lowercase()
+                fun cleanBarcode(s: String?): String? {
+                    if (s.isNullOrBlank()) return null
+                    var b = s.replace("\uFEFF", "").replace("\u200B", "").trim()
+                    if (b.endsWith(".0") || b.endsWith(".00")) b = b.substringBefore(".")
+                    return if (b.isBlank()) null else b
+                }
+
                 // Pre-cache existing products by Barcode and by Name
                 val existingBarcodeMap = mutableMapOf<String, ProductEntity>()
                 val existingNameMap = mutableMapOf<String, ProductEntity>()
                 dao.getAllProducts(companyId).forEach {
-                    if (!it.barcode.isNullOrBlank()) {
-                        existingBarcodeMap[it.barcode.trim()] = it
-                    }
-                    existingNameMap[it.name.trim().lowercase()] = it
+                    cleanBarcode(it.barcode)?.let { b -> existingBarcodeMap[b] = it }
+                    cleanName(it.name).let { n -> if (n.isNotBlank()) existingNameMap[n] = it }
                 }
 
                 var totalRead = 0
@@ -479,32 +529,91 @@ class ProductViewModel @Inject constructor(
                 }
 
                 var isFirstLine = true
+                var colName = -1
+                var colBarcode = -1
+                var colCategory = -1
+                var colUnit = -1
+                var colPurchase = -1
+                var colSale = -1
+                var colMinStock = -1
+                var hasHeader = false
+
                 for (tokens in rawRows) {
                     if (tokens.isEmpty()) continue
 
                     if (isFirstLine) {
                         isFirstLine = false
-                        val firstCell = tokens[0].trim()
-                        if (firstCell.contains("Product Name", ignoreCase = true) || (tokens.size > 1 && tokens[1].contains("Barcode", ignoreCase = true))) {
+                        val lowerTokens = tokens.map { cleanName(it) }
+                        val looksLikeHeader = lowerTokens.any { token ->
+                            token.contains("name") || token.contains("பெயர்") ||
+                            token.contains("barcode") || token.contains("பார்கோடு") ||
+                            token.contains("category") || token.contains("பிரிவு") ||
+                            token.contains("unit") || token.contains("அலகு") ||
+                            token.contains("price") || token.contains("rate") || token.contains("விலை") ||
+                            token.contains("stock") || token.contains("alert") || token.contains("இருப்பு")
+                        }
+
+                        if (looksLikeHeader) {
+                            hasHeader = true
+                            for (i in tokens.indices) {
+                                val h = cleanName(tokens[i])
+                                when {
+                                    (h.contains("min") || h.contains("alert") || h.contains("threshold") || h.contains("குறைந்த")) -> colMinStock = i
+                                    (h.contains("barcode") || h.contains("பார்கோடு") || h.contains("ean") || h.contains("code")) -> colBarcode = i
+                                    (h.contains("cat") || h.contains("பிரிவு")) -> colCategory = i
+                                    (h.contains("unit") || h.contains("அலகு")) -> colUnit = i
+                                    (h.contains("pur") || h.contains("cost") || h.contains("வாங்கிய")) -> colPurchase = i
+                                    (h.contains("sale") || h.contains("sell") || h.contains("mrp") || h.contains("விற்பனை")) -> colSale = i
+                                    (h.contains("name") || h.contains("பெயர்") || h.contains("பொருள்") || h.contains("item")) -> colName = i
+                                }
+                            }
                             continue
                         }
                     }
 
-                    if (tokens[0].isBlank()) {
-                        skippedCount++
-                        continue
-                    }
-
-                    totalRead++
-
                     try {
-                        val rawName = tokens[0].trim()
-                        val rawBarcode = tokens.getOrNull(1)?.trim()?.ifBlank { null }
-                        val rawCategory = tokens.getOrNull(2)?.trim()?.ifBlank { "General" } ?: "General"
-                        val rawUnit = tokens.getOrNull(3)?.trim()?.uppercase()?.ifBlank { "PIECE" } ?: "PIECE"
-                        val rawPurchase = tokens.getOrNull(4)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
-                        val rawSale = tokens.getOrNull(5)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
-                        val rawMinStock = tokens.getOrNull(6)?.trim()?.toDoubleOrNull() ?: 0.0
+                        val rawName: String
+                        val rawBarcode: String?
+                        val rawCategory: String
+                        val rawUnit: String
+                        val rawPurchase: Double
+                        val rawSale: Double
+                        val rawMinStock: Double
+
+                        if (hasHeader && colName >= 0) {
+                            rawName = tokens.getOrNull(colName)?.replace("\uFEFF", "")?.replace("\u200B", "")?.trim() ?: ""
+                            rawBarcode = if (colBarcode >= 0) tokens.getOrNull(colBarcode)?.let { cleanBarcode(it) } else null
+                            rawCategory = if (colCategory >= 0) tokens.getOrNull(colCategory)?.trim()?.ifBlank { "General" } ?: "General" else "General"
+                            rawUnit = if (colUnit >= 0) tokens.getOrNull(colUnit)?.trim()?.uppercase()?.ifBlank { "PIECE" } ?: "PIECE" else "PIECE"
+                            rawPurchase = if (colPurchase >= 0) tokens.getOrNull(colPurchase)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
+                            rawSale = if (colSale >= 0) tokens.getOrNull(colSale)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
+                            rawMinStock = if (colMinStock >= 0) tokens.getOrNull(colMinStock)?.trim()?.toDoubleOrNull() ?: 0.0 else 0.0
+                        } else if (tokens.size >= 8 && tokens[0].trim().toLongOrNull() != null) {
+                            // Layout with index column: #, Name, Category, Purchase, Sale, Unit, Barcode, MinStock
+                            rawName = tokens.getOrNull(1)?.replace("\uFEFF", "")?.replace("\u200B", "")?.trim() ?: ""
+                            rawCategory = tokens.getOrNull(2)?.trim()?.ifBlank { "General" } ?: "General"
+                            rawPurchase = tokens.getOrNull(3)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
+                            rawSale = tokens.getOrNull(4)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
+                            rawUnit = tokens.getOrNull(5)?.trim()?.uppercase()?.ifBlank { "PIECE" } ?: "PIECE"
+                            rawBarcode = cleanBarcode(tokens.getOrNull(6))
+                            rawMinStock = tokens.getOrNull(7)?.trim()?.toDoubleOrNull() ?: 0.0
+                        } else {
+                            // Default template layout: Name, Barcode, Category, Unit, Purchase, Sale, MinStock
+                            rawName = tokens[0].replace("\uFEFF", "").replace("\u200B", "").trim()
+                            rawBarcode = cleanBarcode(tokens.getOrNull(1))
+                            rawCategory = tokens.getOrNull(2)?.trim()?.ifBlank { "General" } ?: "General"
+                            rawUnit = tokens.getOrNull(3)?.trim()?.uppercase()?.ifBlank { "PIECE" } ?: "PIECE"
+                            rawPurchase = tokens.getOrNull(4)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
+                            rawSale = tokens.getOrNull(5)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
+                            rawMinStock = tokens.getOrNull(6)?.trim()?.toDoubleOrNull() ?: 0.0
+                        }
+
+                        if (rawName.isBlank()) {
+                            skippedCount++
+                            continue
+                        }
+
+                        totalRead++
 
                         val catKey = rawCategory.lowercase()
                         var targetCatId = categoryMap[catKey]
@@ -523,11 +632,14 @@ class ProductViewModel @Inject constructor(
                             targetCatId = newCat.id
                         }
 
-                        val purchasePricePaise = (rawPurchase * 100).toLong()
-                        val salePricePaise = (rawSale * 100).toLong()
+                        val purchasePricePaise = CheckoutMath.rupeesToMinorUnits(rawPurchase)
+                        val salePricePaise = CheckoutMath.rupeesToMinorUnits(rawSale)
+
+                        val normName = cleanName(rawName)
+                        val normBarcode = cleanBarcode(rawBarcode)
 
                         // Check if existing product by Barcode or by Name
-                        val existingProduct = (if (rawBarcode != null) existingBarcodeMap[rawBarcode] else null) ?: existingNameMap[rawName.lowercase()]
+                        val existingProduct = (if (normBarcode != null) existingBarcodeMap[normBarcode] else null) ?: existingNameMap[normName]
 
                         if (existingProduct != null) {
                             val updatedProduct = existingProduct.copy(
@@ -536,11 +648,13 @@ class ProductViewModel @Inject constructor(
                                 purchasePriceMinorUnits = if (purchasePricePaise > 0) purchasePricePaise else existingProduct.purchasePriceMinorUnits,
                                 salePriceMinorUnits = if (salePricePaise > 0) salePricePaise else existingProduct.salePriceMinorUnits,
                                 unitType = rawUnit,
-                                barcode = rawBarcode ?: existingProduct.barcode,
+                                barcode = normBarcode ?: existingProduct.barcode,
                                 minStockLevel = if (rawMinStock > 0) rawMinStock else existingProduct.minStockLevel,
                                 updatedAtEpochMs = System.currentTimeMillis()
                             )
                             productBatch.add(updatedProduct)
+                            if (normBarcode != null) existingBarcodeMap[normBarcode] = updatedProduct
+                            if (normName.isNotBlank()) existingNameMap[normName] = updatedProduct
                             updatedCount++
                         } else {
                             val newProduct = ProductEntity(
@@ -551,15 +665,15 @@ class ProductViewModel @Inject constructor(
                                 purchasePriceMinorUnits = purchasePricePaise,
                                 salePriceMinorUnits = salePricePaise,
                                 unitType = rawUnit,
-                                barcode = rawBarcode,
+                                barcode = normBarcode,
                                 minStockLevel = rawMinStock,
                                 createdAtEpochMs = System.currentTimeMillis(),
                                 updatedAtEpochMs = System.currentTimeMillis(),
                                 syncStatus = SyncStatus.LOCAL_ONLY
                             )
                             productBatch.add(newProduct)
-                            if (rawBarcode != null) existingBarcodeMap[rawBarcode] = newProduct
-                            existingNameMap[rawName.lowercase()] = newProduct
+                            if (normBarcode != null) existingBarcodeMap[normBarcode] = newProduct
+                            if (normName.isNotBlank()) existingNameMap[normName] = newProduct
                             importedCount++
                         }
 
@@ -952,28 +1066,22 @@ class CustomerViewModel @Inject constructor(
             dao.getTotalCustomerCreditsReceivable(companyId)
         }
 
-    fun getCustomerLedger(customerId: String): Flow<List<LedgerEntry>> = kotlinx.coroutines.flow.combine(
-        sessionStore.activeSession.flatMapLatest { session -> 
-            database.saleDao().getSalesForCustomer(session?.companyId ?: "", customerId) 
-        },
-        sessionStore.activeSession.flatMapLatest { session -> 
-            dao.getCustomerCredits(session?.companyId ?: "", customerId) 
+    fun getCustomerLedger(customerId: String): Flow<List<LedgerEntry>> = sessionStore.activeSession.flatMapLatest { session ->
+        val companyId = session?.companyId ?: ""
+        dao.getCustomerCredits(companyId, customerId).map { credits ->
+            var balance = 0L
+            credits.reversed().map { credit ->
+                balance += credit.amountMinorUnits
+                LedgerEntry(
+                    id = credit.id,
+                    dateEpochMs = credit.dateEpochMs,
+                    description = credit.reason,
+                    debitMinorUnits = if (credit.amountMinorUnits > 0) credit.amountMinorUnits else 0L,
+                    creditMinorUnits = if (credit.amountMinorUnits < 0) -credit.amountMinorUnits else 0L,
+                    runningBalance = balance
+                )
+            }.reversed()
         }
-    ) { sales, credits ->
-        val entries = mutableListOf<LedgerEntry>()
-        sales.forEach { sale ->
-            entries.add(LedgerEntry(sale.id, sale.createdAtEpochMs, "Bill #${sale.billNumber}", sale.totalMinorUnits, 0L, 0L))
-        }
-        credits.forEach { credit ->
-            entries.add(LedgerEntry(credit.id, credit.dateEpochMs, credit.reason, 0L, credit.amountMinorUnits, 0L))
-        }
-        val sorted = entries.sortedBy { it.dateEpochMs }
-        var balance = 0L
-        sorted.map { entry ->
-            balance += entry.debitMinorUnits
-            balance -= entry.creditMinorUnits
-            entry.copy(runningBalance = balance)
-        }.reversed()
     }
 
     fun getCustomerBalance(customerId: String): Flow<Long> = getCustomerLedger(customerId).map { ledger ->
@@ -1165,45 +1273,28 @@ class SupplierViewModel @Inject constructor(
             dao.getSupplierCredits(companyId, supplierId)
         }
 
-    fun getSupplierCreditBalance(supplierId: String): Flow<Long?> = sessionStore.activeSession
-        .flatMapLatest { session ->
-            val companyId = session?.companyId ?: ""
-            dao.getSupplierCreditBalance(companyId, supplierId)
-        }
-
     fun getTotalSupplierCreditsPayable(): Flow<Long?> = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
             dao.getTotalSupplierCreditsPayable(companyId)
         }
 
-    fun getSupplierLedger(supplierId: String): Flow<List<LedgerEntry>> = kotlinx.coroutines.flow.combine(
-        sessionStore.activeSession.flatMapLatest { session -> 
-            database.purchaseDao().getPurchasesForSupplier(session?.companyId ?: "", supplierId) 
-        },
-        sessionStore.activeSession.flatMapLatest { session -> 
-            dao.getSupplierCredits(session?.companyId ?: "", supplierId) 
+    fun getSupplierLedger(supplierId: String): Flow<List<LedgerEntry>> = sessionStore.activeSession.flatMapLatest { session ->
+        val companyId = session?.companyId ?: ""
+        dao.getSupplierCredits(companyId, supplierId).map { credits ->
+            var balance = 0L
+            credits.reversed().map { credit ->
+                balance += credit.amountMinorUnits
+                LedgerEntry(
+                    id = credit.id,
+                    dateEpochMs = credit.dateEpochMs,
+                    description = credit.terms,
+                    debitMinorUnits = if (credit.amountMinorUnits > 0) credit.amountMinorUnits else 0L,
+                    creditMinorUnits = if (credit.amountMinorUnits < 0) -credit.amountMinorUnits else 0L,
+                    runningBalance = balance
+                )
+            }.reversed()
         }
-    ) { purchases, credits ->
-        val entries = mutableListOf<LedgerEntry>()
-        purchases.forEach { purchase ->
-            val orderTitle = when {
-                !purchase.invoiceNumber.isNullOrBlank() -> "Purchase #${purchase.invoiceNumber}"
-                !purchase.orderNumber.isNullOrBlank() -> "Order #${purchase.orderNumber}"
-                else -> "Purchase #${purchase.id.take(4)}"
-            }
-            entries.add(LedgerEntry(purchase.id, purchase.createdAtEpochMs, orderTitle, purchase.totalMinorUnits, 0L, 0L))
-        }
-        credits.forEach { credit ->
-            entries.add(LedgerEntry(credit.id, credit.dateEpochMs, credit.terms, 0L, credit.amountMinorUnits, 0L))
-        }
-        val sorted = entries.sortedBy { it.dateEpochMs }
-        var balance = 0L
-        sorted.map { entry ->
-            balance += entry.debitMinorUnits
-            balance -= entry.creditMinorUnits
-            entry.copy(runningBalance = balance)
-        }.reversed()
     }
     
     fun getSupplierBalance(supplierId: String): Flow<Long> = getSupplierLedger(supplierId).map { ledger ->

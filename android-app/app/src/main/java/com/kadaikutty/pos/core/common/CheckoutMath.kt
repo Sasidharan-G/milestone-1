@@ -7,10 +7,14 @@ object CheckoutMath {
     const val MAX_AMOUNT = 100_000_000_000L
     const val MAX_QUANTITY = 1_000_000_000L
     fun parseAmount(input: String): Long? = try {
-        val text = input.trim()
+        val raw = input.trim()
+        val text = if (raw.startsWith(".")) "0$raw" else raw
         if (text.isEmpty()) 0L else if (!Regex("[0-9]+(\\.[0-9]{0,2})?").matches(text)) null
         else BigDecimal(text).movePointRight(2).longValueExact().takeIf { it in 0..MAX_AMOUNT }
     } catch (_: Exception) { null }
+    /** (rupees * 100).toLong() truncates: the nearest Double to a value like 19.99 is
+     *  slightly below it, so multiplying by 100 and truncating silently drops a paisa. Round instead. */
+    fun rupeesToMinorUnits(rupees: Double): Long = Math.round(rupees * 100)
     fun lineTotal(price: Long, quantity: Long, unit: String): Long {
         require(price in 0..MAX_AMOUNT && quantity in 1..MAX_QUANTITY) { "Price or quantity is outside the allowed range" }
         val result = BigInteger.valueOf(price).multiply(BigInteger.valueOf(quantity)).divide(BigInteger.valueOf(if (unit == "KG" || unit == "LITER") 1000 else 1))

@@ -34,6 +34,7 @@ fun SearchableProductSelectorDialog(
     showDialog: Boolean,
     products: List<ProductEntity>,
     stockMap: Map<String, Long>,
+    allowOutOfStockSelection: Boolean = true,
     onProductSelected: (ProductEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -219,7 +220,7 @@ fun SearchableProductSelectorDialog(
 
                             Card(
                                 onClick = {
-                                    if (!isOutOfStock) {
+                                    if (!isOutOfStock || allowOutOfStockSelection) {
                                         onProductSelected(product)
                                         onDismiss()
                                     }
@@ -233,7 +234,7 @@ fun SearchableProductSelectorDialog(
                                     ),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = CardDefaults.cardColors(
-                                    containerColor = if (isOutOfStock) {
+                                    containerColor = if (isOutOfStock && !allowOutOfStockSelection) {
                                         MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
                                     } else {
                                         MaterialTheme.colorScheme.surface
@@ -269,7 +270,11 @@ fun SearchableProductSelectorDialog(
                                             color = Color(0xFF059669)
                                         )
 
-                                        val isLowStock = !isOutOfStock && ((isDecimal && pStock <= 5000L) || (!isDecimal && pStock <= 5L))
+                                        val threshold = product.minStockLevel
+                                        val isLowStock = !isOutOfStock && threshold > 0.0 && (
+                                            (isDecimal && (pStock.toDouble() / 1000.0) <= threshold) ||
+                                            (!isDecimal && pStock.toDouble() <= threshold)
+                                        )
 
                                         Surface(
                                             color = when {
