@@ -17,6 +17,7 @@ import { AwsDataStore } from './aws/awsDataStore';
 import { AwsIdentityProvider } from './aws/awsIdentityProvider';
 import { AwsObjectStorage } from './aws/awsObjectStorage';
 import { AwsSessionStore } from './aws/awsSessionStore';
+import { AppError } from '../core/errors';
 import { AwsSmsSender } from './aws/awsSmsSender';
 import { Msg91SmsSender } from './msg91/msg91SmsSender';
 
@@ -37,12 +38,32 @@ export const createProviderRegistry = (): ProviderRegistry => {
     const config = loadAwsProviderConfig();
     const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({ region: config.region }), { marshallOptions: { removeUndefinedValues: true } });
     const dataStore = new AwsDataStore(dynamo, config.tableName, new SecretsManagerClient({ region: config.region }), config.masterPinSecretArn);
-    const msg91WidgetId = process.env.MSG91_WIDGET_ID || '3669646c326b363432353531';
-    const msg91TokenAuth = process.env.MSG91_TOKEN_AUTH || '567585Tl1cnXSjt6a9abddfP1';
-    const msg91AuthKey = process.env.MSG91_AUTH_KEY || '567585Ai2TplBF6aac3198P1';
-    const smsSender = (process.env.SMS_PROVIDER || 'msg91').toLowerCase() === 'sns'
-      ? new AwsSmsSender(new SNSClient({ region: config.region }))
-      : new Msg91SmsSender({ widgetId: msg91WidgetId, tokenAuth: msg91TokenAuth, authKey: msg91AuthKey });
+    const smsProvider = (process.env.SMS_PROVIDER || 'msg91').toLowerCase();
+    let smsSender: SmsSender;
+    if (smsProvider === 'sns') {
+      smsSender = new AwsSmsSender(new SNSClient({ region: config.region }));
+    } else if (smsProvider === 'msg91') {
+      const msg91WidgetId = process.env.MSG91_WIDGET_ID?.trim();
+      const msg91TokenAuth = process.env.MSG91_TOKEN_AUTH?.trim();
+      const msg91AuthKey = process.env.MSG91_AUTH_KEY?.trim();
+
+      const missing: string[] = [];
+      if (!msg91WidgetId) missing.push('MSG91_WIDGET_ID');
+      if (!msg91TokenAuth) missing.push('MSG91_TOKEN_AUTH');
+      if (!msg91AuthKey) missing.push('MSG91_AUTH_KEY');
+
+      if (missing.length > 0) {
+        throw new AppError(
+          500,
+          'MSG91_CONFIG_MISSING',
+          `Missing required MSG91 configuration environment variable(s): ${missing.join(', ')}`
+        );
+      }
+
+      smsSender = new Msg91SmsSender({ widgetId: msg91WidgetId!, tokenAuth: msg91TokenAuth!, authKey: msg91AuthKey! });
+    } else {
+      throw new AppError(500, 'SMS_PROVIDER_INVALID', `Unsupported SMS_PROVIDER: ${smsProvider}`);
+    }
 
     return {
       dataStore,

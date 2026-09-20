@@ -181,6 +181,8 @@ how to ship a new server version): `docs/AWS_SETUP_GUIDE.md`. Local dev without 
 | `ALLOWED_ORIGINS` | empty = allow all | comma-separated browser origins (Android needs none) |
 | `LOCAL_DATA_DIR`, `LOCAL_DEV_OTP_CODE`, `LOCAL_DEV_OTP_BYPASS`, `MASTER_SUPPORT_PHONE`, `MASTER_ADMIN_PIN` | dev conveniences | ignored / seeded via script |
 | `AWS_REGION`, `AWS_COGNITO_USER_POOL_ID`, `AWS_COGNITO_CLIENT_ID`, `AWS_COGNITO_PHONE_COUNTRY_CODE`, `AWS_DYNAMODB_TABLE`, `AWS_S3_BACKUP_BUCKET`, `AWS_PRESIGNED_URL_SECONDS`, `AWS_MASTER_PIN_SECRET_ARN` | — | plain EB environment variables, currently `ap-southeast-2` (not the CFN template's `ap-south-1` default) |
+| `SMS_PROVIDER` | — | `msg91` (default) or `sns` |
+| `MSG91_WIDGET_ID`, `MSG91_TOKEN_AUTH`, `MSG91_AUTH_KEY` | — | required when `SMS_PROVIDER=msg91` (AWS mode). Hardcoded fallbacks removed (R18 fix); fail-fast at boot if missing. |
 
 `npm run check:release` in `server/` validates a production `.env`.
 

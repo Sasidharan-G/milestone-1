@@ -7,6 +7,10 @@ import { AwsObjectStorage } from '../providers/aws/awsObjectStorage';
 import { AwsSessionStore } from '../providers/aws/awsSessionStore';
 import { AwsProviderConfig } from '../providers/aws/awsConfig';
 import { UserAccount } from '../providers/contracts';
+import { createProviderRegistry } from '../providers/providerRegistry';
+import { Msg91SmsSender } from '../providers/msg91/msg91SmsSender';
+import { AwsSmsSender } from '../providers/aws/awsSmsSender';
+import { AppError } from '../core/errors';
 
 class FakeDocumentClient {
   readonly items = new Map<string, any>();
@@ -233,4 +237,64 @@ test('AWS session store isolates registered device sessions by tenant and user',
   assert.equal(await sessions.validate('company-a', 'user-2', 'session-1'), false);
   await sessions.revoke('company-a', 'user-1', 'session-1');
   assert.equal(await sessions.validate('company-a', 'user-1', 'session-1'), false);
+});
+
+test('AWS provider registry fails fast on missing MSG91 configuration without fallback keys', () => {
+  const originalEnv = { ...process.env };
+  try {
+    process.env.PROVIDER_MODE = 'aws';
+    process.env.AWS_REGION = 'ap-southeast-2';
+    process.env.AWS_COGNITO_USER_POOL_ID = 'ap-southeast-2_testPoolId';
+    process.env.AWS_COGNITO_CLIENT_ID = 'client-1';
+    process.env.AWS_DYNAMODB_TABLE = 'table-1';
+    process.env.AWS_S3_BACKUP_BUCKET = 'bucket-1';
+    process.env.AWS_MASTER_PIN_SECRET_ARN = 'arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:master-pin-1';
+    delete process.env.SMS_PROVIDER;
+    delete process.env.MSG91_WIDGET_ID;
+    delete process.env.MSG91_TOKEN_AUTH;
+    delete process.env.MSG91_AUTH_KEY;
+
+    assert.throws(
+      () => createProviderRegistry(),
+      (err: any) => {
+        assert(err instanceof AppError);
+        assert.equal(err.code, 'MSG91_CONFIG_MISSING');
+        assert(err.message.includes('MSG91_WIDGET_ID'));
+        assert(err.message.includes('MSG91_TOKEN_AUTH'));
+        assert(err.message.includes('MSG91_AUTH_KEY'));
+        return true;
+      }
+    );
+
+    // Partial configuration still fails fast
+    process.env.MSG91_WIDGET_ID = 'valid_widget';
+    assert.throws(
+      () => createProviderRegistry(),
+      (err: any) => {
+        assert(err instanceof AppError);
+        assert.equal(err.code, 'MSG91_CONFIG_MISSING');
+        assert(!err.message.includes('MSG91_WIDGET_ID'));
+        assert(err.message.includes('MSG91_TOKEN_AUTH'));
+        assert(err.message.includes('MSG91_AUTH_KEY'));
+        return true;
+      }
+    );
+
+    // Full configuration initializes Msg91SmsSender successfully
+    process.env.MSG91_TOKEN_AUTH = 'valid_token';
+    process.env.MSG91_AUTH_KEY = 'valid_key';
+    const registry = createProviderRegistry();
+    assert.equal(registry.mode, 'aws');
+    assert(registry.smsSender instanceof Msg91SmsSender);
+
+    // SMS_PROVIDER=sns initializes AwsSmsSender
+    process.env.SMS_PROVIDER = 'sns';
+    delete process.env.MSG91_WIDGET_ID;
+    delete process.env.MSG91_TOKEN_AUTH;
+    delete process.env.MSG91_AUTH_KEY;
+    const snsRegistry = createProviderRegistry();
+    assert(snsRegistry.smsSender instanceof AwsSmsSender);
+  } finally {
+    process.env = originalEnv;
+  }
 });
