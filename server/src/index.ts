@@ -16,7 +16,7 @@ import adminRoutes from './routes/adminRoutes';
 import otpRoutes from './routes/otpRoutes';
 import { providers } from './providers/providerRegistry';
 import { errorHandler, notFoundHandler, requestContext } from './middleware/requestContext';
-import { userRoom } from './core/realtime';
+import { sessionRoom, userRoom } from './core/realtime';
 
 export const app = express();
 const port = process.env.PORT || 3000;
@@ -49,7 +49,8 @@ io.use(async (socket, next) => {
     const userId = String(claims.userId || '');
     if (!companyId || !userId) return next(new Error('AUTH_INVALID_TOKEN'));
     const sessionId = String(socket.handshake.auth?.sessionId || '');
-    if (sessionId && !await providers().sessionStore.validate(companyId, userId, sessionId)) return next(new Error('SESSION_REVOKED'));
+    if (!/^[A-Za-z0-9\-]{8,64}$/.test(sessionId)) return next(new Error('SESSION_REQUIRED'));
+    if (!await providers().sessionStore.validate(companyId, userId, sessionId)) return next(new Error('SESSION_REVOKED'));
     socket.data.companyId = companyId;
     socket.data.userId = userId;
     socket.data.sessionId = sessionId;
@@ -61,6 +62,7 @@ io.use(async (socket, next) => {
 
 io.on('connection', (socket) => {
   socket.join(userRoom(socket.data.userId));
+  socket.join(sessionRoom(socket.data.sessionId));
   socket.on('join_company', (companyId) => {
     if (typeof companyId !== 'string' || companyId !== socket.data.companyId) {
       socket.emit('error', { code: 'TENANT_MISMATCH' });

@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { AppError } from '../core/errors';
 import { audit } from '../core/audit';
-import { emitToUser } from '../core/realtime';
+import { revokeSessionSockets } from '../core/realtime';
 import { AuthenticatedRequest, requireAuth, requireAuthWithoutSession } from '../middleware/authMiddleware';
 import { providers } from '../providers/providerRegistry';
 import { sendRouteError } from './http';
@@ -21,9 +21,7 @@ router.post('/register', requireAuthWithoutSession, async (req: AuthenticatedReq
       expiresAtEpochMs: Date.now() + SESSION_LIFETIME_MS
     });
     const revoked = await providers().sessionStore.revokeOtherSessions(req.user!.companyId, req.user!.userId, session.sessionId);
-    for (const old of revoked) {
-      emitToUser(req.app.get('io'), req.user!.userId, 'session_revoked', { sessionId: old.sessionId, reason: 'SIGNED_IN_ELSEWHERE', deviceName: deviceName || 'another device' });
-    }
+    revokeSessionSockets(req.app.get('io'), req.user!.userId, revoked, 'SIGNED_IN_ELSEWHERE', deviceName || 'another device');
     await audit(req, req.user!, 'SESSION_REGISTERED', session.sessionId, { deviceId, deviceName, revokedSessions: revoked.map(item => item.sessionId) });
     return res.status(201).json({ success: true, session, revokedSessions: revoked.length });
   } catch (error) { return sendRouteError(res, req, error); }
@@ -42,6 +40,7 @@ router.post('/heartbeat', requireAuth, async (req: AuthenticatedRequest, res) =>
 router.delete('/current', requireAuth, async (req: AuthenticatedRequest, res) => {
   try {
     await providers().sessionStore.revoke(req.user!.companyId, req.user!.userId, req.user!.sessionId!);
+    revokeSessionSockets(req.app.get('io'), req.user!.userId, [{ ...req.user!, sessionId: req.user!.sessionId!, deviceId: '', revoked: true, lastSeenAtEpochMs: Date.now(), expiresAtEpochMs: Date.now() }], 'SIGNED_OUT');
     await audit(req, req.user!, 'SESSION_SIGNED_OUT', req.user!.sessionId);
     return res.json({ success: true });
   } catch (error) { return sendRouteError(res, req, error); }
@@ -51,6 +50,7 @@ router.delete('/:sessionId', requireAuth, async (req: AuthenticatedRequest, res)
   try {
     if (req.user!.role !== 'ADMIN' && req.params.sessionId !== req.user!.sessionId) throw new AppError(403, 'SESSION_REVOKE_FORBIDDEN', 'Administrator permission is required');
     await providers().sessionStore.revoke(req.user!.companyId, req.user!.userId, req.params.sessionId);
+    revokeSessionSockets(req.app.get('io'), req.user!.userId, [{ ...req.user!, sessionId: req.params.sessionId, deviceId: '', revoked: true, lastSeenAtEpochMs: Date.now(), expiresAtEpochMs: Date.now() }], 'SIGNED_OUT');
     await audit(req, req.user!, 'SESSION_REVOKED_BY_ADMIN', req.params.sessionId);
     return res.json({ success: true });
   } catch (error) { return sendRouteError(res, req, error); }
