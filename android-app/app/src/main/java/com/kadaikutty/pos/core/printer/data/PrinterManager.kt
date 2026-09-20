@@ -6,6 +6,11 @@ import com.kadaikutty.pos.core.printer.domain.PrinterError
 import com.kadaikutty.pos.core.printer.domain.PrinterResult
 import kotlinx.coroutines.sync.withLock
 
+/**
+ * Connection-holding printer path, injected as a singleton and used by Settings "Test Print".
+ * Bills print through [com.kadaikutty.pos.core.hardware.PrinterService] instead, which builds a
+ * driver per job; both take PrinterJobLock.mutex, so the two can never write at the same time.
+ */
 class PrinterManager(
     private val bluetoothDriver: PrinterDriver,
     private val usbDriver: PrinterDriver

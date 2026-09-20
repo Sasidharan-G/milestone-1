@@ -256,12 +256,10 @@ fun BillDetailsDialog(
                                     appendLine("-------------------------")
                                     appendLine("Total: ${Money(sale.totalMinorUnits)}")
                                 }
-                                val sendIntent = android.content.Intent().apply {
-                                    action = android.content.Intent.ACTION_SEND
-                                    putExtra(android.content.Intent.EXTRA_TEXT, shareText)
-                                    type = "text/plain"
-                                }
-                                context.startActivity(android.content.Intent.createChooser(sendIntent, "Share Bill"))
+                                // ShareManager instead of an ad-hoc intent: it adds the
+                                // NEW_TASK flag and swallows the ActivityNotFoundException a
+                                // device with no share target would otherwise throw here.
+                                com.kadaikutty.pos.core.sharing.ShareManager(context).shareText(shareText)
                             },
                             modifier = Modifier.weight(1.2f),
                             shape = RoundedCornerShape(12.dp)

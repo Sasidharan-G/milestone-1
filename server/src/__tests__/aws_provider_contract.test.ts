@@ -130,6 +130,44 @@ test('AWS sync pull reconstructs full state from durable records even after chan
   assert.deepEqual(tailPage.records.map(record => record.entityId), ['p6']);
 });
 
+test('AWS sync pull rejects a snapshot cursor whose page token points at another tenant', async () => {
+  const client = new FakeDocumentClient();
+  const store = new AwsDataStore(client as any, config.tableName);
+  for (const companyId of ['company-a', 'company-b']) {
+    for (const entityId of ['p1', 'p2', 'p3']) {
+      const insert = { operationId: `${companyId}-${entityId}`, companyId, entityType: 'Product', entityId, operation: 'INSERT' as const, schemaVersion: 1, payload: { name: entityId } };
+      assert.equal((await store.applySyncBatch(companyId, [insert]))[0].status, 'APPLIED');
+    }
+  }
+
+  // Company B pulls one page and keeps the resume cursor it was handed.
+  const bPage = await store.pullSync('company-b', '0', 1);
+  assert.equal(bPage.hasMore, true);
+  const bCursor = bPage.nextCursor;
+
+  // Company A replays it. The page token inside carries company B's partition key, so it must
+  // be refused outright rather than used as a bookmark into the query.
+  await assert.rejects(
+    () => store.pullSync('company-a', bCursor, 10),
+    (error: any) => {
+      assert(error instanceof AppError);
+      assert.equal(error.code, 'SYNC_CURSOR_INVALID');
+      return true;
+    }
+  );
+
+  // A token that is not even valid base64url JSON is refused the same way.
+  await assert.rejects(
+    () => store.pullSync('company-a', 'S1:not-a-real-token', 10),
+    (error: any) => error instanceof AppError && error.code === 'SYNC_CURSOR_INVALID'
+  );
+
+  // Company A's own cursor still works, so the check is not simply rejecting everything.
+  const aPage = await store.pullSync('company-a', '0', 1);
+  const aResume = await store.pullSync('company-a', aPage.nextCursor, 10);
+  assert.equal(aResume.records.every(record => record.companyId === 'company-a'), true);
+});
+
 test('AWS sync pull never misreads an existing plain numeric cursor as a snapshot resume', async () => {
   const client = new FakeDocumentClient();
   const store = new AwsDataStore(client as any, config.tableName);

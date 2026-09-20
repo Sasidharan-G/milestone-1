@@ -171,6 +171,14 @@ export interface VerifiedIdentity {
 export interface IdentityProvider {
   setPassword(userId: string, password: string): Promise<void>;
   authenticate(phone: string, password: string): Promise<{ user: UserAccount; tokens: IdentityTokens }>;
+  /**
+   * The two implementations differ here on purpose, and callers must not assume either shape:
+   * the local provider rotates the refresh token and refuses the old one on the next call, while
+   * the AWS provider hands Cognito's own token back unchanged, so the same value keeps working
+   * until Cognito expires or revokes it. There is no shared test pinning this because a Cognito
+   * refresh needs a real signed JWT to verify; the local rotation is covered in
+   * local_provider_contract.test.ts.
+   */
   refresh(refreshToken: string): Promise<{ user: UserAccount; tokens: IdentityTokens }>;
   revokeUser(userId: string): Promise<void>;
   deleteUser(userId: string): Promise<void>;

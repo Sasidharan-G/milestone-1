@@ -78,7 +78,7 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             sessionStore.activeSession.collectLatest { session ->
                 if (session != null && !session.sessionToken.isNullOrBlank()) {
-                    sessionSecurityManager.startListeningToSession(session.userId, session.sessionToken)
+                    sessionSecurityManager.startListeningToSession()
                 }
                 if (session != null && (session.role == "ADMIN" || session.role == "SUPER_ADMIN")) {
                     runCatching { reconcileStaffAccounts(session) }
@@ -1031,8 +1031,11 @@ class SettingsViewModel @Inject constructor(
                     id = credResult.userId,
                     username = cleanPhone,
                     displayName = displayName,
-                    salt = credResult.saltStr,
-                    verifier = credResult.verifierStr,
+                    // Blank on purpose: createCredentials already stored the real salt and
+                    // verifier in OfflineCredentialStore, which is where every offline login
+                    // reads them from. See UserEntity for why these columns stay empty.
+                    salt = "",
+                    verifier = "",
                     permissions = permissions.joinToString(",") { it.name },
                     companyId = companyId,
                     role = role,
@@ -1078,12 +1081,14 @@ class SettingsViewModel @Inject constructor(
                 backendApi.updateStaff(token, existing.id, finalDisplayName, newPassword?.concatToString(), permissions.map { it.name })
 
                 val updatedUser = if (newPassword != null && newPassword.isNotEmpty()) {
-                    val credResult = createCredentials(existing.username, newPassword, existing.id, finalDisplayName)
+                    // The new credential is stored by createCredentials in OfflineCredentialStore;
+                    // these columns are vestigial and stay blank. See UserEntity.
+                    createCredentials(existing.username, newPassword, existing.id, finalDisplayName)
                     existing.copy(
                         displayName = finalDisplayName,
                         role = finalRole,
-                        salt = credResult.saltStr,
-                        verifier = credResult.verifierStr,
+                        salt = "",
+                        verifier = "",
                         permissions = permissions.joinToString(",") { it.name }
                     )
                 } else {

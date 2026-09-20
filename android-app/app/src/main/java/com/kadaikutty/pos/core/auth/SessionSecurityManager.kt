@@ -58,8 +58,14 @@ class SessionSecurityManager @Inject constructor(
         }
     }
 
-    /** Called right after a successful tenant login. Throws if the session cannot be established. */
-    suspend fun registerSession(username: String, companyId: String, role: String, sessionToken: String = ""): String {
+    /**
+     * Called right after a successful tenant login. Throws if the session cannot be established.
+     *
+     * It takes nothing: the identity comes from the stored session and the device id from
+     * preferences. It used to declare username, companyId, role and sessionToken, none of which
+     * it read - and the caller was passing a user id as "username".
+     */
+    suspend fun registerSession(): String {
         resetSessionTermination()
         val active = sessionStore.activeSession.first()
         val accessToken = active?.accessToken ?: error("Online session token is missing")
@@ -71,7 +77,8 @@ class SessionSecurityManager @Inject constructor(
         return remoteSessionId
     }
 
-    fun startListeningToSession(username: String, sessionToken: String) {
+    /** Resumes heartbeating for a session restored from the store. Reads nothing from the caller. */
+    fun startListeningToSession() {
         resetSessionTermination()
         startHeartbeat()
     }

@@ -13,8 +13,13 @@ data class UserEntity(
     @PrimaryKey val id: String,
     val username: String,
     val displayName: String,
-    val salt: String, // Base64 derived salt
-    val verifier: String, // Base64 derived verifier
+    // Vestigial. Offline login derives and checks its credential through OfflineCredentialStore,
+    // which keeps the real salt and verifier; nothing reads these two columns. They are written
+    // blank everywhere so no credential material is duplicated into a second store that no code
+    // path validates. They stay declared only because dropping them needs a Room migration that
+    // recreates the table on live shop databases.
+    val salt: String,
+    val verifier: String,
     val permissions: String, // Comma-separated permissions list (e.g. "USER_MANAGE,PRODUCT_VIEW")
     val companyId: String,
     val role: String,

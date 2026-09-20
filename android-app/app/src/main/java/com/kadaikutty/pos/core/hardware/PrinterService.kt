@@ -9,6 +9,15 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/**
+ * Real bill printing. It builds a driver per job and drops it in the finally block, so nothing
+ * holds a socket open between bills.
+ *
+ * There is a second path over the same drivers: the [com.kadaikutty.pos.core.printer.data.PrinterManager]
+ * singleton in CoreModule, which keeps a connection alive and serves Settings "Test Print". The two
+ * are not merged because they want opposite lifetimes, but they share PrinterJobLock.mutex, so a
+ * test print and a bill can never be writing to the same printer at once.
+ */
 object PrinterService {
     private val jobs = com.kadaikutty.pos.core.printer.data.PrinterJobLock.mutex
 

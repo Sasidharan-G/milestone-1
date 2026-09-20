@@ -63,7 +63,7 @@ class DefaultAuthRepository(
 
             // Every authenticated call requires the device session issued here
             try {
-                val remoteSessionId = sessionSecurityManager.registerSession(session.userId, session.companyId, session.role, "")
+                val remoteSessionId = sessionSecurityManager.registerSession()
                 val sessionWithToken = session.copy(sessionToken = remoteSessionId)
                 sessions.save(sessionWithToken)
                 runCatching { com.kadaikutty.pos.core.sync.LegacyTenantMigration.runOnce(targetDb, session.companyId) }
