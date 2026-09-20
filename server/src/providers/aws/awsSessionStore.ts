@@ -23,19 +23,25 @@ export class AwsSessionStore implements SessionStore {
 
   async heartbeat(companyId: string, userId: string, sessionId: string): Promise<SessionRecord> {
     const now = Date.now();
+    let response;
     try {
-      const response = await this.client.send(new UpdateCommand({
+      response = await this.client.send(new UpdateCommand({
         TableName: this.tableName, Key: { pk: pk(companyId), sk: sk(sessionId) },
         UpdateExpression: 'SET #data.lastSeenAtEpochMs = :now',
         ConditionExpression: '#data.companyId = :companyId AND #data.userId = :userId AND #data.revoked = :false AND #data.expiresAtEpochMs > :now',
         ExpressionAttributeNames: { '#data': 'data' },
         ExpressionAttributeValues: { ':companyId': companyId, ':userId': userId, ':false': false, ':now': now }, ReturnValues: 'ALL_NEW'
       }));
-      return (response.Attributes?.data || {}) as SessionRecord;
     } catch (error) {
       if (isAwsError(error, 'ConditionalCheckFailedException')) throw new AppError(401, 'SESSION_INVALID', 'Session is invalid, expired, or revoked');
       throw mapAwsError(error, 'DynamoDB session heartbeat');
     }
+    // Outside the catch, so this is not re-wrapped as a DynamoDB fault. Masking a missing data
+    // map with {} returned an empty object typed as a SessionRecord, letting the caller report
+    // a successful heartbeat for a session it never actually read back.
+    const data = response.Attributes?.data as SessionRecord | undefined;
+    if (!data || !data.sessionId) throw new AppError(500, 'SESSION_STORE_CORRUPT', 'Session record is missing its data');
+    return data;
   }
 
   async revoke(companyId: string, _actorUserId: string, sessionId: string): Promise<void> {

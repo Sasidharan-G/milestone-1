@@ -21,15 +21,24 @@ class SessionStore(private val store: DataStore<Preferences>) {
 
     val activeSession: Flow<Session?> = store.data.map { preferences ->
         val id = preferences[userId] ?: return@map null
-        val role = preferences[roleKey] ?: "ADMIN"
+        // No role default: save() always writes one, so a missing key means a store written
+        // before this field existed or a corrupted one. Inventing "ADMIN" there would hand a
+        // full permission set to a session that never proved it had one.
+        val role = preferences[roleKey].orEmpty()
         val permsString = preferences[permissionsKey].orEmpty()
         val parsedPerms = if (permsString.isBlank()) emptySet() else permsString.split(",")
             .mapNotNull {
                 try { Permission.valueOf(it.trim()) } catch (e: Exception) { null }
             }.toSet()
-        val perms = if (role == "ADMIN" || role == "SUPER_ADMIN" || parsedPerms.isEmpty()) {
+        // Same order as UserEntity.effectivePermissions: a deactivated account keeps its declared
+        // permissions and is never promoted back to ALL_ACTIVE by its role.
+        val perms = if (parsedPerms.contains(Permission.ACCOUNT_INACTIVE)) {
+            parsedPerms
+        } else if (role == "ADMIN" || role == "SUPER_ADMIN") {
             Permission.ALL_ACTIVE
         } else {
+            // An owner always stores role ADMIN, so reaching here with nothing parsed means a
+            // staff session whose permissions really are empty - not a reason to grant them all.
             parsedPerms
         }
         Session(

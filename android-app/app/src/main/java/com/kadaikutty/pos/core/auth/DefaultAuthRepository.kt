@@ -155,7 +155,9 @@ class DefaultAuthRepository(
 
     private suspend fun persistOnlineSession(response: JSONObject, password: CharArray): Session {
         val user = response.getJSONObject("user")
-        val role = user.optString("role", "ADMIN")
+        // Not "ADMIN": a response missing the field is malformed, and defaulting it to the
+        // highest role turns that into a full permission set below.
+        val role = user.optString("role", "")
         val parsedPerms = permissions(user.optJSONArray("permissions"))
         val perms = if (parsedPerms.contains(Permission.ACCOUNT_INACTIVE)) {
             // A deactivated account must not be promoted to a full permission set by role.

@@ -241,6 +241,12 @@ class ProductViewModel @Inject constructor(
             onError(IllegalArgumentException("Product name cannot be blank"))
             return
         }
+        // Same guard updateProduct has. Without it a negative price saves here and only fails
+        // later at billing, with a message about exceeding the supported limit.
+        if (purchasePriceMinorUnits < 0 || salePriceMinorUnits < 0) {
+            onError(IllegalArgumentException("Prices cannot be negative"))
+            return
+        }
         val cleanBarcode = barcode?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {

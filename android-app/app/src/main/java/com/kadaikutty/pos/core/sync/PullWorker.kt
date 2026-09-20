@@ -44,7 +44,21 @@ class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                 val records = response.optJSONArray("records") ?: response.optJSONArray("data")
                 val nextCursor = response.optString("nextCursor", cursor)
                 database.withTransaction {
-                    if (records != null) for (index in 0 until records.length()) applyRecord(database, session.companyId, records.getJSONObject(index))
+                    if (records != null) for (index in 0 until records.length()) {
+                        val record = records.getJSONObject(index)
+                        // A record this build cannot apply must not hold the cursor back: the
+                        // transaction would roll the cursor back with it and every retry would
+                        // refetch the same page forever, wedging this tenant's pull for good.
+                        // It is skipped and counted instead, so Sync Diagnostics can show it.
+                        // A cross-tenant record is different - that is not bad data but a
+                        // server or cursor fault, so it still aborts the whole batch.
+                        requireSameTenant(record, session.companyId)
+                        try {
+                            applyRecord(database, session.companyId, record)
+                        } catch (error: Exception) {
+                            recordSkipped(database, session.companyId, record, error)
+                        }
+                    }
                     database.localOperationDao().put(LocalOperationEntity(session.companyId, cursorKey, nextCursor))
                 }
                 cursor = nextCursor
@@ -62,8 +76,20 @@ class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         }
     }
 
+    private fun requireSameTenant(record: JSONObject, companyId: String) {
+        require(record.optString("companyId") == companyId) { "Cross-tenant sync record rejected" }
+    }
+
+    private suspend fun recordSkipped(database: BillingDatabase, companyId: String, record: JSONObject, error: Exception) {
+        val dao = database.localOperationDao()
+        val skipped = (dao.get(companyId, SKIPPED_COUNT_KEY)?.toLongOrNull() ?: 0L) + 1
+        dao.put(LocalOperationEntity(companyId, SKIPPED_COUNT_KEY, skipped.toString()))
+        val id = record.optString("entityId").ifBlank { "unknown" }
+        val type = record.optString("entityType").ifBlank { "unknown" }
+        dao.put(LocalOperationEntity(companyId, SKIPPED_LAST_KEY, "$type/$id: ${error.message ?: error::class.java.simpleName}"))
+    }
+
     private suspend fun applyRecord(database: BillingDatabase, companyId: String, record: JSONObject) {
-        require(record.getString("companyId") == companyId) { "Cross-tenant sync record rejected" }
         val type = record.getString("entityType")
         val id = record.getString("entityId")
         val version = record.getLong("version")
@@ -82,4 +108,10 @@ class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
     }
 
     private fun errorData(message: String) = androidx.work.workDataOf("error_reason" to message, "error_next_steps" to "Check your connection or Sync Diagnostics, then retry.")
+
+    companion object {
+        /** Records the server sent that this build could not apply. Surfaced in Sync Diagnostics. */
+        const val SKIPPED_COUNT_KEY = "sync_pull_skipped_count"
+        const val SKIPPED_LAST_KEY = "sync_pull_skipped_last"
+    }
 }

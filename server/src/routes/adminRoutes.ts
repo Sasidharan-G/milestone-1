@@ -94,8 +94,9 @@ router.delete('/companies/:companyId', async (req: AuthenticatedRequest, res) =>
 
 router.patch('/staff/:userId', async (req: AuthenticatedRequest, res) => {
   try {
-    const overview = await providers().dataStore.adminOverview();
-    const user = overview.users.find(item => item.userId === req.params.userId && item.role === 'CASHIER');
+    // findUserById is a point read; adminOverview() was a full table scan to reach one row.
+    const found = await providers().dataStore.findUserById(req.params.userId);
+    const user = found && found.role === 'CASHIER' ? found : null;
     if (!user) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff account was not found');
     const status = String(req.body?.status || user.status);
     if (!['ACTIVE', 'INACTIVE', 'PENDING_APPROVAL', 'REJECTED'].includes(status)) throw new AppError(400, 'STAFF_STATUS_INVALID', 'Staff status is invalid');
@@ -125,8 +126,8 @@ router.patch('/staff/:userId', async (req: AuthenticatedRequest, res) => {
 
 router.delete('/staff/:userId', async (req: AuthenticatedRequest, res) => {
   try {
-    const overview = await providers().dataStore.adminOverview();
-    const user = overview.users.find(item => item.userId === req.params.userId && item.role === 'CASHIER');
+    const found = await providers().dataStore.findUserById(req.params.userId);
+    const user = found && found.role === 'CASHIER' ? found : null;
     if (!user) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff account was not found');
     // Master Control presents this as a permanent erase, so it has to be one: kick the device
     // first, then drop the identity user, then the record and its phone reservation - otherwise

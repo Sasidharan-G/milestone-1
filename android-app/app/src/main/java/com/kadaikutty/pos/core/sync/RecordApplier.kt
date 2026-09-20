@@ -50,9 +50,15 @@ object RecordApplier {
                 val incomingBarcode = cBarcode(data.stringOrNull("barcode"))
                 val normIncomingName = cName(incomingName)
                 val existingList = database.masterDao().getAllProducts(companyId)
+                // Name matching exists to merge a product this device created offline with the
+                // one the cloud assigned an id to. It is restricted to rows that have never
+                // synced: a row already carrying a server id is a distinct product, and two
+                // real products sharing a name must not collapse into one.
                 val existingProduct = existingList.find { it.id == id }
                     ?: (if (incomingBarcode != null) existingList.find { cBarcode(it.barcode) == incomingBarcode } else null)
-                    ?: (if (normIncomingName.isNotBlank()) existingList.find { cName(it.name) == normIncomingName } else null)
+                    ?: (if (normIncomingName.isNotBlank()) {
+                        existingList.find { cName(it.name) == normIncomingName && it.syncStatus != SyncStatus.SYNCED }
+                    } else null)
                 val targetId = existingProduct?.id ?: id
                 database.masterDao().insertProduct(ProductEntity(targetId, companyId, incomingName, data.optString("categoryId"), data.optLong("purchasePriceMinorUnits"), data.optLong("salePriceMinorUnits"), data.optString("unitType", "PIECE"), incomingBarcode, data.optDouble("minStockLevel"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
             }

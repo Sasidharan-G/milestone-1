@@ -49,7 +49,7 @@ class BackupManager(
         private val insertPriority = listOf(
             "company_licenses", "users", "categories", "customers", "suppliers", "products", "expenses",
             "sales", "purchases", "sale_items", "purchase_items", "stock_movements", "customer_credits",
-            "supplier_credits", "draft_cart", "sync_queue", "sync_dead_letter", "local_operations",
+            "supplier_credits", "draft_cart_items", "sync_queue", "sync_dead_letter", "local_operations",
         )
     }
 
