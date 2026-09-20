@@ -18,10 +18,12 @@ import javax.inject.Inject
 
 data class StaffApprovalRequest(
     val id: String = "", val username: String = "", val displayName: String = "", val companyId: String = "",
-    val businessName: String = "", val role: String = "CASHIER", val status: String = "PENDING_APPROVAL",
+    // No default status: both parse sites read it from the server response, and defaulting it to
+    // a status the server never produces made the pending-approval UI look reachable.
+    val businessName: String = "", val role: String = "CASHIER", val status: String,
     val permissions: String = "", val createdAt: Long = 0L,
     val isCloudTier: Boolean = true, val cloudAccessGrantedUntilEpochMs: Long? = null,
-    // Which admin/shop this staff member belongs to — a staff record itself carries no owner
+    // Which admin/shop this staff member belongs to â€” a staff record itself carries no owner
     // info server-side, so this is filled in from the matching license by companyId (see refresh()).
     val ownerName: String = "",
 )
@@ -31,7 +33,7 @@ data class MasterControlUiState(
     val currentTab: String = "LICENSES", val licenses: List<LicenseEntity> = emptyList(),
     val staffRequests: List<StaffApprovalRequest> = emptyList(),
     val activeTrialCount: Int = 0, val activePaidCount: Int = 0, val expiredCount: Int = 0,
-    val pendingStaffCount: Int = 0, val errorMessage: String? = null, val successMessage: String? = null,
+    val errorMessage: String? = null, val successMessage: String? = null,
     val adminByCompany: Map<String, StaffApprovalRequest> = emptyMap(),
 )
 
@@ -86,7 +88,7 @@ class MasterControlViewModel @Inject constructor(
                 val config = validResp.optJSONObject("masterConfig")
                 masterMobile.value = config?.optString("mobile").orEmpty()
                 allLicenses = parseLicenses(validResp.optJSONArray("licenses") ?: JSONArray())
-                // A staff account carries no owner/business info of its own — join by companyId
+                // A staff account carries no owner/business info of its own â€” join by companyId
                 // against the license list so Master Control can show which admin created them.
                 val licenseByCompany = allLicenses.associateBy { it.companyId }
                 val usersArray = validResp.optJSONArray("users") ?: JSONArray()
@@ -103,7 +105,7 @@ class MasterControlViewModel @Inject constructor(
 
     fun deleteShopRecord(companyId: String, ownerMobile: String, businessName: String) = mutate("DELETE", "admin/companies/$companyId", JSONObject(), "$businessName deleted")
 
-    // Targets the shop OWNER's own account (not staff) — see adminRoutes.ts's dedicated
+    // Targets the shop OWNER's own account (not staff) â€” see adminRoutes.ts's dedicated
     // /companies/:companyId/cloud-access route, since PATCH /staff/:id only ever accepts CASHIER.
     fun enableOwnerCloudTier(companyId: String, businessName: String) =
         mutate("PATCH", "admin/companies/$companyId/cloud-access", JSONObject().put("isCloudTier", true), "$businessName upgraded to online (cloud) access")
@@ -119,7 +121,7 @@ class MasterControlViewModel @Inject constructor(
     /**
      * Changing the master's own mobile or PIN is OTP-gated (same requirement as every other
      * credential change): an OTP is sent to the *current* master mobile before anything changes.
-     * There is no direct "set PIN" endpoint — only POST /auth/master/pin, which demands the proof.
+     * There is no direct "set PIN" endpoint â€” only POST /auth/master/pin, which demands the proof.
      */
     fun sendMasterProfileOtp(onSent: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
@@ -162,7 +164,6 @@ class MasterControlViewModel @Inject constructor(
         licenseAction(companyId, JSONObject().put("action", "REVOKE"), "$businessName access revoked")
 
     fun approveStaff(request: StaffApprovalRequest) = staff(request, "ACTIVE", request.permissions, "Staff approved")
-    fun rejectStaff(request: StaffApprovalRequest) = staff(request, "REJECTED", "", "Staff request rejected")
     fun revokeStaff(request: StaffApprovalRequest) = staff(request, "INACTIVE", "", "Staff access revoked")
     fun deleteStaffPermanently(request: StaffApprovalRequest) = mutate("DELETE", "admin/staff/${request.id}", JSONObject(), "Staff disabled")
 
@@ -215,7 +216,7 @@ class MasterControlViewModel @Inject constructor(
         if (item.optString("role") != "CASHIER") null else StaffApprovalRequest(item.optString("userId"), item.optString("phone"), item.optString("displayName"), item.optString("companyId"), role = "CASHIER", status = item.optString("status"), permissions = item.optJSONArray("permissions")?.let { permissions -> (0 until permissions.length()).joinToString(",") { permissions.getString(it) } }.orEmpty(), createdAt = item.optLong("createdAtEpochMs"), isCloudTier = item.optBoolean("isCloudTier", true), cloudAccessGrantedUntilEpochMs = item.optLong("cloudAccessGrantedUntilEpochMs", 0L).takeIf { it > 0L })
     }
 
-    // The shop owner's own cloud-tier record — an ADMIN is not "staff", so this is parsed and
+    // The shop owner's own cloud-tier record â€” an ADMIN is not "staff", so this is parsed and
     // keyed separately (by companyId) rather than folding into allStaff/parseStaff above.
     private fun parseAdminsByCompany(array: JSONArray): Map<String, StaffApprovalRequest> = (0 until array.length()).mapNotNull { index ->
         val item = array.getJSONObject(index)
@@ -237,7 +238,7 @@ class MasterControlViewModel @Inject constructor(
         _state.value = _state.value.copy(isLoading = false, licenses = licenses, staffRequests = staff,
             activeTrialCount = allLicenses.count { it.licenseStatus == "TRIAL" },
             activePaidCount = allLicenses.count { it.licenseStatus == "ACTIVE_PAID" }, expiredCount = allLicenses.count { it.isExpired },
-            pendingStaffCount = allStaff.count { it.status == "PENDING_APPROVAL" }, adminByCompany = adminByCompany)
+            adminByCompany = adminByCompany)
     }
 
     private fun token(): String = MasterAuthSession.accessToken ?: error("Master session expired. Verify Master PIN again")

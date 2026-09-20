@@ -215,22 +215,7 @@ fun MasterControlScreen(
                     ) {
                         Icon(Icons.Default.Person, contentDescription = null, tint = Color.White, modifier = Modifier.size(18.dp))
                         Spacer(Modifier.width(6.dp))
-                        Text("Staff Approvals", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
-                        if (state.pendingStaffCount > 0) {
-                            Spacer(Modifier.width(6.dp))
-                            Surface(
-                                shape = CircleShape,
-                                color = Color(0xFFEF4444)
-                            ) {
-                                Text(
-                                    text = "${state.pendingStaffCount}",
-                                    fontSize = 10.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = Color.White,
-                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                                )
-                            }
-                        }
+                        Text("Staff", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = Color.White)
                     }
                 }
             }
@@ -448,7 +433,6 @@ fun MasterControlScreen(
                             StaffApprovalAdminCard(
                                 request = staffReq,
                                 onApprove = { viewModel.approveStaff(staffReq) },
-                                onReject = { viewModel.rejectStaff(staffReq) },
                                 onRevoke = { viewModel.revokeStaff(staffReq) },
                                 onDelete = { selectedStaffForDelete = staffReq },
                                 onCallPhone = { phone ->
@@ -976,7 +960,7 @@ fun ShopLicenseAdminCard(
                         }
                     }
                     Text(
-                        text = "${license.ownerName.ifBlank { "Owner" }} • +91 ${license.ownerMobile}",
+                        text = "${license.ownerName.ifBlank { "Owner" }} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ +91 ${license.ownerMobile}",
                         fontSize = 12.sp,
                         color = Color(0xFF94A3B8)
                     )
@@ -1046,7 +1030,7 @@ fun ShopLicenseAdminCard(
                 }
             }
 
-            // Owner's Cloud Access: separate from the license above — a shop can have a fully
+            // Owner's Cloud Access: separate from the license above ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â a shop can have a fully
             // active license and still be registered as a local-only (offline-tier) account.
             if (owner != null) {
                 Surface(
@@ -1193,7 +1177,6 @@ fun ShopLicenseAdminCard(
 fun StaffApprovalAdminCard(
     request: StaffApprovalRequest,
     onApprove: () -> Unit,
-    onReject: () -> Unit,
     onRevoke: () -> Unit,
     onDelete: () -> Unit,
     onCallPhone: (String) -> Unit,
@@ -1202,7 +1185,6 @@ fun StaffApprovalAdminCard(
     onExtendCloudAccess: (days: Int) -> Unit = {},
     onClearCloudAccessExpiry: () -> Unit = {}
 ) {
-    val isPending = request.status.equals("PENDING_APPROVAL", ignoreCase = true)
     val isActive = request.status.equals("ACTIVE", ignoreCase = true)
     val isRejected = request.status.equals("REJECTED", ignoreCase = true)
     val isInactive = request.status.equals("INACTIVE", ignoreCase = true)
@@ -1213,7 +1195,6 @@ fun StaffApprovalAdminCard(
         border = androidx.compose.foundation.BorderStroke(
             1.dp,
             when {
-                isPending -> Color(0xFFD97706)
                 isActive -> Color(0xFF10B981).copy(alpha = 0.5f)
                 isRejected -> Color(0xFFEF4444)
                 else -> Color(0xFF475569)
@@ -1247,7 +1228,7 @@ fun StaffApprovalAdminCard(
                     Column {
                         Text(request.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color.White)
                         Text(
-                            if (request.ownerName.isNotBlank()) "${request.businessName} · Created by ${request.ownerName}" else request.businessName,
+                            if (request.ownerName.isNotBlank()) "${request.businessName} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Created by ${request.ownerName}" else request.businessName,
                             fontSize = 12.sp,
                             color = Color(0xFF94A3B8),
                             fontWeight = FontWeight.Medium
@@ -1259,7 +1240,6 @@ fun StaffApprovalAdminCard(
                 Surface(
                     shape = RoundedCornerShape(8.dp),
                     color = when {
-                        isPending -> Color(0xFF451A03)
                         isActive -> Color(0xFF064E3B)
                         isRejected -> Color(0xFF450A0A)
                         else -> Color(0xFF1E293B)
@@ -1267,7 +1247,6 @@ fun StaffApprovalAdminCard(
                     border = androidx.compose.foundation.BorderStroke(
                         1.dp,
                         when {
-                            isPending -> Color(0xFFD97706)
                             isActive -> Color(0xFF10B981)
                             isRejected -> Color(0xFFEF4444)
                             else -> Color(0xFF64748B)
@@ -1276,7 +1255,6 @@ fun StaffApprovalAdminCard(
                 ) {
                     Text(
                         text = when {
-                            isPending -> "PENDING APPROVAL"
                             isActive -> "ACTIVE & APPROVED"
                             isRejected -> "REJECTED"
                             else -> "DEACTIVATED"
@@ -1284,7 +1262,6 @@ fun StaffApprovalAdminCard(
                         fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold,
                         color = when {
-                            isPending -> Color(0xFFFBBF24)
                             isActive -> Color(0xFF34D399)
                             isRejected -> Color(0xFFF87171)
                             else -> Color(0xFF94A3B8)
@@ -1434,20 +1411,6 @@ fun StaffApprovalAdminCard(
                         Icon(Icons.Default.CheckCircle, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color.White)
                         Spacer(Modifier.width(4.dp))
                         Text("Approve", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-                }
-
-                if (isPending) {
-                    OutlinedButton(
-                        onClick = onReject,
-                        shape = RoundedCornerShape(10.dp),
-                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFF59E0B)),
-                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 6.dp),
-                        modifier = Modifier.weight(0.9f)
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = null, modifier = Modifier.size(14.dp), tint = Color(0xFFF59E0B))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Reject", fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF59E0B))
                     }
                 }
 

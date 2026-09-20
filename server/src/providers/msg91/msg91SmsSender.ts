@@ -118,49 +118,4 @@ export class Msg91SmsSender implements SmsSender {
       req.end();
     });
   }
-
-  async retryOtp(reqId: string): Promise<boolean> {
-    return new Promise((resolve) => {
-      const payload = JSON.stringify({
-        widgetId: this.config.widgetId,
-        tokenAuth: this.config.tokenAuth,
-        reqId
-      });
-
-      const headers: Record<string, string | number> = {
-        'Content-Type': 'application/json',
-        'tokenAuth': this.config.tokenAuth,
-        'Content-Length': Buffer.byteLength(payload)
-      };
-      if (this.config.authKey) {
-        headers['authkey'] = this.config.authKey;
-      }
-
-      const req = https.request(`https://control.msg91.com/api/v5/widget/retryOtp?widgetId=${this.config.widgetId}`, {
-        method: 'POST',
-        headers,
-        timeout: 10000
-      }, (res) => {
-        let body = '';
-        res.on('data', (chunk) => { body += chunk; });
-        res.on('end', () => {
-          try {
-            const parsed = JSON.parse(body);
-            resolve(parsed.type === 'success');
-          } catch {
-            resolve(false);
-          }
-        });
-      });
-
-      req.on('timeout', () => {
-        req.destroy();
-        resolve(false);
-      });
-
-      req.on('error', () => resolve(false));
-      req.write(payload);
-      req.end();
-    });
-  }
 }

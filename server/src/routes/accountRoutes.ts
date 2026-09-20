@@ -102,7 +102,6 @@ router.post('/auth/login', limitLogin, async (req, res) => {
 });
 
 const inactiveMessage = (status?: string): string => {
-  if (status === 'PENDING_APPROVAL') return 'Your account is waiting for approval by your shop administrator';
   if (status === 'REJECTED') return 'Your account request was rejected. Contact your shop administrator';
   return 'Your account has been deactivated. Contact your shop administrator';
 };
@@ -321,17 +320,6 @@ router.delete('/staff/:userId', requireAuth, requireActiveLicense, requireShopAd
   } catch (error) { return sendRouteError(res, req, error); }
 });
 
-router.post('/staff/:userId/approve', requireAuth, requireActiveLicense, requireShopAdmin, async (req: AuthenticatedRequest, res) => {
-  try {
-    return res.json({ success: true, user: await setStaffStatus(req, 'ACTIVE', 'STAFF_APPROVED') });
-  } catch (error) { return sendRouteError(res, req, error); }
-});
-
-router.post('/staff/:userId/reject', requireAuth, requireActiveLicense, requireShopAdmin, async (req: AuthenticatedRequest, res) => {
-  try {
-    return res.json({ success: true, user: await setStaffStatus(req, 'REJECTED', 'STAFF_REJECTED') });
-  } catch (error) { return sendRouteError(res, req, error); }
-});
 
 router.get('/audit', requireAuth, requireActiveLicense, requireShopAdmin, async (req: AuthenticatedRequest, res) => {
   try {

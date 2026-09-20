@@ -124,24 +124,6 @@ export const verifyOtp = async (req: Request, res: Response) => {
   } catch (error) { return sendRouteError(res, req, error); }
 };
 
-export const retryOtp = async (req: Request, res: Response) => {
-  try {
-    const { mobileNumber, requestId } = req.body || {};
-    const sms = providers().smsSender;
-    if (mobileNumber && requestId && sms.retryOtp) {
-      const cleanPhone = normalizePhone(String(mobileNumber));
-      const session = readOtpSession(cleanPhone, requestId);
-      if (session) {
-        const retried = await sms.retryOtp(session.sessionId);
-        if (retried) {
-          return res.status(200).json({ success: true, requestId, message: 'OTP resent successfully', expiresInSeconds: OTP_TTL_MS / 1000 });
-        }
-      }
-    }
-    return sendOtp(req, res);
-  } catch (error) { return sendRouteError(res, req, error); }
-};
-
 export const createResetToken = (phone: string, timestamp: number = Date.now()): string => {
   const cleanPhone = normalizePhone(phone);
   const payload = `${cleanPhone}:${timestamp}`;

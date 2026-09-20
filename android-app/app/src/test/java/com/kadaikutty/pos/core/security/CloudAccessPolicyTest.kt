@@ -64,4 +64,32 @@ class CloudAccessPolicyTest {
     fun `nextCheckInDeadline pushes the rolling window forward by 7 days`() {
         assertEquals(now + 7 * oneDay, CloudAccessPolicy.nextCheckInDeadline(now))
     }
+
+    @Test
+    fun `winding the clock back past a lapsed deadline does not restore access`() {
+        val checkInDeadline = now + 7 * oneDay
+        val afterDeadline = checkInDeadline + oneDay
+        // Access has lapsed, and the install has seen that far.
+        assertFalse(CloudAccessPolicy.isAllowed(true, null, checkInDeadline, afterDeadline, afterDeadline))
+        // The user sets the date back a month. Time still reads as the highest value ever seen.
+        val rolledBack = now - 30 * oneDay
+        assertFalse(CloudAccessPolicy.isAllowed(true, null, checkInDeadline, rolledBack, afterDeadline))
+        assertTrue(CloudAccessPolicy.isExpiredLockout(true, null, checkInDeadline, rolledBack, afterDeadline))
+        assertEquals(0L, CloudAccessPolicy.daysRemaining(true, null, checkInDeadline, rolledBack, afterDeadline))
+    }
+
+    @Test
+    fun `a clock ahead of the mark is trusted, so a forward correction still applies`() {
+        val checkInDeadline = now + 7 * oneDay
+        assertTrue(CloudAccessPolicy.isAllowed(true, null, checkInDeadline, now, now))
+        // Clock jumps forward past the deadline: that must cut access off immediately.
+        assertFalse(CloudAccessPolicy.isAllowed(true, null, checkInDeadline, checkInDeadline + oneDay, now))
+    }
+
+    @Test
+    fun `with no history recorded the device clock is taken at face value`() {
+        val checkInDeadline = now + 7 * oneDay
+        assertTrue(CloudAccessPolicy.isAllowed(true, null, checkInDeadline, now, null))
+        assertEquals(now, CloudAccessPolicy.effectiveNow(now, null))
+    }
 }

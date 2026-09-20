@@ -106,6 +106,7 @@ class SettingsViewModelTest {
         `when`(licenseManager.currentLicense).thenReturn(MutableStateFlow<LicenseEntity?>(null))
         `when`(licenseManager.isLicenseLoaded).thenReturn(MutableStateFlow(false))
         `when`(licenseManager.isClockTampered).thenReturn(MutableStateFlow(false))
+        `when`(licenseManager.highestSeenClockMs).thenReturn(MutableStateFlow<Long?>(null))
         `when`(sessionSecurityManager.isSessionTerminated).thenReturn(MutableStateFlow(false))
         `when`(sessionSecurityManager.terminationReason).thenReturn(MutableStateFlow<String?>(null))
         `when`(syncScheduler.syncNotificationFlow).thenReturn(flowOf(SyncNotificationState.Idle))

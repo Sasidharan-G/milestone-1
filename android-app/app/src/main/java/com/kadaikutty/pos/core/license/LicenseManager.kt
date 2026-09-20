@@ -41,6 +41,15 @@ class LicenseManager @Inject constructor(
     val isLicenseLoaded: StateFlow<Boolean> = _isLicenseLoaded.asStateFlow()
     private val _isClockTampered = MutableStateFlow(false)
     val isClockTampered: StateFlow<Boolean> = _isClockTampered.asStateFlow()
+
+    /**
+     * Highest wall-clock time this install has ever seen, from the device clock or a server
+     * timestamp. isClockTampered above only trips past a 10-minute grace and only locks the app
+     * for non-SUPER_ADMIN users; CloudAccessPolicy takes this value instead and simply refuses to
+     * read time as earlier than it, so a rollback cannot push a cloud-access deadline away.
+     */
+    private val _highestSeenClockMs = MutableStateFlow<Long?>(null)
+    val highestSeenClockMs: StateFlow<Long?> = _highestSeenClockMs.asStateFlow()
     private var refreshJob: Job? = null
 
     init {
@@ -164,6 +173,7 @@ class LicenseManager @Inject constructor(
         val highest = prefs.getLong("highest_seen_clock_ms", 0L)
         _isClockTampered.value = highest > 0 && current < highest - 10 * 60 * 1000L
         if (!_isClockTampered.value && current > highest) prefs.edit().putLong("highest_seen_clock_ms", current).apply()
+        _highestSeenClockMs.value = prefs.getLong("highest_seen_clock_ms", 0L).takeIf { it > 0L }
     }
 
     fun recordServerOrActivityTimestamp(timestampMs: Long) {

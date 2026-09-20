@@ -99,7 +99,7 @@ router.patch('/staff/:userId', async (req: AuthenticatedRequest, res) => {
     const user = found && found.role === 'CASHIER' ? found : null;
     if (!user) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff account was not found');
     const status = String(req.body?.status || user.status);
-    if (!['ACTIVE', 'INACTIVE', 'PENDING_APPROVAL', 'REJECTED'].includes(status)) throw new AppError(400, 'STAFF_STATUS_INVALID', 'Staff status is invalid');
+    if (!['ACTIVE', 'INACTIVE', 'REJECTED'].includes(status)) throw new AppError(400, 'STAFF_STATUS_INVALID', 'Staff status is invalid');
     if (req.body?.isCloudTier !== undefined && typeof req.body.isCloudTier !== 'boolean') throw new AppError(400, 'STAFF_INPUT_INVALID', 'isCloudTier must be a boolean');
     if (req.body?.cloudAccessGrantedUntilEpochMs !== undefined && req.body.cloudAccessGrantedUntilEpochMs !== null && typeof req.body.cloudAccessGrantedUntilEpochMs !== 'number') {
       throw new AppError(400, 'STAFF_INPUT_INVALID', 'cloudAccessGrantedUntilEpochMs must be a number or null');

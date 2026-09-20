@@ -1,4 +1,10 @@
-export type AccountStatus = 'ACTIVE' | 'INACTIVE' | 'PENDING_APPROVAL' | 'REJECTED';
+/**
+ * There is no PENDING_APPROVAL here on purpose. Access is gated by the trial and the
+ * Master-granted duration, not by a shop admin approving each account, so nothing ever created
+ * that status and the approve/reject routes it existed for are gone. LicenseStatus below has its
+ * own PENDING_APPROVAL, which is unrelated and live.
+ */
+export type AccountStatus = 'ACTIVE' | 'INACTIVE' | 'REJECTED';
 
 export interface UserAccount {
   userId: string;
@@ -210,8 +216,9 @@ export interface SessionStore {
 
 export interface SmsSender {
   sendOtp(phone: string, code: string): Promise<string | void>;
+  /** Optional provider-side check. Providers that cannot verify leave it out and otpController
+   *  falls back to its own commitment comparison. */
   verifyOtp?(reqId: string, otp: string): Promise<boolean>;
-  retryOtp?(reqId: string): Promise<boolean>;
 }
 
 export interface BackupRecord {

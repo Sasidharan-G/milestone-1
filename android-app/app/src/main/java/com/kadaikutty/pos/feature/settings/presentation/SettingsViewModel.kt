@@ -366,34 +366,43 @@ class SettingsViewModel @Inject constructor(
         }
         .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
 
-    val isCloudAccessLocked: StateFlow<Boolean> = currentUserCloudFields
-        .map { user ->
+    // Paired with the clock high-water mark so winding the device date back cannot push a
+    // cloud-access deadline further away. See CloudAccessPolicy.effectiveNow.
+    private val cloudFieldsWithClock = combine(currentUserCloudFields, licenseManager.highestSeenClockMs) { user, highestSeen ->
+        user to highestSeen
+    }
+
+    val isCloudAccessLocked: StateFlow<Boolean> = cloudFieldsWithClock
+        .map { (user, highestSeen) ->
             user != null && com.kadaikutty.pos.core.security.CloudAccessPolicy.isExpiredLockout(
                 isCloudTier = user.isCloudTier,
                 cloudAccessGrantedUntilEpochMs = user.cloudAccessGrantedUntilEpochMs,
-                mustCheckInByEpochMs = user.mustCheckInByEpochMs
+                mustCheckInByEpochMs = user.mustCheckInByEpochMs,
+                highestSeenEpochMs = highestSeen
             )
         }
         .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = false)
 
     // For gating individual cloud-sync buttons (Settings screen), independent of the full lock screen.
-    val hasCloudAccess: StateFlow<Boolean> = currentUserCloudFields
-        .map { user ->
+    val hasCloudAccess: StateFlow<Boolean> = cloudFieldsWithClock
+        .map { (user, highestSeen) ->
             user == null || com.kadaikutty.pos.core.security.CloudAccessPolicy.isAllowed(
                 isCloudTier = user.isCloudTier,
                 cloudAccessGrantedUntilEpochMs = user.cloudAccessGrantedUntilEpochMs,
-                mustCheckInByEpochMs = user.mustCheckInByEpochMs
+                mustCheckInByEpochMs = user.mustCheckInByEpochMs,
+                highestSeenEpochMs = highestSeen
             )
         }
         .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = true)
 
-    val cloudAccessDaysRemaining: StateFlow<Long?> = currentUserCloudFields
-        .map { user ->
+    val cloudAccessDaysRemaining: StateFlow<Long?> = cloudFieldsWithClock
+        .map { (user, highestSeen) ->
             user?.let {
                 com.kadaikutty.pos.core.security.CloudAccessPolicy.daysRemaining(
                     isCloudTier = it.isCloudTier,
                     cloudAccessGrantedUntilEpochMs = it.cloudAccessGrantedUntilEpochMs,
-                    mustCheckInByEpochMs = it.mustCheckInByEpochMs
+                    mustCheckInByEpochMs = it.mustCheckInByEpochMs,
+                    highestSeenEpochMs = highestSeen
                 )
             }
         }
