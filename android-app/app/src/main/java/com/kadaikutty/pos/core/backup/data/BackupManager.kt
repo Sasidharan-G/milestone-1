@@ -22,8 +22,24 @@ import java.util.zip.ZipOutputStream
 
 class BackupManager(
     private val context: Context,
-    private val database: BillingDatabase,
+    private val tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager?,
+    private val fallbackDatabase: BillingDatabase? = null,
 ) {
+    constructor(
+        context: Context,
+        tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
+    ) : this(context, tenantDatabaseManager, null)
+
+    constructor(
+        context: Context,
+        database: BillingDatabase,
+    ) : this(context, null, database)
+
+    private fun databaseFor(companyId: String?): BillingDatabase =
+        tenantDatabaseManager?.getDatabase(companyId) ?: fallbackDatabase ?: error("No BillingDatabase available")
+
+    private val database: BillingDatabase
+        get() = databaseFor(null)
     companion object {
         private const val BACKUP_SCHEMA_VERSION = 22
         private const val MAX_BACKUP_BYTES = 64 * 1024 * 1024
@@ -54,11 +70,16 @@ class BackupManager(
                 zip.putNextEntry(ZipEntry(METADATA_ENTRY)); zip.write(metadata.toString().toByteArray()); zip.closeEntry()
                 zip.putNextEntry(ZipEntry(DATABASE_ENTRY)); zip.write(databaseBytes); zip.closeEntry()
             }
-            BackupResult.Success(output.toByteArray())
+            BackupResult.Success(output.toByteArray(), sqlite.version)
         }.getOrElse { BackupResult.Failure(it) }
     }
 
-    suspend fun restoreBackup(zipBytes: ByteArray): Boolean = withContext(Dispatchers.IO) {
+    /**
+     * [companyId] pins the restore to one tenant. Leaving it null restores into the active company,
+     * which is only safe for a user-initiated restore; a caller that already knows the tenant must
+     * pass it, or a company switch mid-restore can land this data in the wrong database.
+     */
+    suspend fun restoreBackup(zipBytes: ByteArray, companyId: String? = null): Boolean = withContext(Dispatchers.IO) {
         if (zipBytes.isEmpty() || zipBytes.size > MAX_BACKUP_BYTES) return@withContext false
         runCatching {
             var metadataBytes: ByteArray? = null
@@ -75,10 +96,11 @@ class BackupManager(
             }
             val metadata = JSONObject(String(requireNotNull(metadataBytes)))
             val payload = requireNotNull(databaseBytes)
+            val target = databaseFor(companyId)
             require(metadata.getString("format") == "KADAIKUTTY_ROOM_JSON_V1")
-            require(metadata.getInt("schemaVersion") <= database.openHelper.writableDatabase.version)
+            require(metadata.getInt("schemaVersion") <= target.openHelper.writableDatabase.version)
             require(MessageDigest.isEqual(metadata.getString("databaseSha256").toByteArray(), sha256(payload).toByteArray()))
-            restoreJson(JSONObject(String(payload, Charsets.UTF_8)))
+            restoreJson(JSONObject(String(payload, Charsets.UTF_8)), target)
             true
         }.getOrDefault(false)
     }
@@ -126,12 +148,12 @@ class BackupManager(
         return rows
     }
 
-    private suspend fun restoreJson(root: JSONObject) {
-        val sqlite = database.openHelper.writableDatabase
+    private suspend fun restoreJson(root: JSONObject, target: BillingDatabase) {
+        val sqlite = target.openHelper.writableDatabase
         val available = listTables(sqlite).toSet()
         val included = root.keys().asSequence().filter { it in available && safeIdentifier(it) }.toSet()
         val ordered = insertPriority.filter(included::contains) + included.filterNot(insertPriority::contains).sorted()
-        database.withTransaction {
+        target.withTransaction {
             ordered.asReversed().forEach { sqlite.execSQL("DELETE FROM `$it`") }
             ordered.forEach { table ->
                 val rows = root.optJSONArray(table) ?: JSONArray()
@@ -156,7 +178,7 @@ class BackupManager(
                 }
             }
         }
-        database.invalidationTracker.refreshVersionsAsync()
+        target.invalidationTracker.refreshVersionsAsync()
     }
 
     private fun tableColumns(database: SupportSQLiteDatabase, table: String): Set<String> {

@@ -1201,14 +1201,35 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
         DateRangePickerDialog(
             onDismiss = { showDatePicker = false },
             onConfirm = {
-                val start = dateRangeState.selectedStartDateMillis
-                val end = dateRangeState.selectedEndDateMillis?.let { it + 86400000L - 1L }
+                // The Material picker reports UTC midnight, but sales are stored in local
+                // wall-clock millis and every preset above builds local day boundaries. Without
+                // reinterpreting the picked date locally, a custom range in IST is shifted 5.5
+                // hours: sales before 05:30 land on the previous day.
+                val start = dateRangeState.selectedStartDateMillis?.let { localDayStart(it) }
+                val end = dateRangeState.selectedEndDateMillis?.let { localDayEnd(it) }
                 viewModel.setDateFilter(start, end)
                 showDatePicker = false
             },
             dateRangePickerState = dateRangeState
         )
     }
+}
+
+/** Reinterprets the picker's UTC-midnight value as local 00:00:00.000 on the same calendar date. */
+private fun localDayStart(utcMidnightMillis: Long): Long = localDayBoundary(utcMidnightMillis, endOfDay = false)
+
+/** Reinterprets the picker's UTC-midnight value as local 23:59:59.999 on the same calendar date. */
+private fun localDayEnd(utcMidnightMillis: Long): Long = localDayBoundary(utcMidnightMillis, endOfDay = true)
+
+private fun localDayBoundary(utcMidnightMillis: Long, endOfDay: Boolean): Long {
+    val utc = java.util.Calendar.getInstance(java.util.TimeZone.getTimeZone("UTC")).apply { timeInMillis = utcMidnightMillis }
+    return java.util.Calendar.getInstance().apply {
+        set(utc.get(java.util.Calendar.YEAR), utc.get(java.util.Calendar.MONTH), utc.get(java.util.Calendar.DAY_OF_MONTH))
+        set(java.util.Calendar.HOUR_OF_DAY, if (endOfDay) 23 else 0)
+        set(java.util.Calendar.MINUTE, if (endOfDay) 59 else 0)
+        set(java.util.Calendar.SECOND, if (endOfDay) 59 else 0)
+        set(java.util.Calendar.MILLISECOND, if (endOfDay) 999 else 0)
+    }.timeInMillis
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
