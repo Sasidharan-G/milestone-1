@@ -47,7 +47,8 @@ class BillingViewModel @Inject constructor(
     private val sessionStore: SessionStore,
     private val syncManager: SyncManager,
     private val syncScheduler: com.kadaikutty.pos.core.sync.SyncScheduler,
-    private val analyticsManager: com.kadaikutty.pos.core.analytics.AnalyticsManager
+    private val analyticsManager: com.kadaikutty.pos.core.analytics.AnalyticsManager,
+    private val printerManager: com.kadaikutty.pos.core.printer.data.PrinterManager
 ) : ViewModel() {
 
     fun forceSync() {
@@ -780,9 +781,9 @@ class BillingViewModel @Inject constructor(
                 } else {
                     item.quantity.toString()
                 }
-                com.kadaikutty.pos.core.hardware.PrintItem(
+                com.kadaikutty.pos.core.printer.domain.BillItem(
                     name = p?.name ?: "Unknown",
-                    qty = qtyStr,
+                    quantityText = qtyStr,
                     price = Money(item.unitPriceMinorUnits).toString(),
                     total = Money(item.lineTotalMinorUnits).toString()
                 )
@@ -793,9 +794,7 @@ class BillingViewModel @Inject constructor(
             val grandTotal = Money(sale.totalMinorUnits).toString()
             val dateStr = java.text.SimpleDateFormat("dd/MM/yy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(sale.createdAtEpochMs))
 
-            com.kadaikutty.pos.core.hardware.PrinterService.printReceipt(
-                context = context,
-                macAddress = macAddress,
+            val document = com.kadaikutty.pos.core.printer.domain.BillReceipt.document(
                 shopName = shopName,
                 shopAddress = shopAddress,
                 billNumber = billNumber,
@@ -805,10 +804,13 @@ class BillingViewModel @Inject constructor(
                 subtotal = subtotal,
                 discount = discount,
                 grandTotal = grandTotal,
-                printerType = appPreferences.printerType.first() ?: "Bluetooth",
                 paperWidth = appPreferences.printerPaperWidth.first()
-            ).onFailure { error ->
-                android.widget.Toast.makeText(context, "Bill saved. Printing failed: ${error.message}", android.widget.Toast.LENGTH_LONG).show()
+            )
+            val printerType = com.kadaikutty.pos.core.printer.data.PrinterManager.PrinterType
+                .fromSetting(appPreferences.printerType.first())
+            val result = printerManager.printJob(printerType, macAddress, document)
+            if (result is com.kadaikutty.pos.core.printer.domain.PrinterResult.Failure) {
+                android.widget.Toast.makeText(context, "Bill saved. Printing failed: ${result.error.message}", android.widget.Toast.LENGTH_LONG).show()
             }
         }
     }

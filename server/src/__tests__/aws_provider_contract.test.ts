@@ -336,3 +336,40 @@ test('AWS provider registry fails fast on missing MSG91 configuration without fa
     process.env = originalEnv;
   }
 });
+
+/**
+ * Pins the divergence documented on IdentityProvider.refresh: Cognito does not issue a new refresh
+ * token on REFRESH_TOKEN_AUTH, so the AWS provider hands the caller's own token straight back and
+ * that token keeps working, where the local provider rotates it and rejects the old one. The JWT
+ * verifier is stubbed rather than fed a signed token - what is under test is which refresh token
+ * comes back out, not Cognito's signature checking.
+ */
+test('AWS refresh reuses the caller refresh token, where the local provider would have rotated it', async () => {
+  const user: UserAccount = { userId: 'user-1', companyId: 'company-a', phone: '9876543210', displayName: 'Owner', role: 'ADMIN', permissions: ['USER_MANAGE'], status: 'ACTIVE', createdAtEpochMs: 1, updatedAtEpochMs: 1, isCloudTier: true };
+  const seen: string[] = [];
+  const client = { send: async (command: any) => {
+    seen.push(command.input?.AuthParameters?.REFRESH_TOKEN ?? '');
+    // Cognito omits RefreshToken from a REFRESH_TOKEN_AUTH result.
+    return { AuthenticationResult: { IdToken: 'fresh-id-token', ExpiresIn: 900 } };
+  } };
+  const dataStore = { findUserById: async (id: string) => (id === user.userId ? user : null) };
+  const identity = new AwsIdentityProvider(client as any, dataStore as any, config);
+  (identity as any).verifier = { verify: async () => ({ 'custom:user_id': 'user-1', 'custom:company_id': 'company-a', 'custom:role': 'ADMIN', 'custom:permissions': '["USER_MANAGE"]' }) };
+
+  const first = await identity.refresh('caller-refresh-token');
+  assert.equal(first.tokens.accessToken, 'fresh-id-token');
+  assert.equal(first.tokens.refreshToken, 'caller-refresh-token');
+
+  // The same token is still good on the next call - that is the whole difference from local.
+  const second = await identity.refresh(first.tokens.refreshToken);
+  assert.equal(second.tokens.refreshToken, 'caller-refresh-token');
+  assert.deepEqual(seen, ['caller-refresh-token', 'caller-refresh-token']);
+});
+
+test('AWS refresh refuses a token whose account is no longer active', async () => {
+  const inactive: UserAccount = { userId: 'user-2', companyId: 'company-a', phone: '9876500000', displayName: 'Staff', role: 'CASHIER', permissions: [], status: 'INACTIVE', createdAtEpochMs: 1, updatedAtEpochMs: 1, isCloudTier: true };
+  const client = { send: async () => ({ AuthenticationResult: { IdToken: 'fresh-id-token', ExpiresIn: 900 } }) };
+  const identity = new AwsIdentityProvider(client as any, { findUserById: async () => inactive } as any, config);
+  (identity as any).verifier = { verify: async () => ({ 'custom:user_id': 'user-2', 'custom:company_id': 'company-a', 'custom:role': 'CASHIER' }) };
+  await assert.rejects(() => identity.refresh('caller-refresh-token'), (error: any) => error.code === 'AUTH_REFRESH_INVALID');
+});

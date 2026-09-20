@@ -640,11 +640,7 @@ class SettingsViewModel @Inject constructor(
                 return@launch
             }
 
-            val pType = when (typeStr) {
-                "Usb" -> PrinterManager.PrinterType.Usb
-                "Network" -> PrinterManager.PrinterType.Network
-                else -> PrinterManager.PrinterType.Bluetooth
-            }
+            val pType = PrinterManager.PrinterType.fromSetting(typeStr)
 
             _printStatus.value = "Printing test receipt..."
             val testDoc = PrintDocument(

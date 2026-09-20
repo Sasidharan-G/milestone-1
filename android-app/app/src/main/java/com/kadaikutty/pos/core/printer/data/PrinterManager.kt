@@ -7,15 +7,26 @@ import com.kadaikutty.pos.core.printer.domain.PrinterResult
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Connection-holding printer path, injected as a singleton and used by Settings "Test Print".
- * Bills print through [com.kadaikutty.pos.core.hardware.PrinterService] instead, which builds a
- * driver per job; both take PrinterJobLock.mutex, so the two can never write at the same time.
+ * The single printing path: bills and the Settings "Test Print" both go through [printJob], which
+ * takes PrinterJobLock.mutex for the whole job and always disconnects afterwards, so two prints can
+ * never write to the same printer at once.
  */
 class PrinterManager(
     private val bluetoothDriver: PrinterDriver,
     private val usbDriver: PrinterDriver
 ) {
-    enum class PrinterType { Bluetooth, Usb, Network }
+    enum class PrinterType {
+        Bluetooth, Usb, Network;
+
+        companion object {
+            /** Maps the stored `printerType` preference; anything unrecognised means Bluetooth. */
+            fun fromSetting(value: String?): PrinterType = when (value) {
+                "Usb" -> Usb
+                "Network" -> Network
+                else -> Bluetooth
+            }
+        }
+    }
     private val networkDriver = NetworkPrinterDriver()
 
     private var activeDriver: PrinterDriver? = null
