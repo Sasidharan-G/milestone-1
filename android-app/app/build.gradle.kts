@@ -36,6 +36,13 @@ android {
             ?: (project.findProperty("MASTER_SUPPORT_PHONE") as? String)
             ?: "+919962255661"
         buildConfigField("String", "MASTER_SUPPORT_PHONE", "\"$masterSupportPhone\"")
+
+        // Release signing certificate SHA-256, colon-separated. Blank disables the integrity check
+        // (see SecurityShield.verifyBinaryIntegrity) - set it in release.properties to enforce.
+        val signingCertSha256 = releaseValue("SIGNING_CERT_SHA256")
+            ?: (project.findProperty("SIGNING_CERT_SHA256") as? String)
+            ?: ""
+        buildConfigField("String", "SIGNING_CERT_SHA256", "\"$signingCertSha256\"")
     }
 
     signingConfigs {
@@ -98,6 +105,37 @@ android {
     }
 }
 
+// Single distributable APK workflow: build a clean release and move its only APK
+// outside Gradle's transient build directory after the build succeeds.
+val distributionApkName = "kadaikutty-pos-v0.1.0-release.apk"
+
+tasks.register("releaseApk") {
+    group = "distribution"
+    description = "Cleanly rebuilds the signed release APK and places the only distributable copy in ../apk-releases."
+    dependsOn("clean", "assembleRelease")
+
+    doLast {
+        val releaseDirectory = layout.buildDirectory.dir("outputs/apk/release").get().asFile
+        val apks = releaseDirectory.listFiles { file -> file.isFile && file.extension == "apk" }?.toList().orEmpty()
+        check(apks.size == 1) { "Expected one release APK in ${releaseDirectory.absolutePath}, found ${apks.size}" }
+        val source = apks.single()
+
+        val destinationDirectory = rootProject.file("../apk-releases")
+        destinationDirectory.mkdirs()
+        val destination = destinationDirectory.resolve(distributionApkName)
+        source.copyTo(destination, overwrite = true)
+        check(source.delete()) { "Could not remove transient APK: ${source.absolutePath}" }
+    }
+}
+
+tasks.configureEach {
+    // Android creates assembleRelease after this Kotlin build script has been evaluated.
+    // Configure it lazily so this works with the project's AGP task lifecycle.
+    if (name == "assembleRelease") {
+        mustRunAfter("clean")
+    }
+}
+
 kotlin { jvmToolchain(21) }
 
 ksp {
@@ -125,6 +163,7 @@ dependencies {
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
+    implementation(libs.androidx.documentfile)
     implementation(libs.androidx.datastore.preferences)
     debugImplementation(libs.okhttp3.logging.interceptor)
     implementation(libs.sentry.android)

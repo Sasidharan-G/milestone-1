@@ -19,13 +19,24 @@ data class UserEntity(
     val companyId: String,
     val role: String,
     val lastOnlineVerifiedAt: Long,
-    val offlineValidUntil: Long
+    val offlineValidUntil: Long,
+    // Cloud access is deliberately kept OUT of the permissions CSV / role auto-grant above, so an
+    // offline-tier ADMIN still gets every other ADMIN capability but never cloud sync — see
+    // CloudAccessPolicy for how these three fields combine into an allow/deny decision.
+    val isCloudTier: Boolean = true,
+    val cloudAccessGrantedUntilEpochMs: Long? = null,
+    val mustCheckInByEpochMs: Long? = null
 ) {
     fun toPermissionsSet(): Set<Permission> {
-        if (permissions.isBlank()) return emptySet()
-        return permissions.split(",")
+        val declared = if (permissions.isBlank()) emptySet() else permissions.split(",")
             .mapNotNull {
                 try { Permission.valueOf(it.trim()) } catch (e: Exception) { null }
             }.toSet()
+        // Checked before the role/empty fallbacks below so a deactivated account can never be
+        // promoted back to a full permission set.
+        if (declared.contains(Permission.ACCOUNT_INACTIVE)) return declared
+        if (role == "ADMIN" || role == "SUPER_ADMIN") return Permission.ALL_ACTIVE
+        if (permissions.isBlank()) return emptySet()
+        return if (declared.isEmpty()) Permission.ALL_ACTIVE else declared
     }
 }

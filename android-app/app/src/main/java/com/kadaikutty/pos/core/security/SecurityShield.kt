@@ -9,6 +9,7 @@ import android.os.Debug
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import com.kadaikutty.pos.BuildConfig
 import com.scottyab.rootbeer.RootBeer
 import java.security.KeyStore
 import java.security.MessageDigest
@@ -26,9 +27,6 @@ object SecurityShield {
     private const val IV_KEY = "encryption_iv"
     private const val FAILED_ATTEMPTS_KEY = "failed_access_attempts"
     private const val MAX_FAILED_ATTEMPTS = 5
-
-    // Expected package signature SHA-256 for integrity check. (Developer Mock Hash)
-    private const val EXPECTED_SIGNATURE_HASH = "85:B6:3C:A9:72:DF:9A:80:FF:E3:81:42:0A:9C:12:F3:D1:6E:7A:B4:9C:5F:C1:2D:E4:95:C0:11:78:E5:A9:C3"
 
     /**
      * Checks if the device is rooted or jailbroken.
@@ -101,15 +99,17 @@ object SecurityShield {
             
             if (signatures.isNullOrEmpty()) return false
             
+            // Enforced only when a real certificate hash is supplied via release.properties or
+            // CI (SIGNING_CERT_SHA256). Blank means not configured: accept any signed build
+            // rather than run a comparison that always passes and looks like verification.
+            val expected = BuildConfig.SIGNING_CERT_SHA256.replace(" ", "")
+            if (expected.isBlank()) return true
+
             val digest = MessageDigest.getInstance("SHA-256")
             val signatureBytes = digest.digest(signatures[0].toByteArray())
             val hexString = signatureBytes.joinToString(":") { String.format("%02X", it) }
             
-            if (EXPECTED_SIGNATURE_HASH.isNotBlank() && !EXPECTED_SIGNATURE_HASH.startsWith("85:B6:3C")) {
-                hexString.equals(EXPECTED_SIGNATURE_HASH, ignoreCase = true)
-            } else {
-                hexString.isNotBlank()
-            }
+            hexString.equals(expected, ignoreCase = true)
         } catch (e: Exception) {
             false
         }
