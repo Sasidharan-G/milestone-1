@@ -19,13 +19,26 @@ const fixture = async () => {
 test('local identity persists credentials and rotates refresh tokens', async t => {
   const context = await fixture();
   t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
-  const account = await context.dataStore.createAccount({ phone: '9876543210', displayName: 'Owner', businessName: 'Shop', password: 'secure123' });
-  await context.identity.setPassword(account.user.userId, 'secure123');
-  const login = await context.identity.authenticate('9876543210', 'secure123');
+  const account = await context.dataStore.createAccount({ phone: '9876543210', displayName: 'Owner', businessName: 'Shop', password: '123456' });
+  await context.identity.setPassword(account.user.userId, '123456');
+  const login = await context.identity.authenticate('9876543210', '123456');
   assert.ok(login.tokens.accessToken);
   const refreshed = await context.identity.refresh(login.tokens.refreshToken);
   assert.notEqual(refreshed.tokens.refreshToken, login.tokens.refreshToken);
   await assert.rejects(() => context.identity.refresh(login.tokens.refreshToken), /invalid or expired/i);
+});
+
+test('shop profile is company-owned and mirrors only compatibility fields', async t => {
+  const context = await fixture();
+  t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
+  const first = await context.dataStore.createAccount({ phone: '9876543210', displayName: 'Owner One', businessName: 'Shop One', password: '123456' });
+  const second = await context.dataStore.createAccount({ phone: '9876543211', displayName: 'Owner Two', businessName: 'Shop Two', password: '123456' });
+  const updated = await context.dataStore.updateShopProfile(first.user.companyId, { shopName: 'New Shop One', ownerName: 'New Owner', gstNumber: '33ABCDE1234F1Z5', address: 'Chennai', phone: '9876543210', email: 'owner@example.com', updatedByUserId: first.user.userId });
+  assert.equal(updated.shopName, 'New Shop One');
+  assert.equal(updated.version, 2);
+  assert.equal((await context.dataStore.getLicense(first.user.companyId))?.businessName, 'New Shop One');
+  assert.equal((await context.dataStore.findUserById(first.user.userId))?.businessName, 'New Shop One');
+  assert.equal((await context.dataStore.getShopProfile(second.user.companyId))?.shopName, 'Shop Two');
 });
 
 test('sync is tenant-scoped, idempotent, versioned, cursor-based, and tombstone-aware', async t => {
@@ -42,11 +55,59 @@ test('sync is tenant-scoped, idempotent, versioned, cursor-based, and tombstone-
   assert.equal(conflict[0].status, 'CONFLICT');
   const deletion = await context.dataStore.applySyncBatch(companyId, [{ ...insert, operationId: 'operation-00000003', operation: 'DELETE', baseVersion: 1 }]);
   assert.equal(deletion[0].version, 2);
+  // A fresh pull (cursor "0") now reconstructs from current-state records, not the change
+  // log, so it returns one row per entity (the latest state) rather than one per historical
+  // change — here that's the tombstone alone, which is sufficient for a client to apply.
   const page = await context.dataStore.pullSync(companyId, '0', 10);
-  assert.equal(page.records.length, 2);
-  assert.equal(page.records[1].deleted, true);
+  assert.equal(page.records.length, 1);
+  assert.equal(page.records[0].deleted, true);
   assert.equal(page.nextCursor, '2');
   await assert.rejects(() => context.dataStore.applySyncBatch(companyId, [{ ...insert, operationId: 'operation-00000004', companyId: 'company-b' }]), /tenant/i);
+});
+
+test('local sync pull reconstructs full state via paginated snapshot then hands off to the tail', async t => {
+  const context = await fixture();
+  t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
+  const companyId = 'company-a';
+  const entityIds = ['p1', 'p2', 'p3', 'p4', 'p5'];
+  for (const entityId of entityIds) {
+    const insert = { operationId: `seed-${entityId}`, companyId, entityType: 'Product', entityId, operation: 'INSERT' as const, schemaVersion: 1, payload: { name: entityId } };
+    assert.equal((await context.dataStore.applySyncBatch(companyId, [insert]))[0].status, 'APPLIED');
+  }
+
+  // Drive the snapshot phase to completion with a small page size, exactly like PullWorker's
+  // `while (hasMore)` loop, and reconstruct the full record set from the pages returned.
+  let cursor = '0';
+  const collected: string[] = [];
+  for (let guard = 0; guard < 10; guard += 1) {
+    const page = await context.dataStore.pullSync(companyId, cursor, 2);
+    page.records.forEach(record => collected.push(record.entityId));
+    cursor = page.nextCursor;
+    if (!page.hasMore) break;
+  }
+  assert.deepEqual(collected.sort(), entityIds.slice().sort());
+  assert.equal(cursor, '5', 'cursor should have switched to a plain tail sequence once the scan finished');
+
+  // A new mutation after the snapshot completed should only ever be delivered once, via the tail.
+  const followUp = { operationId: 'follow-up', companyId, entityType: 'Product', entityId: 'p6', operation: 'INSERT' as const, schemaVersion: 1, payload: { name: 'p6' } };
+  await context.dataStore.applySyncBatch(companyId, [followUp]);
+  const tailPage = await context.dataStore.pullSync(companyId, cursor, 10);
+  assert.deepEqual(tailPage.records.map(record => record.entityId), ['p6']);
+  assert.equal(tailPage.nextCursor, '6');
+});
+
+test('local sync pull never misreads an existing plain numeric cursor as a snapshot resume', async t => {
+  const context = await fixture();
+  t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
+  const companyId = 'company-a';
+  const insert = { operationId: 'op-1', companyId, entityType: 'Product', entityId: 'p1', operation: 'INSERT' as const, schemaVersion: 1, payload: { name: 'p1' } };
+  await context.dataStore.applySyncBatch(companyId, [insert]);
+  const second = { operationId: 'op-2', companyId, entityType: 'Product', entityId: 'p2', operation: 'INSERT' as const, schemaVersion: 1, payload: { name: 'p2' } };
+  await context.dataStore.applySyncBatch(companyId, [second]);
+  // A device that already synced up to sequence 1 must only get the change after it, not a
+  // fresh snapshot of everything.
+  const page = await context.dataStore.pullSync(companyId, '1', 10);
+  assert.deepEqual(page.records.map(record => record.entityId), ['p2']);
 });
 
 test('local object storage verifies tenant, size, and checksum', async t => {
@@ -62,3 +123,40 @@ test('local object storage verifies tenant, size, and checksum', async t => {
   await assert.rejects(() => context.objects.readLocalContent('company-b', intent.backupId), /not found/i);
 });
 
+test('local staff cloud-tier defaults to true and Master Control can grant/revoke a cloud-access end date', async t => {
+  const context = await fixture();
+  t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
+  const owner = await context.dataStore.createAccount({ phone: '9876543210', displayName: 'Owner', businessName: 'Shop', password: '123456' });
+
+  const onlineStaff = await context.dataStore.createStaff({ companyId: owner.user.companyId, phone: '9876500001', displayName: 'Online Cashier', password: '111111', permissions: ['SALE_CREATE'] });
+  assert.equal(onlineStaff.isCloudTier, true);
+  assert.equal(onlineStaff.cloudAccessGrantedUntilEpochMs, undefined);
+
+  const offlineStaff = await context.dataStore.createStaff({ companyId: owner.user.companyId, phone: '9876500002', displayName: 'Offline Cashier', password: '222222', permissions: ['SALE_CREATE'], isCloudTier: false });
+  assert.equal(offlineStaff.isCloudTier, false);
+
+  const granted = await context.dataStore.updateStaff(owner.user.companyId, onlineStaff.userId, { cloudAccessGrantedUntilEpochMs: 1_700_000_000_000 });
+  assert.equal(granted.cloudAccessGrantedUntilEpochMs, 1_700_000_000_000);
+  assert.equal(granted.isCloudTier, true, 'unrelated field updates must not disturb isCloudTier');
+
+  const revoked = await context.dataStore.updateStaff(owner.user.companyId, onlineStaff.userId, { isCloudTier: false });
+  assert.equal(revoked.isCloudTier, false);
+  assert.equal(revoked.cloudAccessGrantedUntilEpochMs, 1_700_000_000_000, 'unrelated field updates must not disturb the granted date');
+});
+
+test('local Master Control can set the shop OWNER\'s own cloud access, separate from staff', async t => {
+  const context = await fixture();
+  t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
+  const owner = await context.dataStore.createAccount({ phone: '9876543210', displayName: 'Owner', businessName: 'Shop', password: '123456', isCloudTier: false });
+
+  const found = await context.dataStore.findAdminByCompany(owner.user.companyId);
+  assert.equal(found?.userId, owner.user.userId);
+  assert.equal(found?.isCloudTier, false);
+
+  const upgraded = await context.dataStore.updateAccountCloudAccess(owner.user.companyId, owner.user.userId, { isCloudTier: true, cloudAccessGrantedUntilEpochMs: 1_800_000_000_000 });
+  assert.equal(upgraded.isCloudTier, true);
+  assert.equal(upgraded.cloudAccessGrantedUntilEpochMs, 1_800_000_000_000);
+
+  // Wrong company must not be able to touch another company's owner.
+  await assert.rejects(() => context.dataStore.updateAccountCloudAccess('someone-elses-company', owner.user.userId, { isCloudTier: false }));
+});

@@ -14,7 +14,9 @@ router.post('/push', limitSyncRequests, requireAuth, requireActiveLicense, pushS
 router.get('/pull', limitSyncRequests, requireAuth, requireActiveLicense, pullSync);
 router.post('/purge', limitSyncRequests, requireAuth, requireActiveLicense, async (req: AuthenticatedRequest, res) => {
   try {
-    if (req.user!.role !== 'ADMIN' || !req.user!.permissions.includes('SETTINGS_EDIT')) throw new AppError(403, 'SYNC_PURGE_FORBIDDEN', 'Administrator settings permission is required');
+    if (req.user!.role !== 'ADMIN' && req.user!.role !== 'SUPER_ADMIN' && !req.user!.permissions?.includes('SETTINGS_EDIT')) {
+      throw new AppError(403, 'SYNC_PURGE_FORBIDDEN', 'Administrator settings permission is required');
+    }
     const deletedRecords = await providers().dataStore.purgeCompanyRecords(req.user!.companyId);
     await audit(req, req.user!, 'SYNC_PURGED', undefined, { deletedRecords });
     return res.json({ success: true, deletedRecords });

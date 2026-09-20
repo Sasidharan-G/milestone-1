@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Response, Router } from 'express';
 import crypto, { randomUUID } from 'node:crypto';
 import { AppError } from '../core/errors';
 import { audit } from '../core/audit';
@@ -17,11 +17,28 @@ const router = Router();
 
 export { activePermissions };
 
-export const PASSWORD_MIN = 8;
-export const PASSWORD_MAX = 256;
+export const PASSWORD_MIN = 6;
+export const PASSWORD_MAX = 6;
 const validPhone = (phone: unknown): phone is string => typeof phone === 'string' && /^[6-9][0-9]{9}$/.test(normalizePhone(phone));
-const validPassword = (password: unknown): password is string => typeof password === 'string' && password.length >= PASSWORD_MIN && password.length <= PASSWORD_MAX;
+const validPassword = (password: unknown): password is string => typeof password === 'string' && /^\d{6}$/.test(password);
 const validName = (name: unknown): name is string => typeof name === 'string' && name.trim().length >= 1 && name.length <= 120;
+const profileText = (value: unknown, field: string, max: number, required = false): string | undefined => {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string') throw new AppError(400, 'SHOP_PROFILE_INVALID', `${field} must be text`);
+  const trimmed = value.trim();
+  if ((required && !trimmed) || trimmed.length > max) throw new AppError(400, 'SHOP_PROFILE_INVALID', `${field} is required and must be at most ${max} characters`);
+  return trimmed;
+};
+const profileEmail = (value: unknown): string | undefined => {
+  const email = profileText(value, 'Email', 160);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) throw new AppError(400, 'SHOP_PROFILE_INVALID', 'Enter a valid email address');
+  return email;
+};
+const profilePhone = (value: unknown): string | undefined => {
+  const phone = profileText(value, 'Shop phone number', 20);
+  if (phone && !/^[+0-9()\-\s]{7,20}$/.test(phone)) throw new AppError(400, 'SHOP_PROFILE_INVALID', 'Enter a valid shop phone number');
+  return phone;
+};
 export function validAccountInput(phone: unknown, name: unknown, password: unknown): boolean {
   return validPhone(phone) && validName(name) && validPassword(password);
 }
@@ -40,14 +57,15 @@ const burnProof = async (scope: string, phone: string, resetToken: unknown): Pro
 
 router.post('/auth/register', limitOtpVerify, async (req, res) => {
   try {
-    const { mobileNumber, ownerName, businessName, password, resetToken } = req.body || {};
+    const { mobileNumber, ownerName, businessName, password, resetToken, isCloudTier } = req.body || {};
     if (!validAccountInput(mobileNumber, ownerName, password) || typeof businessName !== 'string' || !businessName.trim() || businessName.length > 160) {
       throw new AppError(400, 'ACCOUNT_INPUT_INVALID', `Enter a valid mobile, owner, business, and a password of at least ${PASSWORD_MIN} characters`);
     }
+    if (isCloudTier !== undefined && typeof isCloudTier !== 'boolean') throw new AppError(400, 'ACCOUNT_INPUT_INVALID', 'isCloudTier must be a boolean');
     const phone = normalizePhone(mobileNumber);
     if (!resetProofValid(phone, resetToken)) throw new AppError(401, 'OTP_PROOF_INVALID', 'Verify a fresh OTP before registration');
     await burnProof('registration', phone, resetToken);
-    const result = await providers().dataStore.createAccount({ phone, displayName: ownerName.trim(), businessName: businessName.trim(), password });
+    const result = await providers().dataStore.createAccount({ phone, displayName: ownerName.trim(), businessName: businessName.trim(), password, isCloudTier });
     try { await providers().identityProvider.setPassword(result.user.userId, password); }
     catch (error) {
       await providers().identityProvider.deleteUser(result.user.userId).catch(() => undefined);
@@ -143,8 +161,8 @@ router.post('/auth/master/pin', limitOtpVerify, async (req: AuthenticatedRequest
     const { mobileNumber, pin, resetToken, newMobileNumber } = req.body || {};
     const mobile = normalizePhone(mobileNumber);
     const nextMobile = newMobileNumber === undefined ? mobile : normalizePhone(String(newMobileNumber));
-    if (!validPhone(mobile) || !validPhone(nextMobile) || typeof pin !== 'string' || !/^\d{6,12}$/.test(pin)) {
-      throw new AppError(400, 'MASTER_PIN_INPUT_INVALID', 'A valid mobile number and 6-12 digit PIN are required');
+    if (!validPhone(mobile) || !validPhone(nextMobile) || typeof pin !== 'string' || !/^\d{6}$/.test(pin)) {
+      throw new AppError(400, 'MASTER_PIN_INPUT_INVALID', 'A valid mobile number and 6-digit numeric PIN are required');
     }
     const master = await providers().dataStore.getMasterConfig();
     if (mobile !== master.mobile || !resetProofValid(mobile, resetToken)) {
@@ -166,9 +184,54 @@ router.get('/account/me', requireAuth, async (req: AuthenticatedRequest, res) =>
     const user = await providers().dataStore.findUserById(req.user!.userId);
     if (!user || user.companyId !== req.user!.companyId) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account was not found');
     const license = await providers().dataStore.getLicense(user.companyId);
-    return res.json({ success: true, user, license: license ? presentLicense(license) : null });
+    const shopProfile = await providers().dataStore.getShopProfile(user.companyId);
+    return res.json({ success: true, user, license: license ? presentLicense(license) : null, shopProfile });
   } catch (error) { return sendRouteError(res, req, error); }
 });
+
+router.get('/account/shop-profile', requireAuth, async (req: AuthenticatedRequest, res) => {
+  try {
+    const shopProfile = await providers().dataStore.getShopProfile(req.user!.companyId);
+    if (!shopProfile) throw new AppError(404, 'SHOP_PROFILE_NOT_FOUND', 'Shop profile was not found');
+    return res.json({ success: true, shopProfile });
+  } catch (error) { return sendRouteError(res, req, error); }
+});
+
+const saveShopProfile = async (req: AuthenticatedRequest, res: Response, legacy = false) => {
+  try {
+    const body = req.body || {};
+    const companyId = req.user!.companyId;
+    const changes: Record<string, string> = {};
+    const values: Array<[string, unknown, string, number, boolean]> = [
+      ['shopName', legacy ? body.businessName : body.shopName, 'Shop name', 160, true],
+      ['ownerName', body.ownerName, 'Owner name', 120, true],
+      ['gstNumber', body.gstNumber, 'GST number', 32, false],
+      ['address', body.address, 'Shop address', 500, false],
+      ['phone', body.phone, 'Shop phone number', 20, false]
+    ];
+    for (const [key, value, label, max, required] of values) {
+      const parsed = key === 'phone' ? profilePhone(value) : profileText(value, label, max, required);
+      if (parsed !== undefined) changes[key] = parsed;
+    }
+    const email = profileEmail(body.email);
+    if (email !== undefined) changes.email = email;
+    if (!Object.keys(changes).length) throw new AppError(400, 'SHOP_PROFILE_INVALID', 'Provide at least one shop profile field');
+    changes.updatedByUserId = req.user!.userId;
+    const shopProfile = await providers().dataStore.updateShopProfile(companyId, changes);
+    const updatedLicense = await providers().dataStore.getLicense(companyId);
+    const io = req.app.get('io');
+    if (updatedLicense) emitToCompany(io, companyId, 'license_changed', { license: presentLicense(updatedLicense) });
+    emitToCompany(io, companyId, 'shop_profile_changed', { shopProfile });
+    emitToCompany(io, companyId, 'account_changed', { businessName: shopProfile.shopName, ownerName: shopProfile.ownerName });
+    emitToUser(io, MASTER_USER_ID, 'master_overview_changed', { companyId, businessName: shopProfile.shopName, ownerName: shopProfile.ownerName });
+    await audit(req, req.user!, 'SHOP_PROFILE_UPDATED', companyId, { fields: Object.keys(changes) });
+    return res.json({ success: true, shopProfile, license: updatedLicense ? presentLicense(updatedLicense) : null });
+  } catch (error) { return sendRouteError(res, req, error); }
+};
+
+router.patch('/account/shop-profile', requireAuth, requireActiveLicense, requireShopAdmin, (req, res) => saveShopProfile(req, res));
+// Compatibility for older Android builds. It updates the same canonical profile record.
+router.patch('/account/shop-details', requireAuth, requireActiveLicense, requireShopAdmin, (req, res) => saveShopProfile(req, res, true));
 
 // ---- Staff management: shop admin only, active subscription required ----
 
@@ -181,11 +244,21 @@ router.get('/staff', requireAuth, requireActiveLicense, requireShopAdmin, async 
 router.post('/staff', requireAuth, requireActiveLicense, requireShopAdmin, async (req: AuthenticatedRequest, res) => {
   try {
     const actor = req.user!;
-    const { mobileNumber, displayName, password, permissions } = req.body || {};
-    if (!validAccountInput(mobileNumber, displayName, password) || !Array.isArray(permissions)) {
-      throw new AppError(400, 'STAFF_INPUT_INVALID', `Valid staff details and a password of at least ${PASSWORD_MIN} characters are required`);
+    const { mobileNumber, displayName, password, permissions, isCloudTier } = req.body || {};
+    if (!validPhone(mobileNumber)) {
+      throw new AppError(400, 'STAFF_INPUT_INVALID', 'Please enter a valid 10-digit mobile number');
     }
-    const user = await providers().dataStore.createStaff({ companyId: actor.companyId, phone: normalizePhone(mobileNumber), displayName: displayName.trim(), password, permissions: permissions.map(String) });
+    if (!validName(displayName)) {
+      throw new AppError(400, 'STAFF_INPUT_INVALID', 'Display name is required (1 to 120 characters)');
+    }
+    if (!validPassword(password)) {
+      throw new AppError(400, 'STAFF_INPUT_INVALID', 'Password / PIN must be exactly 6 numeric digits');
+    }
+    if (!Array.isArray(permissions)) {
+      throw new AppError(400, 'STAFF_INPUT_INVALID', 'Permissions list is required');
+    }
+    if (isCloudTier !== undefined && typeof isCloudTier !== 'boolean') throw new AppError(400, 'STAFF_INPUT_INVALID', 'isCloudTier must be a boolean');
+    const user = await providers().dataStore.createStaff({ companyId: actor.companyId, phone: normalizePhone(mobileNumber), displayName: displayName.trim(), password, permissions: permissions.map(String), isCloudTier });
     try { await providers().identityProvider.setPassword(user.userId, password); }
     catch (error) {
       await providers().identityProvider.deleteUser(user.userId).catch(() => undefined);
@@ -203,9 +276,13 @@ router.patch('/staff/:userId', requireAuth, requireActiveLicense, requireShopAdm
     const changes: any = {};
     if (typeof req.body?.displayName === 'string') changes.displayName = req.body.displayName.trim();
     if (Array.isArray(req.body?.permissions)) changes.permissions = req.body.permissions.map(String);
+    if (typeof req.body?.isCloudTier === 'boolean') changes.isCloudTier = req.body.isCloudTier;
+    if (req.body?.cloudAccessGrantedUntilEpochMs === null || typeof req.body?.cloudAccessGrantedUntilEpochMs === 'number') {
+      changes.cloudAccessGrantedUntilEpochMs = req.body.cloudAccessGrantedUntilEpochMs;
+    }
     const user = await providers().dataStore.updateStaff(req.user!.companyId, req.params.userId, changes);
     if (req.body?.password !== undefined) {
-      if (!validPassword(req.body.password)) throw new AppError(400, 'AUTH_PASSWORD_INVALID', `Password must contain ${PASSWORD_MIN} to ${PASSWORD_MAX} characters`);
+      if (!validPassword(req.body.password)) throw new AppError(400, 'AUTH_PASSWORD_INVALID', 'Password must be exactly 6 numeric digits');
       await providers().identityProvider.setPassword(user.userId, req.body.password);
       await providers().identityProvider.revokeUser(user.userId);
       await providers().sessionStore.revokeAllSessions(user.companyId, user.userId);

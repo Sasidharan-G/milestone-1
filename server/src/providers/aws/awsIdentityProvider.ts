@@ -27,7 +27,7 @@ export class AwsIdentityProvider implements IdentityProvider {
   }
 
   async setPassword(userId: string, password: string): Promise<void> {
-    if (password.length < 6 || password.length > 256) throw new AppError(400, 'AUTH_PASSWORD_INVALID', 'Password must contain 6 to 256 characters');
+    if (!/^\d{6}$/.test(password)) throw new AppError(400, 'AUTH_PASSWORD_INVALID', 'Password must be exactly 6 numeric digits');
     const user = await this.dataStore.findUserById(userId);
     if (!user) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account was not found');
     try {

@@ -15,14 +15,23 @@ router.get('/current', requireAuth, async (req: AuthenticatedRequest, res) => {
     const license = presentLicense(stored);
     const remainingMs = license.validUntilEpochMs - Date.now();
     const active = license.status === 'TRIAL' || license.status === 'ACTIVE_PAID';
+    const shopProfile = await providers().dataStore.getShopProfile(req.user!.companyId);
+    // Piggybacks on this poll (already fires every ~15 min on every device, any role) as the
+    // "online check-in" signal for the per-user cloud-access rule — no new endpoint/loop needed.
+    const caller = await providers().dataStore.findUserById(req.user!.userId);
     return res.json({
       success: true,
       license,
+      shopProfile,
       access: {
         active,
         daysRemaining: active ? Math.max(0, Math.ceil(remainingMs / DAY_MS)) : 0,
         renewalWarning: active && remainingMs <= RENEWAL_WARNING_DAYS * DAY_MS,
         serverTimeEpochMs: Date.now()
+      },
+      cloudAccess: {
+        isCloudTier: caller?.isCloudTier ?? true,
+        grantedUntilEpochMs: caller?.cloudAccessGrantedUntilEpochMs ?? null
       }
     });
   } catch (error) { return sendRouteError(res, req, error); }

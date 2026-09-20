@@ -1,4 +1,4 @@
-import { AuditEntry, BackupRecord, CloudRecord, LicenseRecord, MasterConfig, SessionRecord, UserAccount } from '../contracts';
+import { AuditEntry, BackupRecord, CloudRecord, LicenseRecord, MasterConfig, SessionRecord, ShopProfileRecord, UserAccount } from '../contracts';
 
 export interface StoredCredential {
   saltBase64: string;
@@ -21,6 +21,7 @@ export interface LocalState {
   credentials: Record<string, StoredCredential>;
   refreshTokens: Record<string, StoredRefreshToken>;
   licenses: Record<string, LicenseRecord>;
+  shopProfiles: Record<string, ShopProfileRecord>;
   sessions: Record<string, SessionRecord>;
   records: Record<string, CloudRecord>;
   changes: Array<{ sequence: number; record: CloudRecord }>;
@@ -39,6 +40,7 @@ export const emptyLocalState = (): LocalState => ({
   credentials: {},
   refreshTokens: {},
   licenses: {},
+  shopProfiles: {},
   sessions: {},
   records: {},
   changes: [],

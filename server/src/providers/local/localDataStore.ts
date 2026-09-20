@@ -1,8 +1,9 @@
 import crypto, { randomUUID } from 'node:crypto';
 import { AppError } from '../../core/errors';
-import { AuditEntry, CloudRecord, DataStore, LicenseRecord, NewAccountInput, StaffInput, SyncOperation, SyncPage, SyncResult, UserAccount } from '../contracts';
+import { AuditEntry, CloudRecord, DataStore, LicenseRecord, NewAccountInput, ShopProfileRecord, StaffInput, SyncOperation, SyncPage, SyncResult, UserAccount } from '../contracts';
 import { newTrialLicense } from '../../core/license';
 import { AtomicJsonStore } from './atomicJsonStore';
+import { encodeSnapshotCursor, encodeTailCursor, parseCursor } from '../sync/syncCursor';
 
 const recordKey = (companyId: string, entityType: string, entityId: string) => `${companyId}\u001f${entityType}\u001f${entityId}`;
 const operationKey = (companyId: string, operationId: string) => `${companyId}\u001f${operationId}`;
@@ -21,12 +22,14 @@ export class LocalDataStore implements DataStore {
       const user: UserAccount = {
         userId: randomUUID(), companyId, phone: input.phone, displayName: input.displayName,
         businessName: input.businessName, role: 'ADMIN', permissions: [...activePermissions], status: 'ACTIVE',
-        createdAtEpochMs: now, updatedAtEpochMs: now
+        createdAtEpochMs: now, updatedAtEpochMs: now, isCloudTier: input.isCloudTier ?? true
       };
       const license: LicenseRecord = newTrialLicense(companyId, input.phone, input.businessName, input.displayName, now);
+      const shopProfile: ShopProfileRecord = { companyId, shopName: input.businessName, ownerName: input.displayName, gstNumber: '', address: '', phone: input.phone, email: '', version: 1, updatedAtEpochMs: now, updatedByUserId: user.userId };
       state.users[user.userId] = user;
       state.phoneIndex[input.phone] = user.userId;
       state.licenses[companyId] = license;
+      state.shopProfiles[companyId] = shopProfile;
       return { user, license };
     });
   }
@@ -50,7 +53,7 @@ export class LocalDataStore implements DataStore {
       const user: UserAccount = {
         userId: randomUUID(), companyId: input.companyId, phone: input.phone, displayName: input.displayName,
         role: 'CASHIER', permissions: input.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE'),
-        status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now
+        status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now, isCloudTier: input.isCloudTier ?? true
       };
       state.users[user.userId] = user;
       state.phoneIndex[input.phone] = user.userId;
@@ -68,7 +71,7 @@ export class LocalDataStore implements DataStore {
     });
   }
 
-  updateStaff(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'displayName' | 'permissions' | 'status'>>): Promise<UserAccount> {
+  updateStaff(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'displayName' | 'permissions' | 'status' | 'isCloudTier' | 'cloudAccessGrantedUntilEpochMs'>>): Promise<UserAccount> {
     return this.store.write(state => {
       const current = state.users[userId];
       if (!current || current.companyId !== companyId || current.role !== 'CASHIER') throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff account was not found');
@@ -77,6 +80,27 @@ export class LocalDataStore implements DataStore {
         ...(changes.displayName === undefined ? {} : { displayName: changes.displayName }),
         ...(changes.status === undefined ? {} : { status: changes.status }),
         ...(changes.permissions === undefined ? {} : { permissions: changes.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE') }),
+        ...(changes.isCloudTier === undefined ? {} : { isCloudTier: changes.isCloudTier }),
+        ...(changes.cloudAccessGrantedUntilEpochMs === undefined ? {} : { cloudAccessGrantedUntilEpochMs: changes.cloudAccessGrantedUntilEpochMs }),
+        updatedAtEpochMs: Date.now()
+      };
+      state.users[userId] = updated;
+      return updated;
+    });
+  }
+
+  findAdminByCompany(companyId: string): Promise<UserAccount | null> {
+    return this.store.read(state => Object.values(state.users).find(user => user.companyId === companyId && user.role === 'ADMIN') || null);
+  }
+
+  updateAccountCloudAccess(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'isCloudTier' | 'cloudAccessGrantedUntilEpochMs'>>): Promise<UserAccount> {
+    return this.store.write(state => {
+      const current = state.users[userId];
+      if (!current || current.companyId !== companyId) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account was not found');
+      const updated: UserAccount = {
+        ...current,
+        ...(changes.isCloudTier === undefined ? {} : { isCloudTier: changes.isCloudTier }),
+        ...(changes.cloudAccessGrantedUntilEpochMs === undefined ? {} : { cloudAccessGrantedUntilEpochMs: changes.cloudAccessGrantedUntilEpochMs }),
         updatedAtEpochMs: Date.now()
       };
       state.users[userId] = updated;
@@ -86,6 +110,31 @@ export class LocalDataStore implements DataStore {
 
   getLicense(companyId: string): Promise<LicenseRecord | null> {
     return this.store.read(state => state.licenses[companyId] || null);
+  }
+
+  getShopProfile(companyId: string): Promise<ShopProfileRecord | null> {
+    return this.store.read(state => state.shopProfiles[companyId] || null);
+  }
+
+  updateShopProfile(companyId: string, changes: Partial<Omit<ShopProfileRecord, 'companyId' | 'version' | 'updatedAtEpochMs'>>): Promise<ShopProfileRecord> {
+    return this.store.write(state => {
+      const license = state.licenses[companyId];
+      if (!license) throw new AppError(404, 'LICENSE_NOT_FOUND', 'Company license was not found');
+      const current = state.shopProfiles[companyId] || {
+        companyId, shopName: license.businessName || '', ownerName: license.ownerName || '', gstNumber: '', address: '', phone: license.ownerMobile || '', email: '', version: 0, updatedAtEpochMs: 0
+      };
+      const now = Date.now();
+      const updated: ShopProfileRecord = { ...current, ...changes, companyId, version: current.version + 1, updatedAtEpochMs: now };
+      state.shopProfiles[companyId] = updated;
+      state.licenses[companyId] = { ...license, businessName: updated.shopName, ownerName: updated.ownerName, updatedAtEpochMs: now };
+      Object.values(state.users).forEach(user => {
+        if (user.companyId !== companyId) return;
+        user.businessName = updated.shopName;
+        if (user.role === 'ADMIN') user.displayName = updated.ownerName;
+        user.updatedAtEpochMs = now;
+      });
+      return updated;
+    });
   }
 
   consumeNonce(scope: string, nonce: string, expiresAtEpochMs: number): Promise<boolean> {
@@ -139,30 +188,48 @@ export class LocalDataStore implements DataStore {
   }
 
   pullSync(companyId: string, cursor: string, limit: number): Promise<SyncPage> {
-    const parsedCursor = cursor ? Number(cursor) : 0;
-    if (!Number.isSafeInteger(parsedCursor) || parsedCursor < 0) throw new AppError(400, 'SYNC_CURSOR_INVALID', 'Sync cursor is invalid');
+    const parsed = parseCursor(cursor);
     return this.store.read(state => {
-      const matching = state.changes.filter(change => change.sequence > parsedCursor && change.record.companyId === companyId);
-      const page = matching.slice(0, limit);
-      return {
-        records: page.map(change => change.record),
-        nextCursor: String(page.length ? page[page.length - 1].sequence : parsedCursor),
-        hasMore: matching.length > page.length
-      };
+      if (parsed.mode === 'tail') {
+        const matching = state.changes.filter(change => change.sequence > parsed.afterSequence && change.record.companyId === companyId);
+        const page = matching.slice(0, limit);
+        return {
+          records: page.map(change => change.record),
+          nextCursor: encodeTailCursor(page.length ? page[page.length - 1].sequence : parsed.afterSequence),
+          hasMore: matching.length > page.length
+        };
+      }
+      // Fresh pull: reconstruct from the durable records map instead of the change log
+      // (structurally the same gap as the AWS provider's TTL-pruned CHANGE# rows, even
+      // though this in-memory store never actually expires anything).
+      const capturedMaxSequence = parsed.mode === 'snapshotStart' ? state.sequence : parsed.capturedMaxSequence;
+      let offset = 0;
+      if (parsed.mode === 'snapshotResume') {
+        offset = Number(parsed.pageToken);
+        if (!Number.isSafeInteger(offset) || offset < 0) throw new AppError(400, 'SYNC_CURSOR_INVALID', 'Sync cursor is invalid');
+      }
+      const allKeysForCompany = Object.keys(state.records).filter(key => state.records[key].companyId === companyId).sort();
+      const pageKeys = allKeysForCompany.slice(offset, offset + limit);
+      const records = pageKeys.map(key => state.records[key]);
+      const nextOffset = offset + pageKeys.length;
+      if (nextOffset < allKeysForCompany.length) {
+        return { records, nextCursor: encodeSnapshotCursor(capturedMaxSequence, String(nextOffset)), hasMore: true };
+      }
+      return { records, nextCursor: encodeTailCursor(capturedMaxSequence), hasMore: false };
     });
   }
 
   purgeCompanyRecords(companyId: string): Promise<number> {
     return this.store.write(state => {
       let count = 0;
-      const now = Date.now();
       Object.entries(state.records).forEach(([key, existing]) => {
-        if (existing.companyId !== companyId || existing.deleted) return;
-        const tombstone: CloudRecord = { ...existing, version: existing.version + 1, updatedAtEpochMs: now, deleted: true, payload: { companyId } };
-        state.records[key] = tombstone;
-        state.sequence += 1;
-        state.changes.push({ sequence: state.sequence, record: tombstone });
+        if (existing.companyId !== companyId) return;
+        delete state.records[key];
         count += 1;
+      });
+      state.changes = state.changes.filter(change => change.record.companyId !== companyId);
+      Object.keys(state.idempotency).forEach(k => {
+        if (k.startsWith(`${companyId}:`)) delete state.idempotency[k];
       });
       return count;
     });
@@ -178,6 +245,13 @@ export class LocalDataStore implements DataStore {
       if (!license) throw new AppError(404, 'LICENSE_NOT_FOUND', 'Company license was not found');
       const updated = { ...license, ...changes, companyId, updatedAtEpochMs: Date.now() };
       state.licenses[companyId] = updated;
+      Object.values(state.users).forEach(user => {
+        if (user.companyId === companyId) {
+          if (changes.businessName) user.businessName = changes.businessName;
+          if (changes.ownerName && user.role === 'ADMIN') user.displayName = changes.ownerName;
+          user.updatedAtEpochMs = Date.now();
+        }
+      });
       return updated;
     });
   }
@@ -188,6 +262,7 @@ export class LocalDataStore implements DataStore {
         delete state.phoneIndex[user.phone]; delete state.credentials[user.userId]; delete state.users[user.userId];
       });
       delete state.licenses[companyId];
+      delete state.shopProfiles[companyId];
       Object.entries(state.records).forEach(([key, record]) => { if (record.companyId === companyId) delete state.records[key]; });
       Object.entries(state.sessions).forEach(([key, session]) => { if (session.companyId === companyId) delete state.sessions[key]; });
     });

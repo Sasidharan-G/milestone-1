@@ -14,7 +14,7 @@ const main = async (): Promise<void> => {
   const mobile = String(mobileArg || '').replace(/\D/g, '').slice(-10);
   const pin = String(pinArg || '');
   if (!/^[6-9]\d{9}$/.test(mobile)) throw new Error('Master mobile must be a valid 10-digit Indian number');
-  if (!/^\d{6,12}$/.test(pin)) throw new Error('Master PIN must be 6-12 digits (Cognito password minimum is 6)');
+  if (!/^\d{6}$/.test(pin)) throw new Error('Master PIN must be exactly 6 digits');
 
   const registry = providers();
   const config = await registry.dataStore.updateMasterConfig({ mobile, pin });

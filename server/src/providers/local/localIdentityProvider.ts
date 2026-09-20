@@ -17,7 +17,7 @@ export class LocalIdentityProvider implements IdentityProvider {
   constructor(private readonly store: AtomicJsonStore, private readonly dataStore: DataStore) {}
 
   async setPassword(userId: string, password: string): Promise<void> {
-    if (password.length < 6 || password.length > 256) throw new AppError(400, 'AUTH_PASSWORD_INVALID', 'Password must contain 6 to 256 characters');
+    if (!/^\d{6}$/.test(password)) throw new AppError(400, 'AUTH_PASSWORD_INVALID', 'Password must be exactly 6 numeric digits');
     const salt = crypto.randomBytes(16);
     const verifier = await derive(password, salt, iterations, keyBytes, 'sha256');
     await this.store.write(state => {
