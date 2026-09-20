@@ -31,19 +31,6 @@ interface PurchaseDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStockMovements(movements: List<StockMovementEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSupplierCredit(credit: com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity)
     
-    @Transaction suspend fun savePurchase(
-        purchase: PurchaseEntity, 
-        items: List<PurchaseItemEntity>, 
-        movements: List<StockMovementEntity>,
-        supplierCredit: com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity? = null
-    ) { 
-        insertPurchase(purchase)
-        insertItems(items)
-        insertStockMovements(movements) 
-        if (supplierCredit != null) {
-            insertSupplierCredit(supplierCredit)
-        }
-    }
     @Query("DELETE FROM purchase_items WHERE companyId = :companyId") suspend fun deletePurchaseItemsByCompany(companyId: String)
     @Query("DELETE FROM purchase_items WHERE companyId = :companyId") fun deletePurchaseItemsByCompanySync(companyId: String)
 

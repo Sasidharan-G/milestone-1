@@ -16,9 +16,5 @@ class AnalyticsManager @Inject constructor() {
             params.forEach { (key, value) -> setData(key, value.toString().take(200)) }
         })
     }
-
-    fun setUserProperty(name: String, value: String) {
-        Sentry.configureScope { scope -> scope.setTag("user.$name", value.take(200)) }
-    }
 }
 

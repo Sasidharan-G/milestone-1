@@ -90,11 +90,6 @@ export const requireShopAdmin = (req: AuthenticatedRequest, res: Response, next:
   return sendRouteError(res, req, new AppError(403, 'STAFF_ADMIN_REQUIRED', 'Shop administrator permission is required'));
 };
 
-export const requirePermission = (permission: string) => (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
-  if (req.user?.role === 'ADMIN' || req.user?.permissions.includes(permission)) return next();
-  return sendRouteError(res, req, new AppError(403, 'PERMISSION_DENIED', `Permission ${permission} is required`, false, { permission }));
-};
-
 /**
  * Subscription gate. Login, /account/me and /license/current stay reachable so the app can show
  * the lock screen; everything that touches tenant data is refused the instant the license lapses.

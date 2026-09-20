@@ -89,8 +89,4 @@ class EscPosFormatter(private val paperWidthChar: Int = 32) {
 
         return stream.toByteArray()
     }
-
-    private fun getDividerLine(): String {
-        return "-".repeat(paperWidthChar)
-    }
 }

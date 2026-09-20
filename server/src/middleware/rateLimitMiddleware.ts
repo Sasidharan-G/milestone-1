@@ -92,7 +92,6 @@ const otpSendLimiter = new InMemoryRateLimiter(10 * 60 * 1000, 5, 20 * 1000);
 const otpVerifyLimiter = new InMemoryRateLimiter(10 * 60 * 1000, 10, 0);
 
 // 3. OTP Retry Limiter: Max 5 retries per 10 minutes, 20 seconds cooldown
-const otpRetryLimiter = new InMemoryRateLimiter(10 * 60 * 1000, 5, 20 * 1000);
 
 // 4. Sync API Limiter: Max 120 requests per minute
 const syncLimiter = new InMemoryRateLimiter(60 * 1000, 120, 0);
@@ -126,16 +125,6 @@ export const limitOtpVerify = (req: Request, res: Response, next: NextFunction) 
 
   const result = otpVerifyLimiter.check(key);
   if (!result.allowed) return tooMany(res, req, result.reason || 'Too many invalid verification attempts. Please try again later.', result.retryAfterSeconds);
-  next();
-};
-
-export const limitOtpRetry = (req: Request, res: Response, next: NextFunction) => {
-  const phone = normalizePhone(req.body?.mobileNumber || '');
-  const ip = getClientIp(req);
-  const key = phone.length >= 10 ? `otp_retry_${phone}` : `otp_retry_ip_${ip}`;
-
-  const result = otpRetryLimiter.check(key);
-  if (!result.allowed) return tooMany(res, req, result.reason || 'Too many retry attempts. Please wait before retrying.', result.retryAfterSeconds);
   next();
 };
 

@@ -31,14 +31,6 @@ import kotlinx.coroutines.flow.Flow
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStockMovements(movements: List<StockMovementEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) fun insertStockMovementsSync(movements: List<StockMovementEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertCustomerCredit(credit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity)
-    @Transaction suspend fun saveSale(sale: SaleEntity, items: List<SaleItemEntity>, movements: List<StockMovementEntity>, customerCredit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity? = null) { 
-        insertSale(sale)
-        insertItems(items)
-        insertStockMovements(movements)
-        if (customerCredit != null) {
-            insertCustomerCredit(customerCredit)
-        }
-    }
     @Query("DELETE FROM sale_items WHERE companyId = :companyId") suspend fun deleteSaleItemsByCompany(companyId: String)
     @Query("DELETE FROM sale_items WHERE companyId = :companyId") fun deleteSaleItemsByCompanySync(companyId: String)
     @Query("DELETE FROM stock_movements WHERE companyId = :companyId") suspend fun deleteStockMovementsByCompany(companyId: String)
