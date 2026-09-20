@@ -6,6 +6,7 @@ import com.kadaikutty.pos.core.auth.MasterAuthSession
 import com.kadaikutty.pos.core.auth.SessionSecurityManager
 import com.kadaikutty.pos.core.license.LicenseEntity
 import com.kadaikutty.pos.core.network.BackendApiClient
+import com.kadaikutty.pos.core.network.WebSocketManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -19,20 +20,26 @@ data class StaffApprovalRequest(
     val id: String = "", val username: String = "", val displayName: String = "", val companyId: String = "",
     val businessName: String = "", val role: String = "CASHIER", val status: String = "PENDING_APPROVAL",
     val permissions: String = "", val createdAt: Long = 0L,
+    val isCloudTier: Boolean = true, val cloudAccessGrantedUntilEpochMs: Long? = null,
+    // Which admin/shop this staff member belongs to — a staff record itself carries no owner
+    // info server-side, so this is filled in from the matching license by companyId (see refresh()).
+    val ownerName: String = "",
 )
 
 data class MasterControlUiState(
     val isLoading: Boolean = false, val searchQuery: String = "", val selectedFilter: String = "ALL",
     val currentTab: String = "LICENSES", val licenses: List<LicenseEntity> = emptyList(),
-    val staffRequests: List<StaffApprovalRequest> = emptyList(), val pendingCount: Int = 0,
+    val staffRequests: List<StaffApprovalRequest> = emptyList(),
     val activeTrialCount: Int = 0, val activePaidCount: Int = 0, val expiredCount: Int = 0,
     val pendingStaffCount: Int = 0, val errorMessage: String? = null, val successMessage: String? = null,
+    val adminByCompany: Map<String, StaffApprovalRequest> = emptyMap(),
 )
 
 @HiltViewModel
 class MasterControlViewModel @Inject constructor(
     private val backendApi: BackendApiClient,
     private val sessionSecurityManager: SessionSecurityManager,
+    private val webSocketManager: WebSocketManager,
 ) : ViewModel() {
     private val _state = MutableStateFlow(MasterControlUiState())
     val state: StateFlow<MasterControlUiState> = _state.asStateFlow()
@@ -41,13 +48,15 @@ class MasterControlViewModel @Inject constructor(
     val masterMobile = MutableStateFlow("")
     private var allLicenses = emptyList<LicenseEntity>()
     private var allStaff = emptyList<StaffApprovalRequest>()
+    private var adminByCompany = emptyMap<String, StaffApprovalRequest>()
 
-    init { ensureMasterSession(); refresh() }
-
-    /** LoginViewModel already registers the session on PIN entry; this only self-heals a missing one. */
-    private fun ensureMasterSession() {
-        if (MasterAuthSession.sessionId != null) return
-        viewModelScope.launch { sessionSecurityManager.registerMasterSession() }
+    init {
+        refresh()
+        // Any shop's license/staff/profile change touches admin/overview; refresh live instead
+        // of waiting for the user to tap the manual refresh button.
+        viewModelScope.launch {
+            webSocketManager.masterOverviewChangedFlow.collect { refresh() }
+        }
     }
 
     fun acknowledgeMasterTermination() { sessionSecurityManager.resetMasterTermination() }
@@ -55,17 +64,54 @@ class MasterControlViewModel @Inject constructor(
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true, errorMessage = null)
             runCatching {
-                val response = backendApi.request("GET", "admin/overview", token(), sessionId = sessionId())
-                val config = response.optJSONObject("masterConfig")
+                if (MasterAuthSession.sessionId.isNullOrBlank()) {
+                    sessionSecurityManager.registerMasterSession()
+                }
+                var sessId = MasterAuthSession.sessionId
+                val tokenStr = MasterAuthSession.accessToken ?: error("Master session expired. Verify Master PIN again")
+                if (sessId.isNullOrBlank()) {
+                    error("Master device session could not be established")
+                }
+                
+                var response = runCatching { backendApi.request("GET", "admin/overview", tokenStr, sessionId = sessId) }.getOrNull()
+                if (response == null) {
+                    sessionSecurityManager.registerMasterSession()
+                    sessId = MasterAuthSession.sessionId
+                    if (!sessId.isNullOrBlank()) {
+                        response = backendApi.request("GET", "admin/overview", tokenStr, sessionId = sessId)
+                    }
+                }
+
+                val validResp = response ?: error("Register a device session before calling this endpoint")
+                val config = validResp.optJSONObject("masterConfig")
                 masterMobile.value = config?.optString("mobile").orEmpty()
-                allLicenses = parseLicenses(response.optJSONArray("licenses") ?: JSONArray())
-                allStaff = parseStaff(response.optJSONArray("users") ?: JSONArray())
+                allLicenses = parseLicenses(validResp.optJSONArray("licenses") ?: JSONArray())
+                // A staff account carries no owner/business info of its own — join by companyId
+                // against the license list so Master Control can show which admin created them.
+                val licenseByCompany = allLicenses.associateBy { it.companyId }
+                val usersArray = validResp.optJSONArray("users") ?: JSONArray()
+                allStaff = parseStaff(usersArray).map { staff ->
+                    val license = licenseByCompany[staff.companyId]
+                    staff.copy(businessName = license?.businessName.orEmpty(), ownerName = license?.ownerName.orEmpty())
+                }
+                adminByCompany = parseAdminsByCompany(usersArray)
                 applyFilters()
+                webSocketManager.connectMaster(tokenStr, sessId)
             }.onFailure { _state.value = _state.value.copy(isLoading = false, errorMessage = it.message ?: "Unable to load platform data") }
         }
     }
 
     fun deleteShopRecord(companyId: String, ownerMobile: String, businessName: String) = mutate("DELETE", "admin/companies/$companyId", JSONObject(), "$businessName deleted")
+
+    // Targets the shop OWNER's own account (not staff) — see adminRoutes.ts's dedicated
+    // /companies/:companyId/cloud-access route, since PATCH /staff/:id only ever accepts CASHIER.
+    fun enableOwnerCloudTier(companyId: String, businessName: String) =
+        mutate("PATCH", "admin/companies/$companyId/cloud-access", JSONObject().put("isCloudTier", true), "$businessName upgraded to online (cloud) access")
+    fun disableOwnerCloudTier(companyId: String, businessName: String) =
+        mutate("PATCH", "admin/companies/$companyId/cloud-access", JSONObject().put("isCloudTier", false), "$businessName moved to offline-only access")
+    fun setOwnerCloudAccessGrantedUntil(companyId: String, businessName: String, grantedUntilEpochMs: Long?) =
+        mutate("PATCH", "admin/companies/$companyId/cloud-access", JSONObject().put("isCloudTier", true).put("cloudAccessGrantedUntilEpochMs", grantedUntilEpochMs ?: JSONObject.NULL),
+            if (grantedUntilEpochMs == null) "$businessName's cloud access end date cleared (no expiry)" else "$businessName's cloud access updated")
     fun setTab(tab: String) { _state.value = _state.value.copy(currentTab = tab) }
 
     private var masterProfileOtpRequestId: String? = null
@@ -120,6 +166,16 @@ class MasterControlViewModel @Inject constructor(
     fun revokeStaff(request: StaffApprovalRequest) = staff(request, "INACTIVE", "", "Staff access revoked")
     fun deleteStaffPermanently(request: StaffApprovalRequest) = mutate("DELETE", "admin/staff/${request.id}", JSONObject(), "Staff disabled")
 
+    // Cloud-tier controls: independent of status/permissions above, so granting/revoking cloud
+    // access never disturbs a staff member's approval state or feature permissions.
+    fun enableCloudTier(request: StaffApprovalRequest) =
+        mutate("PATCH", "admin/staff/${request.id}", JSONObject().put("isCloudTier", true), "${request.displayName} upgraded to online (cloud) access")
+    fun disableCloudTier(request: StaffApprovalRequest) =
+        mutate("PATCH", "admin/staff/${request.id}", JSONObject().put("isCloudTier", false), "${request.displayName} moved to offline-only access")
+    fun setCloudAccessGrantedUntil(request: StaffApprovalRequest, grantedUntilEpochMs: Long?) =
+        mutate("PATCH", "admin/staff/${request.id}", JSONObject().put("isCloudTier", true).put("cloudAccessGrantedUntilEpochMs", grantedUntilEpochMs ?: JSONObject.NULL),
+            if (grantedUntilEpochMs == null) "${request.displayName}'s cloud access end date cleared (no expiry)" else "${request.displayName}'s cloud access updated")
+
     private fun licenseAction(companyId: String, body: JSONObject, message: String) =
         mutate("PATCH", "admin/licenses/$companyId", body, message)
 
@@ -131,7 +187,14 @@ class MasterControlViewModel @Inject constructor(
     private fun mutate(method: String, path: String, body: JSONObject, message: String) {
         viewModelScope.launch {
             _state.value = _state.value.copy(isLoading = true)
-            runCatching { backendApi.request(method, path, token(), body, sessionId = sessionId()) }
+            runCatching {
+                if (MasterAuthSession.sessionId.isNullOrBlank()) {
+                    sessionSecurityManager.registerMasterSession()
+                }
+                val tokenStr = MasterAuthSession.accessToken ?: error("Master session expired. Verify Master PIN again")
+                val sessId = MasterAuthSession.sessionId ?: error("Master device session could not be established")
+                backendApi.request(method, path, tokenStr, body, sessionId = sessId)
+            }
                 .onSuccess { _state.value = _state.value.copy(successMessage = message); refresh() }
                 .onFailure { _state.value = _state.value.copy(isLoading = false, errorMessage = it.message ?: "Operation failed") }
         }
@@ -149,24 +212,39 @@ class MasterControlViewModel @Inject constructor(
 
     private fun parseStaff(array: JSONArray): List<StaffApprovalRequest> = (0 until array.length()).mapNotNull { index ->
         val item = array.getJSONObject(index)
-        if (item.optString("role") != "CASHIER") null else StaffApprovalRequest(item.optString("userId"), item.optString("phone"), item.optString("displayName"), item.optString("companyId"), role = "CASHIER", status = item.optString("status"), permissions = item.optJSONArray("permissions")?.let { permissions -> (0 until permissions.length()).joinToString(",") { permissions.getString(it) } }.orEmpty(), createdAt = item.optLong("createdAtEpochMs"))
+        if (item.optString("role") != "CASHIER") null else StaffApprovalRequest(item.optString("userId"), item.optString("phone"), item.optString("displayName"), item.optString("companyId"), role = "CASHIER", status = item.optString("status"), permissions = item.optJSONArray("permissions")?.let { permissions -> (0 until permissions.length()).joinToString(",") { permissions.getString(it) } }.orEmpty(), createdAt = item.optLong("createdAtEpochMs"), isCloudTier = item.optBoolean("isCloudTier", true), cloudAccessGrantedUntilEpochMs = item.optLong("cloudAccessGrantedUntilEpochMs", 0L).takeIf { it > 0L })
     }
+
+    // The shop owner's own cloud-tier record — an ADMIN is not "staff", so this is parsed and
+    // keyed separately (by companyId) rather than folding into allStaff/parseStaff above.
+    private fun parseAdminsByCompany(array: JSONArray): Map<String, StaffApprovalRequest> = (0 until array.length()).mapNotNull { index ->
+        val item = array.getJSONObject(index)
+        if (item.optString("role") != "ADMIN") null else item.optString("companyId") to StaffApprovalRequest(
+            item.optString("userId"), item.optString("phone"), item.optString("displayName"), item.optString("companyId"),
+            role = "ADMIN", status = item.optString("status"), createdAt = item.optLong("createdAtEpochMs"),
+            isCloudTier = item.optBoolean("isCloudTier", true), cloudAccessGrantedUntilEpochMs = item.optLong("cloudAccessGrantedUntilEpochMs", 0L).takeIf { it > 0L }
+        )
+    }.toMap()
 
     private fun applyFilters() {
         val query = _state.value.searchQuery.trim().lowercase()
         val filter = _state.value.selectedFilter
         val licenses = allLicenses.filter { license ->
             (query.isBlank() || license.businessName.lowercase().contains(query) || license.ownerMobile.contains(query)) &&
-                (filter == "ALL" || when (filter) { "PENDING" -> license.licenseStatus == "PENDING_APPROVAL"; "TRIAL" -> license.licenseStatus == "TRIAL"; "ACTIVE" -> license.licenseStatus == "ACTIVE_PAID"; "REVOKED" -> license.licenseStatus == "REVOKED"; "EXPIRING" -> license.isExpiringSoon; else -> true })
+                (filter == "ALL" || when (filter) { "TRIAL" -> license.licenseStatus == "TRIAL"; "ACTIVE" -> license.licenseStatus == "ACTIVE_PAID"; "REVOKED" -> license.licenseStatus == "REVOKED"; "EXPIRING" -> license.isExpiringSoon; else -> true })
         }
         val staff = allStaff.filter { query.isBlank() || it.displayName.lowercase().contains(query) || it.username.contains(query) }
         _state.value = _state.value.copy(isLoading = false, licenses = licenses, staffRequests = staff,
-            pendingCount = allLicenses.count { it.licenseStatus == "PENDING_APPROVAL" }, activeTrialCount = allLicenses.count { it.licenseStatus == "TRIAL" },
+            activeTrialCount = allLicenses.count { it.licenseStatus == "TRIAL" },
             activePaidCount = allLicenses.count { it.licenseStatus == "ACTIVE_PAID" }, expiredCount = allLicenses.count { it.isExpired },
-            pendingStaffCount = allStaff.count { it.status == "PENDING_APPROVAL" })
+            pendingStaffCount = allStaff.count { it.status == "PENDING_APPROVAL" }, adminByCompany = adminByCompany)
     }
 
     private fun token(): String = MasterAuthSession.accessToken ?: error("Master session expired. Verify Master PIN again")
     private fun sessionId(): String = MasterAuthSession.sessionId ?: error("Master session expired. Verify Master PIN again")
-    override fun onCleared() { sessionSecurityManager.clearMasterSession(); super.onCleared() }
+    override fun onCleared() {
+        sessionSecurityManager.clearMasterSession()
+        webSocketManager.disconnectMaster()
+        super.onCleared()
+    }
 }

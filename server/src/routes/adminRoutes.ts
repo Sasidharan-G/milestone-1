@@ -128,12 +128,15 @@ router.delete('/staff/:userId', async (req: AuthenticatedRequest, res) => {
     const overview = await providers().dataStore.adminOverview();
     const user = overview.users.find(item => item.userId === req.params.userId && item.role === 'CASHIER');
     if (!user) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff account was not found');
-    await providers().dataStore.updateStaff(user.companyId, user.userId, { status: 'INACTIVE', permissions: [] });
-    await providers().identityProvider.revokeUser(user.userId);
+    // Master Control presents this as a permanent erase, so it has to be one: kick the device
+    // first, then drop the identity user, then the record and its phone reservation - otherwise
+    // the number stays claimed and can never be reused.
     const revoked = await providers().sessionStore.revokeAllSessions(user.companyId, user.userId);
-    for (const session of revoked) emitToUser(req.app.get('io'), user.userId, 'session_revoked', { sessionId: session.sessionId, reason: 'ACCOUNT_DISABLED' });
-    revokeSessionSockets(req.app.get('io'), user.userId, revoked, 'ACCOUNT_DISABLED');
-    await audit(req, req.user!, 'STAFF_DISABLED_BY_MASTER', user.userId, undefined, user.companyId);
+    for (const session of revoked) emitToUser(req.app.get('io'), user.userId, 'session_revoked', { sessionId: session.sessionId, reason: 'ACCOUNT_DELETED' });
+    revokeSessionSockets(req.app.get('io'), user.userId, revoked, 'ACCOUNT_DELETED');
+    await providers().identityProvider.deleteUser(user.userId);
+    await providers().dataStore.deleteStaff(user.companyId, user.userId);
+    await audit(req, req.user!, 'STAFF_DELETED_BY_MASTER', user.userId, { phone: user.phone }, user.companyId);
     emitToCompany(req.app.get('io'), user.companyId, 'staff_changed', { userId: user.userId });
     emitToUser(req.app.get('io'), MASTER_USER_ID, 'master_overview_changed', { companyId: user.companyId });
     return res.status(204).send();
