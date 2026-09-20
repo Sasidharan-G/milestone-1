@@ -32,3 +32,9 @@ release.properties
 
 # local env backups
 .env.*.bak
+
+# build outputs and local scratch
+apk-releases/
+artifacts/
+scratch/
+products_100_bulk_import.csv
