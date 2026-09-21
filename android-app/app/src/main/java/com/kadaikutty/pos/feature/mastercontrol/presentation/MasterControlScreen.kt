@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -933,7 +934,7 @@ fun ShopLicenseAdminCard(
                         }
                     }
                     Text(
-                        text = "${license.ownerName.ifBlank { "Owner" }} ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¢ +91 ${license.ownerMobile}",
+                        text = "${license.ownerName.ifBlank { "Owner" }} \u2022 +91 ${license.ownerMobile}",
                         fontSize = 12.sp,
                         color = Color(0xFF94A3B8)
                     )
@@ -1111,6 +1112,7 @@ fun StaffApprovalAdminCard(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
+                    modifier = Modifier.weight(1f),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -1126,7 +1128,7 @@ fun StaffApprovalAdminCard(
                     Column {
                         Text(request.displayName, fontWeight = FontWeight.ExtraBold, fontSize = 15.sp, color = Color.White)
                         Text(
-                            if (request.ownerName.isNotBlank()) "${request.businessName} ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· Created by ${request.ownerName}" else request.businessName,
+                            if (request.ownerName.isNotBlank()) "${request.businessName} \u00B7 Created by ${request.ownerName}" else request.businessName,
                             fontSize = 12.sp,
                             color = Color(0xFF94A3B8),
                             fontWeight = FontWeight.Medium
@@ -1159,6 +1161,8 @@ fun StaffApprovalAdminCard(
                         },
                         fontSize = 10.sp,
                         fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        softWrap = false,
                         color = when {
                             isActive -> Color(0xFF34D399)
                             isRejected -> Color(0xFFF87171)
@@ -1181,11 +1185,12 @@ fun StaffApprovalAdminCard(
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Row(
+                        modifier = Modifier.weight(1f),
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         Icon(Icons.Default.Phone, contentDescription = null, tint = Color(0xFF38BDF8), modifier = Modifier.size(16.dp))
-                        Text("+91 ${request.username}", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.SemiBold)
+                        Text("+91 ${request.username}", fontSize = 13.sp, color = Color.White, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
 
                     Surface(
@@ -1195,6 +1200,7 @@ fun StaffApprovalAdminCard(
                         Text(
                             text = "ROLE: ${request.role.uppercase()}",
                             fontSize = 11.sp,
+                            maxLines = 1,
                             fontWeight = FontWeight.Bold,
                             color = Color(0xFFA78BFA),
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)

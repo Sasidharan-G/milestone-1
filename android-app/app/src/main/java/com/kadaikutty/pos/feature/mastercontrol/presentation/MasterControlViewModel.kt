@@ -22,7 +22,7 @@ data class StaffApprovalRequest(
     // a status the server never produces made the pending-approval UI look reachable.
     val businessName: String = "", val role: String = "CASHIER", val status: String,
     val permissions: String = "", val createdAt: Long = 0L,
-    // Which admin/shop this staff member belongs to â€” a staff record itself carries no owner
+    // Which admin/shop this staff member belongs to - a staff record itself carries no owner
     // info server-side, so this is filled in from the matching license by companyId (see refresh()).
     val ownerName: String = "",
 )
@@ -85,7 +85,7 @@ class MasterControlViewModel @Inject constructor(
                 val config = validResp.optJSONObject("masterConfig")
                 masterMobile.value = config?.optString("mobile").orEmpty()
                 allLicenses = parseLicenses(validResp.optJSONArray("licenses") ?: JSONArray())
-                // A staff account carries no owner/business info of its own â€” join by companyId
+                // A staff account carries no owner/business info of its own - join by companyId
                 // against the license list so Master Control can show which admin created them.
                 val licenseByCompany = allLicenses.associateBy { it.companyId }
                 val usersArray = validResp.optJSONArray("users") ?: JSONArray()
@@ -108,7 +108,7 @@ class MasterControlViewModel @Inject constructor(
     /**
      * Changing the master's own mobile or PIN is OTP-gated (same requirement as every other
      * credential change): an OTP is sent to the *current* master mobile before anything changes.
-     * There is no direct "set PIN" endpoint â€” only POST /auth/master/pin, which demands the proof.
+     * There is no direct "set PIN" endpoint - only POST /auth/master/pin, which demands the proof.
      */
     fun sendMasterProfileOtp(onSent: () -> Unit, onError: (String) -> Unit) {
         viewModelScope.launch {
