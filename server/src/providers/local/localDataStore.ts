@@ -1,13 +1,13 @@
 import crypto, { randomUUID } from 'node:crypto';
 import { AppError } from '../../core/errors';
-import { AuditEntry, CloudRecord, DataStore, LicenseRecord, NewAccountInput, ShopProfileRecord, StaffInput, SyncOperation, SyncPage, SyncResult, UserAccount } from '../contracts';
+import { AuditEntry, CloudRecord, DataStore, LicenseRecord, NewAccountInput, ShopProfileRecord, StaffInput, SyncActor, SyncOperation, SyncPage, SyncResult, UserAccount } from '../contracts';
 import { newTrialLicense } from '../../core/license';
 import { AtomicJsonStore } from './atomicJsonStore';
 import { encodeSnapshotCursor, encodeTailCursor, parseCursor } from '../sync/syncCursor';
+import { decideSyncOperation, permissionDenial, rejectedResult, rejectionReason, replayStoredResult } from '../sync/syncRules';
 
 const recordKey = (companyId: string, entityType: string, entityId: string) => `${companyId}\u001f${entityType}\u001f${entityId}`;
 const operationKey = (companyId: string, operationId: string) => `${companyId}\u001f${operationId}`;
-const supportedEntities = new Set(['Category', 'Product', 'Customer', 'Supplier', 'Expense', 'Sale', 'Purchase', 'CustomerCredit', 'SupplierCredit', 'StockMovement']);
 
 export const activePermissions = ['USER_MANAGE', 'CATEGORY_VIEW', 'CATEGORY_CREATE', 'CATEGORY_EDIT', 'PRODUCT_VIEW', 'PRODUCT_CREATE', 'PRODUCT_EDIT', 'SALE_CREATE', 'SALE_VIEW', 'PURCHASE_CREATE', 'PURCHASE_VIEW', 'REPORT_SALES', 'REPORT_STOCK', 'REPORT_PROFIT', 'BACKUP_CREATE', 'SETTINGS_VIEW', 'SETTINGS_EDIT'];
 
@@ -22,7 +22,7 @@ export class LocalDataStore implements DataStore {
       const user: UserAccount = {
         userId: randomUUID(), companyId, phone: input.phone, displayName: input.displayName,
         businessName: input.businessName, role: 'ADMIN', permissions: [...activePermissions], status: 'ACTIVE',
-        createdAtEpochMs: now, updatedAtEpochMs: now, isCloudTier: input.isCloudTier ?? true
+        createdAtEpochMs: now, updatedAtEpochMs: now
       };
       const license: LicenseRecord = newTrialLicense(companyId, input.phone, input.businessName, input.displayName, now);
       const shopProfile: ShopProfileRecord = { companyId, shopName: input.businessName, ownerName: input.displayName, gstNumber: '', address: '', phone: input.phone, email: '', version: 1, updatedAtEpochMs: now, updatedByUserId: user.userId };
@@ -42,6 +42,10 @@ export class LocalDataStore implements DataStore {
     return this.store.read(state => state.users[userId] || null);
   }
 
+  listCompanyUsers(companyId: string): Promise<UserAccount[]> {
+    return this.store.read(state => Object.values(state.users).filter(user => user.companyId === companyId));
+  }
+
   listStaff(companyId: string): Promise<UserAccount[]> {
     return this.store.read(state => Object.values(state.users).filter(user => user.companyId === companyId && user.role === 'CASHIER'));
   }
@@ -53,7 +57,7 @@ export class LocalDataStore implements DataStore {
       const user: UserAccount = {
         userId: randomUUID(), companyId: input.companyId, phone: input.phone, displayName: input.displayName,
         role: 'CASHIER', permissions: input.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE'),
-        status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now, isCloudTier: input.isCloudTier ?? true
+        status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now
       };
       state.users[user.userId] = user;
       state.phoneIndex[input.phone] = user.userId;
@@ -71,7 +75,7 @@ export class LocalDataStore implements DataStore {
     });
   }
 
-  updateStaff(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'displayName' | 'permissions' | 'status' | 'isCloudTier' | 'cloudAccessGrantedUntilEpochMs'>>): Promise<UserAccount> {
+  updateStaff(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'displayName' | 'permissions' | 'status'>>): Promise<UserAccount> {
     return this.store.write(state => {
       const current = state.users[userId];
       if (!current || current.companyId !== companyId || current.role !== 'CASHIER') throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff account was not found');
@@ -80,27 +84,6 @@ export class LocalDataStore implements DataStore {
         ...(changes.displayName === undefined ? {} : { displayName: changes.displayName }),
         ...(changes.status === undefined ? {} : { status: changes.status }),
         ...(changes.permissions === undefined ? {} : { permissions: changes.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE') }),
-        ...(changes.isCloudTier === undefined ? {} : { isCloudTier: changes.isCloudTier }),
-        ...(changes.cloudAccessGrantedUntilEpochMs === undefined ? {} : { cloudAccessGrantedUntilEpochMs: changes.cloudAccessGrantedUntilEpochMs }),
-        updatedAtEpochMs: Date.now()
-      };
-      state.users[userId] = updated;
-      return updated;
-    });
-  }
-
-  findAdminByCompany(companyId: string): Promise<UserAccount | null> {
-    return this.store.read(state => Object.values(state.users).find(user => user.companyId === companyId && user.role === 'ADMIN') || null);
-  }
-
-  updateAccountCloudAccess(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'isCloudTier' | 'cloudAccessGrantedUntilEpochMs'>>): Promise<UserAccount> {
-    return this.store.write(state => {
-      const current = state.users[userId];
-      if (!current || current.companyId !== companyId) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account was not found');
-      const updated: UserAccount = {
-        ...current,
-        ...(changes.isCloudTier === undefined ? {} : { isCloudTier: changes.isCloudTier }),
-        ...(changes.cloudAccessGrantedUntilEpochMs === undefined ? {} : { cloudAccessGrantedUntilEpochMs: changes.cloudAccessGrantedUntilEpochMs }),
         updatedAtEpochMs: Date.now()
       };
       state.users[userId] = updated;
@@ -148,26 +131,29 @@ export class LocalDataStore implements DataStore {
     });
   }
 
-  applySyncBatch(companyId: string, operations: SyncOperation[]): Promise<SyncResult[]> {
+  applySyncBatch(companyId: string, operations: SyncOperation[], actor?: SyncActor): Promise<SyncResult[]> {
     return this.store.write(state => operations.map(operation => {
       const idempotencyKey = operationKey(companyId, operation.operationId);
       const prior = state.idempotency[idempotencyKey];
-      if (prior) return { ...prior.result, status: 'DUPLICATE' };
+      if (prior) return replayStoredResult(prior.result);
       if (operation.companyId !== companyId) throw new AppError(403, 'TENANT_MISMATCH', 'Operation tenant does not match authenticated tenant');
-      if (!supportedEntities.has(operation.entityType)) throw new AppError(422, 'SYNC_ENTITY_UNSUPPORTED', 'Unsupported sync entity type');
+      const rejection = rejectionReason(operation);
+      if (rejection) return rejectedResult(operation, rejection);
       const key = recordKey(companyId, operation.entityType, operation.entityId);
       const existing = state.records[key];
-      const baseVersion = operation.baseVersion || 0;
-      if (existing && existing.version !== baseVersion && operation.operation !== 'INSERT') {
-        const result: SyncResult = { operationId: operation.operationId, status: 'CONFLICT', record: existing };
+      const decision = decideSyncOperation(existing, operation);
+      if (decision === 'CONFLICT') {
+        const result: SyncResult = { operationId: operation.operationId, status: 'CONFLICT', ...(existing ? { record: existing } : {}) };
         state.idempotency[idempotencyKey] = { result, createdAtEpochMs: Date.now() };
         return result;
       }
-      if (!existing && baseVersion > 0) {
-        const result: SyncResult = { operationId: operation.operationId, status: 'CONFLICT' };
+      if (decision === 'NOOP') {
+        const result: SyncResult = { operationId: operation.operationId, status: 'APPLIED', version: existing!.version };
         state.idempotency[idempotencyKey] = { result, createdAtEpochMs: Date.now() };
         return result;
       }
+      const denial = actor ? permissionDenial(actor, operation, existing) : null;
+      if (denial) return rejectedResult(operation, denial);
       const now = Date.now();
       const payload = operation.operation === 'PARTIAL_UPDATE'
         ? { ...(existing?.payload || {}), ...(operation.payload || {}) }
@@ -216,6 +202,18 @@ export class LocalDataStore implements DataStore {
         return { records, nextCursor: encodeSnapshotCursor(capturedMaxSequence, String(nextOffset)), hasMore: true };
       }
       return { records, nextCursor: encodeTailCursor(capturedMaxSequence), hasMore: false };
+    });
+  }
+
+  getSyncEpoch(companyId: string): Promise<number> {
+    return this.store.read(state => state.syncEpochs?.[companyId] || 0);
+  }
+
+  bumpSyncEpoch(companyId: string): Promise<number> {
+    return this.store.write(state => {
+      state.syncEpochs = state.syncEpochs || {};
+      state.syncEpochs[companyId] = (state.syncEpochs[companyId] || 0) + 1;
+      return state.syncEpochs[companyId];
     });
   }
 

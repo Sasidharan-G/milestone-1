@@ -34,55 +34,31 @@ private val LightColors = lightColorScheme(
 )
 
 private val DarkColors = darkColorScheme(
-    primary = Color(0xFFFB7185), // Vibrant, accessible Rose for crisp readability on dark surfaces
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFF5C151A),
-    onPrimaryContainer = Color(0xFFFFDADA),
-    secondary = EmeraldSuccess,
-    onSecondary = Color(0xFF064E3B),
+    primary = PrimaryRoseDark,
+    onPrimary = Color(0xFF3A0D10),
+    primaryContainer = PrimaryContainerDark,
+    onPrimaryContainer = OnPrimaryContainerDark,
+    secondary = Color(0xFF6EE7B7),
+    onSecondary = Color(0xFF00382A),
     secondaryContainer = Color(0xFF065F46),
-    onSecondaryContainer = Color(0xFFA7F3D0),
-    tertiary = Color(0xFFA78BFA),
-    onTertiary = Color(0xFF2E1065),
-    tertiaryContainer = Color(0xFF5B21B6),
-    onTertiaryContainer = Color(0xFFDDD6FE),
-    error = Color(0xFFF87171),
+    onSecondaryContainer = Color(0xFFC6F7E2),
+    tertiary = Color(0xFFF0B27A),
+    onTertiary = Color(0xFF45240A),
+    tertiaryContainer = Color(0xFF6B3A12),
+    onTertiaryContainer = Color(0xFFFFE3C9),
+    error = Color(0xFFFFA8A0),
+    onError = Color(0xFF5C0F0A),
     errorContainer = Color(0xFF7F1D1D),
-    onErrorContainer = Color(0xFFFECACA),
+    onErrorContainer = Color(0xFFFFDAD6),
     background = DarkAppBackground,
-    onBackground = Color(0xFFF8FAFC),
+    onBackground = DarkOnSurface,
     surface = DarkCardSurface,
-    onSurface = Color(0xFFF8FAFC),
+    onSurface = DarkOnSurface,
     surfaceVariant = DarkSurfaceVariant,
-    onSurfaceVariant = Color(0xFF94A3B8),
+    onSurfaceVariant = DarkOnSurfaceVariant,
     outline = DarkOutline,
-    outlineVariant = Color(0xFF475569)
-)
-
-private val AmoledColors = darkColorScheme(
-    primary = Color(0xFF38BDF8), // Vivid Cyan
-    onPrimary = Color(0xFF000000),
-    primaryContainer = Color(0xFF0369A1),
-    onPrimaryContainer = Color(0xFFE0F2FE),
-    secondary = Color(0xFF34D399), // Neon Emerald
-    onSecondary = Color(0xFF000000),
-    secondaryContainer = Color(0xFF065F46),
-    onSecondaryContainer = Color(0xFFA7F3D0),
-    tertiary = Color(0xFFFBBF24), // Vivid Amber
-    onTertiary = Color(0xFF000000),
-    tertiaryContainer = Color(0xFF78350F),
-    onTertiaryContainer = Color(0xFFFEF3C7),
-    error = Color(0xFFF87171),
-    errorContainer = Color(0xFF7F1D1D),
-    onErrorContainer = Color(0xFFFECACA),
-    background = Color(0xFF000000), // Pure OLED Black Canvas
-    onBackground = Color(0xFFFFFFFF),
-    surface = Color(0xFF000000),
-    onSurface = Color(0xFFFFFFFF),
-    surfaceVariant = Color(0xFF18181B),
-    onSurfaceVariant = Color(0xFFE4E4E7),
-    outline = Color(0xFF52525B),
-    outlineVariant = Color(0xFF3F3F46)
+    outlineVariant = Color(0xFF3A2F2E),
+    scrim = Color(0xFF000000)
 )
 
 @Composable
@@ -91,11 +67,9 @@ fun BillingTheme(
     darkTheme: Boolean = false,
     content: @Composable () -> Unit
 ) {
-    val colors = when {
-        themeMode == "Amoled" -> AmoledColors
-        themeMode == "Dark" || darkTheme -> DarkColors
-        else -> LightColors
-    }
+    // "Amoled" is a retired theme; any device still holding that preference falls through to
+    // Dark rather than losing its choice.
+    val colors = if (themeMode == "Dark" || themeMode == "Amoled" || darkTheme) DarkColors else LightColors
 
     val view = androidx.compose.ui.platform.LocalView.current
     if (!view.isInEditMode) {

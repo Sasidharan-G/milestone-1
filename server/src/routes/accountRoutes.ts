@@ -8,7 +8,7 @@ import { normalizePhone, verifyResetToken } from '../controllers/otpController';
 import {
   AuthenticatedRequest, MASTER_USER_ID, PLATFORM_COMPANY_ID, requireActiveLicense, requireAuth, requireShopAdmin
 } from '../middleware/authMiddleware';
-import { limitLogin, limitOtpVerify } from '../middleware/rateLimitMiddleware';
+import { limitLogin, limitMasterLogin, limitOtpVerify } from '../middleware/rateLimitMiddleware';
 import { providers } from '../providers/providerRegistry';
 import { activePermissions } from '../providers/local/localDataStore';
 import { sendRouteError } from './http';
@@ -57,15 +57,14 @@ const burnProof = async (scope: string, phone: string, resetToken: unknown): Pro
 
 router.post('/auth/register', limitOtpVerify, async (req, res) => {
   try {
-    const { mobileNumber, ownerName, businessName, password, resetToken, isCloudTier } = req.body || {};
+    const { mobileNumber, ownerName, businessName, password, resetToken } = req.body || {};
     if (!validAccountInput(mobileNumber, ownerName, password) || typeof businessName !== 'string' || !businessName.trim() || businessName.length > 160) {
       throw new AppError(400, 'ACCOUNT_INPUT_INVALID', `Enter a valid mobile, owner, business, and a password of at least ${PASSWORD_MIN} characters`);
     }
-    if (isCloudTier !== undefined && typeof isCloudTier !== 'boolean') throw new AppError(400, 'ACCOUNT_INPUT_INVALID', 'isCloudTier must be a boolean');
     const phone = normalizePhone(mobileNumber);
     if (!resetProofValid(phone, resetToken)) throw new AppError(401, 'OTP_PROOF_INVALID', 'Verify a fresh OTP before registration');
     await burnProof('registration', phone, resetToken);
-    const result = await providers().dataStore.createAccount({ phone, displayName: ownerName.trim(), businessName: businessName.trim(), password, isCloudTier });
+    const result = await providers().dataStore.createAccount({ phone, displayName: ownerName.trim(), businessName: businessName.trim(), password });
     try { await providers().identityProvider.setPassword(result.user.userId, password); }
     catch (error) {
       await providers().identityProvider.deleteUser(result.user.userId).catch(() => undefined);
@@ -114,7 +113,7 @@ export const validMasterLoginInput = (_mobileNumber: unknown, pin: unknown): boo
  * POST /sessions/register call every principal uses, which already enforces single-device
  * (it revokes every other live session for this companyId+userId, platform/master included).
  */
-router.post('/auth/master/login', limitLogin, async (req: AuthenticatedRequest, res) => {
+router.post('/auth/master/login', limitMasterLogin, limitLogin, async (req: AuthenticatedRequest, res) => {
   try {
     const { pin } = req.body || {};
     if (!validMasterLoginInput(undefined, pin)) throw new AppError(400, 'MASTER_LOGIN_INPUT_INVALID', 'A 6-12 digit PIN is required');
@@ -248,7 +247,7 @@ router.get('/staff', requireAuth, requireActiveLicense, requireShopAdmin, async 
 router.post('/staff', requireAuth, requireActiveLicense, requireShopAdmin, async (req: AuthenticatedRequest, res) => {
   try {
     const actor = req.user!;
-    const { mobileNumber, displayName, password, permissions, isCloudTier } = req.body || {};
+    const { mobileNumber, displayName, password, permissions } = req.body || {};
     if (!validPhone(mobileNumber)) {
       throw new AppError(400, 'STAFF_INPUT_INVALID', 'Please enter a valid 10-digit mobile number');
     }
@@ -261,8 +260,7 @@ router.post('/staff', requireAuth, requireActiveLicense, requireShopAdmin, async
     if (!Array.isArray(permissions)) {
       throw new AppError(400, 'STAFF_INPUT_INVALID', 'Permissions list is required');
     }
-    if (isCloudTier !== undefined && typeof isCloudTier !== 'boolean') throw new AppError(400, 'STAFF_INPUT_INVALID', 'isCloudTier must be a boolean');
-    const user = await providers().dataStore.createStaff({ companyId: actor.companyId, phone: normalizePhone(mobileNumber), displayName: displayName.trim(), password, permissions: permissions.map(String), isCloudTier });
+    const user = await providers().dataStore.createStaff({ companyId: actor.companyId, phone: normalizePhone(mobileNumber), displayName: displayName.trim(), password, permissions: permissions.map(String) });
     try { await providers().identityProvider.setPassword(user.userId, password); }
     catch (error) {
       await providers().identityProvider.deleteUser(user.userId).catch(() => undefined);
@@ -280,10 +278,6 @@ router.patch('/staff/:userId', requireAuth, requireActiveLicense, requireShopAdm
     const changes: any = {};
     if (typeof req.body?.displayName === 'string') changes.displayName = req.body.displayName.trim();
     if (Array.isArray(req.body?.permissions)) changes.permissions = req.body.permissions.map(String);
-    if (typeof req.body?.isCloudTier === 'boolean') changes.isCloudTier = req.body.isCloudTier;
-    if (req.body?.cloudAccessGrantedUntilEpochMs === null || typeof req.body?.cloudAccessGrantedUntilEpochMs === 'number') {
-      changes.cloudAccessGrantedUntilEpochMs = req.body.cloudAccessGrantedUntilEpochMs;
-    }
     const user = await providers().dataStore.updateStaff(req.user!.companyId, req.params.userId, changes);
     if (req.body?.password !== undefined) {
       if (!validPassword(req.body.password)) throw new AppError(400, 'AUTH_PASSWORD_INVALID', 'Password must be exactly 6 numeric digits');

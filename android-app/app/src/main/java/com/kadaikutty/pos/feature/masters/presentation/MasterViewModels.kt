@@ -29,6 +29,7 @@ import javax.inject.Inject
 
 import kotlinx.coroutines.flow.first
 import com.kadaikutty.pos.core.auth.SessionStore
+import com.kadaikutty.pos.core.security.SyncWritePolicy
 import kotlinx.coroutines.flow.map
 
 
@@ -69,6 +70,7 @@ class CategoryViewModel @Inject constructor(
         }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Category")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 
                 // Duplicate prevention: check if category with same name exists
@@ -104,6 +106,7 @@ class CategoryViewModel @Inject constructor(
         }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Category")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 
                 // Duplicate prevention: check if another category has the same name
@@ -136,6 +139,10 @@ class CategoryViewModel @Inject constructor(
     fun deleteCategory(category: CategoryEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Category")
+                // Same rule sync uses (ConflictResolver.isInUse): a delete that would orphan
+                // products is refused here, and undone if it arrives from another device.
+                require(dao.productCountInCategory(category.companyId, category.id) == 0) { "Move or delete the products in this category first." }
                 dao.deleteCategory(category)
                 syncManager.enqueueCategory(category, "DELETE")
                 onSuccess()
@@ -250,6 +257,7 @@ class ProductViewModel @Inject constructor(
         val cleanBarcode = barcode?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Product")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 
                 // Duplicate check
@@ -327,6 +335,7 @@ class ProductViewModel @Inject constructor(
         val cleanBarcode = newBarcode?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Product")
                 // Duplicate check
                 val existing = dao.getAllProducts(product.companyId)
                 if (existing.any { it.id != product.id && it.name.trim().equals(cleanName, ignoreCase = true) }) {
@@ -388,6 +397,7 @@ class ProductViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Product")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 require(session.role in listOf("ADMIN", "SUPER_ADMIN")) { "Only an administrator can adjust stock" }
                 require(product.companyId == session.companyId && newQuantity in 0..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) { "Invalid stock adjustment" }
@@ -419,6 +429,13 @@ class ProductViewModel @Inject constructor(
     fun deleteProduct(product: ProductEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Product")
+                val stock = database.saleDao().stock(product.companyId, product.id)
+                require(stock == 0L) { "This product still has stock ($stock). Adjust stock to zero before deleting it." }
+                require(database.syncIntegrityDao().saleItemCount(product.companyId, product.id) == 0 &&
+                    database.syncIntegrityDao().purchaseItemCount(product.companyId, product.id) == 0) {
+                    "This product appears on bills or purchases, so it cannot be deleted."
+                }
                 dao.deleteProduct(product)
                 syncManager.enqueueProduct(product, "DELETE")
                 onSuccess()
@@ -467,6 +484,7 @@ class ProductViewModel @Inject constructor(
             val companyId = session.companyId
 
             try {
+                SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Product")
                 // Pre-cache existing categories
                 val categoryMap = mutableMapOf<String, String>()
                 dao.categories(companyId, "").first().forEach {
@@ -927,6 +945,7 @@ class CustomerViewModel @Inject constructor(
         val cleanPhone = phone?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Customer")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 
                 // Duplicate check
@@ -985,6 +1004,7 @@ class CustomerViewModel @Inject constructor(
         val cleanAddress = newAddress?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Customer")
                 // Duplicate check
                 val existing = dao.customers(customer.companyId, "").first()
                 if (cleanPhone != null && existing.any { it.id != customer.id && !it.phone.isNullOrBlank() && it.phone.trim() == cleanPhone }) {
@@ -1023,6 +1043,8 @@ class CustomerViewModel @Inject constructor(
     fun deleteCustomer(customer: CustomerEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Customer")
+                require(dao.customerBalance(customer.companyId, customer.id) == 0L) { "This customer has a pending balance. Settle it before deleting." }
                 dao.deleteCustomer(customer)
                 syncManager.enqueueCustomer(customer, "DELETE")
                 onSuccess()
@@ -1035,6 +1057,7 @@ class CustomerViewModel @Inject constructor(
     fun addCustomerCredit(customerId: String, amountMinorUnits: Long, reason: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Customer")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val credit = CustomerCreditEntity(
                     id = newRecordId(),
@@ -1097,6 +1120,7 @@ class CustomerViewModel @Inject constructor(
     fun updateCustomerCreditLimit(customerId: String, limit: Long, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Customer")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 dao.updateCustomerCreditLimit(session.companyId, customerId, limit)
                 onSuccess()
@@ -1109,6 +1133,7 @@ class CustomerViewModel @Inject constructor(
     fun deleteCustomerCredit(creditId: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Customer")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 dao.deleteCustomerCreditById(session.companyId, creditId)
                 onSuccess()
@@ -1149,6 +1174,7 @@ class SupplierViewModel @Inject constructor(
         val cleanPhone = phone?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Supplier")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 
                 // Duplicate check
@@ -1191,6 +1217,7 @@ class SupplierViewModel @Inject constructor(
         val cleanAddress = newAddress?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Supplier")
                 // Duplicate check
                 val existing = dao.suppliers(supplier.companyId, "").first()
                 if (cleanPhone != null && existing.any { it.id != supplier.id && !it.phone.isNullOrBlank() && it.phone.trim() == cleanPhone }) {
@@ -1229,6 +1256,8 @@ class SupplierViewModel @Inject constructor(
     fun deleteSupplier(supplier: SupplierEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Supplier")
+                require(dao.supplierBalance(supplier.companyId, supplier.id) == 0L) { "This supplier has a pending balance. Settle it before deleting." }
                 dao.deleteSupplier(supplier)
                 syncManager.enqueueSupplier(supplier, "DELETE")
                 onSuccess()
@@ -1241,6 +1270,7 @@ class SupplierViewModel @Inject constructor(
     fun addSupplierCredit(supplierId: String, amountMinorUnits: Long, terms: String, dueDateEpochMs: Long, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Supplier")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val credit = SupplierCreditEntity(
                     id = newRecordId(),
@@ -1264,6 +1294,7 @@ class SupplierViewModel @Inject constructor(
     fun deleteSupplierCredit(creditId: String, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Supplier")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 dao.deleteSupplierCreditById(session.companyId, creditId)
                 onSuccess()
@@ -1330,6 +1361,7 @@ class ExpenseViewModel @Inject constructor(
         }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Expense")
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val expense = ExpenseEntity(
                     id = newRecordId(),
@@ -1357,6 +1389,7 @@ class ExpenseViewModel @Inject constructor(
         }
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Expense")
                 val updated = expense.copy(
                     amountMinorUnits = newAmountMinorUnits,
                     description = cleanDesc,
@@ -1382,6 +1415,7 @@ class ExpenseViewModel @Inject constructor(
     fun deleteExpense(expense: ExpenseEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
             try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Expense")
                 dao.deleteExpense(expense)
                 syncManager.enqueueExpense(expense, "DELETE")
                 onSuccess()

@@ -135,7 +135,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                 Button(
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                     onClick = {
-                        val target = deletingBillNum!!
+                        val target = deletingBillNum ?: return@Button
                         val reason = deleteReason
                         deletingBillNum = null
                         deleteReason = ""

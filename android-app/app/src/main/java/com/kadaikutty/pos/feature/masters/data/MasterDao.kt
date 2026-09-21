@@ -71,4 +71,21 @@ import kotlinx.coroutines.flow.Flow
 
     @Query("DELETE FROM supplier_credits WHERE companyId = :companyId AND id = :id")
     suspend fun deleteSupplierCreditById(companyId: String, id: String)
+
+    // Balances and usage, read by the delete guards and by sync conflict resolution: a customer or
+    // supplier with money outstanding, a product with stock, or a category in use must not vanish.
+    @Query("SELECT COALESCE(SUM(amountMinorUnits), 0) FROM customer_credits WHERE companyId = :companyId AND customerId = :customerId")
+    suspend fun customerBalance(companyId: String, customerId: String): Long
+
+    @Query("SELECT COALESCE(SUM(amountMinorUnits), 0) FROM supplier_credits WHERE companyId = :companyId AND supplierId = :supplierId")
+    suspend fun supplierBalance(companyId: String, supplierId: String): Long
+
+    @Query("SELECT COUNT(*) FROM products WHERE companyId = :companyId AND categoryId = :categoryId")
+    suspend fun productCountInCategory(companyId: String, categoryId: String): Int
+
+    /** Products whose stock went below zero, which happens when two devices sell the last units offline. */
+    @Query("SELECT p.id AS id, p.name AS name, SUM(m.quantityDelta) AS stock FROM products p JOIN stock_movements m ON m.companyId = p.companyId AND m.productId = p.id WHERE p.companyId = :companyId GROUP BY p.id, p.name HAVING SUM(m.quantityDelta) < 0 ORDER BY p.name")
+    fun negativeStockProducts(companyId: String): Flow<List<NegativeStockProduct>>
 }
+
+data class NegativeStockProduct(val id: String, val name: String, val stock: Long)

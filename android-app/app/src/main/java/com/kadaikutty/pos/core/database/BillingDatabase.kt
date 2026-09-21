@@ -51,9 +51,10 @@ import com.kadaikutty.pos.feature.billing.data.AuditLogDao
         ShiftEntity::class,
         LicenseEntity::class,
         AuditLogEntity::class,
-        LocalOperationEntity::class
+        LocalOperationEntity::class,
+        SyncConflictEntity::class
     ],
-    version = 23,
+    version = 26,
     exportSchema = true
 )
 @TypeConverters(SyncStatusConverter::class)
@@ -61,6 +62,8 @@ abstract class BillingDatabase : RoomDatabase() {
     abstract fun localOperationDao(): LocalOperationDao
     abstract fun syncQueueDao(): SyncQueueDao
     abstract fun syncDeadLetterDao(): SyncDeadLetterDao
+    abstract fun syncConflictDao(): SyncConflictDao
+    abstract fun syncIntegrityDao(): SyncIntegrityDao
     abstract fun masterDao(): MasterDao
     abstract fun saleDao(): SaleDao
     abstract fun purchaseDao(): PurchaseDao

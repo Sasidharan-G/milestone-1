@@ -9,8 +9,6 @@ data class ServerStaffRecord(
     val role: String,
     val permissions: String,
     val status: String,
-    val isCloudTier: Boolean = true,
-    val cloudAccessGrantedUntilEpochMs: Long? = null,
 )
 
 // What StaffReconciler.plan() decided a local Room row needs, kept separate from actually
@@ -20,17 +18,14 @@ sealed interface StaffReconciliationAction {
     // rejected server-side, or a leftover from before staff creation was made backend-first).
     data class Delete(val localId: String) : StaffReconciliationAction
 
-    // Same phone, different id: the pre-fix "local id != server id" bug. Re-key the local row (and
-    // its stored offline credential) to the server's canonical id, keeping this device's existing
-    // salt/verifier so offline login for this device keeps working.
+    // Same phone, different id: the pre-fix "local id != server id" bug. Re-key the local row to
+    // the server's canonical id.
     data class Rekey(val local: UserEntity, val server: ServerStaffRecord) : StaffReconciliationAction
 
     // Same id, but display name or permissions drifted: bring the local row back in line.
     data class UpdateFields(val local: UserEntity, val server: ServerStaffRecord) : StaffReconciliationAction
 
-    // An active server account has no local mirror at all: insert a placeholder (blank salt/
-    // verifier -- offline login is unavailable until this staff member signs in once online on
-    // this device, same as any brand-new staff member today).
+    // An active server account has no local mirror at all: insert it.
     data class InsertMissing(val server: ServerStaffRecord, val companyId: String) : StaffReconciliationAction
 }
 
@@ -51,8 +46,7 @@ object StaffReconciler {
             when {
                 match == null -> actions += StaffReconciliationAction.Delete(local.id)
                 match.userId != local.id -> actions += StaffReconciliationAction.Rekey(local, match)
-                local.displayName != match.displayName || local.permissions != match.permissions ||
-                    local.isCloudTier != match.isCloudTier || local.cloudAccessGrantedUntilEpochMs != match.cloudAccessGrantedUntilEpochMs ->
+                local.displayName != match.displayName || local.permissions != match.permissions ->
                     actions += StaffReconciliationAction.UpdateFields(local, match)
             }
         }

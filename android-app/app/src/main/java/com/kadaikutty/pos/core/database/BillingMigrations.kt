@@ -372,3 +372,56 @@ val migration22To23 = object : Migration(22, 23) {
         db.execSQL("ALTER TABLE users ADD COLUMN mustCheckInByEpochMs INTEGER")
     }
 }
+
+/**
+ * Drops `mustCheckInByEpochMs`. The rolling 7-day "reconnect or be locked out" rule it fed is gone:
+ * an outage is not a licensing event, and a POS that stops selling because the line is down is
+ * worse than useless.
+ *
+ * SQLite on API 26 has no `ALTER TABLE ... DROP COLUMN`, so this is the recreate-and-copy dance,
+ * same as migration9To10 above. `offlineValidUntil` stays: it is dead too, but removing it buys
+ * nothing and every extra column in this rebuild is another chance to lose a shop's users.
+ */
+val migration23To24 = object : Migration(23, 24) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `users` RENAME TO `temp_users`")
+        // The index travels with the renamed table under its old name, so the CREATE INDEX IF NOT
+        // EXISTS below saw it, did nothing, and DROP TABLE then took it away: the new table had no
+        // index and Room refused the upgrade, crashing the app on every launch.
+        db.execSQL("DROP INDEX IF EXISTS `index_users_username`")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `users` (`id` TEXT NOT NULL, `username` TEXT NOT NULL, `displayName` TEXT NOT NULL, `salt` TEXT NOT NULL, `verifier` TEXT NOT NULL, `permissions` TEXT NOT NULL, `companyId` TEXT NOT NULL, `role` TEXT NOT NULL, `lastOnlineVerifiedAt` INTEGER NOT NULL, `offlineValidUntil` INTEGER NOT NULL, `isCloudTier` INTEGER NOT NULL, `cloudAccessGrantedUntilEpochMs` INTEGER, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `users` SELECT id, username, displayName, salt, verifier, permissions, companyId, role, lastOnlineVerifiedAt, offlineValidUntil, isCloudTier, cloudAccessGrantedUntilEpochMs FROM `temp_users`")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_users_username` ON `users` (`username`)")
+        db.execSQL("DROP TABLE `temp_users`")
+    }
+}
+
+/**
+ * The Cloud/Local shop tier is gone, and the offline sign-in verifier lives in
+ * OfflineCredentialStore rather than on this table. That leaves five dead columns on `users` — the
+ * old salt/verifier pair, `offlineValidUntil`, `isCloudTier` and `cloudAccessGrantedUntilEpochMs` —
+ * so the table is rebuilt without them. Same recreate-and-copy as migration23To24, since API 26
+ * SQLite has no DROP COLUMN.
+ */
+val migration24To25 = object : Migration(24, 25) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `users` RENAME TO `temp_users`")
+        // The index travels with the renamed table under its old name, so the CREATE INDEX IF NOT
+        // EXISTS below saw it, did nothing, and DROP TABLE then took it away: the new table had no
+        // index and Room refused the upgrade, crashing the app on every launch.
+        db.execSQL("DROP INDEX IF EXISTS `index_users_username`")
+        db.execSQL("CREATE TABLE IF NOT EXISTS `users` (`id` TEXT NOT NULL, `username` TEXT NOT NULL, `displayName` TEXT NOT NULL, `permissions` TEXT NOT NULL, `companyId` TEXT NOT NULL, `role` TEXT NOT NULL, `lastOnlineVerifiedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("INSERT INTO `users` SELECT id, username, displayName, permissions, companyId, role, lastOnlineVerifiedAt FROM `temp_users`")
+        db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_users_username` ON `users` (`username`)")
+        db.execSQL("DROP TABLE `temp_users`")
+    }
+}
+
+/** Adds the sync conflict log. See SyncConflictEntity. */
+val migration25To26 = object : Migration(25, 26) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `sync_conflicts` (`id` TEXT NOT NULL, `companyId` TEXT NOT NULL, `entityType` TEXT NOT NULL, `entityId` TEXT NOT NULL, `resolution` TEXT NOT NULL, `summary` TEXT NOT NULL, `detail` TEXT NOT NULL, `createdAtEpochMs` INTEGER NOT NULL, PRIMARY KEY(`id`))")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_conflicts_companyId` ON `sync_conflicts` (`companyId`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_conflicts_companyId_createdAtEpochMs` ON `sync_conflicts` (`companyId`, `createdAtEpochMs`)")
+    }
+}

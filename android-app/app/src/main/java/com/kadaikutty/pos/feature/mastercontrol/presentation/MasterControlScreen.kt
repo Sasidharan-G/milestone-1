@@ -144,7 +144,7 @@ fun MasterControlScreen(
                 title = {
                     Column {
                         Text("Super Master Control", fontWeight = FontWeight.Bold, fontSize = 18.sp, color = Color.White)
-                        Text("SaaS Direct Offline Licensing & Remote Control", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f))
+                        Text("SaaS Licensing & Remote Control", fontSize = 11.sp, color = Color.White.copy(alpha = 0.8f))
                     }
                 },
                 navigationIcon = {
@@ -332,10 +332,8 @@ fun MasterControlScreen(
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(filteredList, key = { it.companyId }) { license ->
-                            val owner = state.adminByCompany[license.companyId]
                             ShopLicenseAdminCard(
                                 license = license,
-                                owner = owner,
                                 onGrantTrial = { showTrialConfirmDialog = license },
                                 onGrantYearly = { selectedShopForLicense = license },
                                 onExtend = { selectedShopForExtend = license },
@@ -354,18 +352,7 @@ fun MasterControlScreen(
                                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                         context.startActivity(intent)
                                     } catch (e: Exception) {}
-                                },
-                                onToggleOwnerCloudTier = { online ->
-                                    if (online) viewModel.enableOwnerCloudTier(license.companyId, license.businessName)
-                                    else viewModel.disableOwnerCloudTier(license.companyId, license.businessName)
-                                },
-                                onExtendOwnerCloudAccess = { days ->
-                                    val now = System.currentTimeMillis()
-                                    val dayMs = 24 * 60 * 60 * 1000L
-                                    val base = owner?.cloudAccessGrantedUntilEpochMs?.takeIf { it > now } ?: now
-                                    viewModel.setOwnerCloudAccessGrantedUntil(license.companyId, license.businessName, base + days * dayMs)
-                                },
-                                onClearOwnerCloudAccessExpiry = { viewModel.setOwnerCloudAccessGrantedUntil(license.companyId, license.businessName, null) }
+                                }
                             )
                         }
                     }
@@ -448,17 +435,7 @@ fun MasterControlScreen(
                                         val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
                                         context.startActivity(intent)
                                     } catch (e: Exception) {}
-                                },
-                                onToggleCloudTier = { online ->
-                                    if (online) viewModel.enableCloudTier(staffReq) else viewModel.disableCloudTier(staffReq)
-                                },
-                                onExtendCloudAccess = { days ->
-                                    val now = System.currentTimeMillis()
-                                    val dayMs = 24 * 60 * 60 * 1000L
-                                    val base = staffReq.cloudAccessGrantedUntilEpochMs?.takeIf { it > now } ?: now
-                                    viewModel.setCloudAccessGrantedUntil(staffReq, base + days * dayMs)
-                                },
-                                onClearCloudAccessExpiry = { viewModel.setCloudAccessGrantedUntil(staffReq, null) }
+                                }
                             )
                         }
                     }
@@ -900,17 +877,13 @@ fun MasterKpiPill(
 @Composable
 fun ShopLicenseAdminCard(
     license: LicenseEntity,
-    owner: StaffApprovalRequest?,
     onGrantTrial: () -> Unit,
     onGrantYearly: () -> Unit,
     onExtend: () -> Unit,
     onRevoke: () -> Unit,
     onDeleteShop: () -> Unit,
     onCallPhone: (String) -> Unit,
-    onWhatsApp: (String) -> Unit,
-    onToggleOwnerCloudTier: (Boolean) -> Unit = {},
-    onExtendOwnerCloudAccess: (days: Int) -> Unit = {},
-    onClearOwnerCloudAccessExpiry: () -> Unit = {}
+    onWhatsApp: (String) -> Unit
 ) {
     val format = remember { SimpleDateFormat("dd MMM yyyy", Locale.US) }
     val startDateStr = remember(license.activatedAtEpochMs) {
@@ -1030,78 +1003,6 @@ fun ShopLicenseAdminCard(
                 }
             }
 
-            // Owner's Cloud Access: separate from the license above ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â a shop can have a fully
-            // active license and still be registered as a local-only (offline-tier) account.
-            if (owner != null) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = Color(0xFF162238),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.SpaceBetween
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(
-                                    if (owner.isCloudTier) Icons.Default.Cloud else Icons.Default.CloudOff,
-                                    contentDescription = null,
-                                    tint = if (owner.isCloudTier) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                    modifier = Modifier.size(16.dp)
-                                )
-                                Text(
-                                    if (owner.isCloudTier) "Owner Cloud Access: Online" else "Owner Cloud Access: Offline",
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = if (owner.isCloudTier) Color(0xFF38BDF8) else Color(0xFF94A3B8)
-                                )
-                            }
-                            Switch(
-                                checked = owner.isCloudTier,
-                                onCheckedChange = onToggleOwnerCloudTier,
-                                colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF2563EB))
-                            )
-                        }
-                        if (owner.isCloudTier) {
-                            val grantedLabel = owner.cloudAccessGrantedUntilEpochMs?.let { epochMs ->
-                                "Access until: ${android.text.format.DateFormat.format("dd MMM yyyy", java.util.Date(epochMs))}"
-                            } ?: "No end date (indefinite)"
-                            Text(grantedLabel, fontSize = 11.sp, color = Color(0xFF94A3B8))
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                OutlinedButton(
-                                    onClick = { onExtendOwnerCloudAccess(30) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
-                                ) {
-                                    Text("+30 days", fontSize = 10.sp, color = Color.White)
-                                }
-                                OutlinedButton(
-                                    onClick = { onExtendOwnerCloudAccess(365) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
-                                ) {
-                                    Text("+1 year", fontSize = 10.sp, color = Color.White)
-                                }
-                                if (owner.cloudAccessGrantedUntilEpochMs != null) {
-                                    OutlinedButton(
-                                        onClick = onClearOwnerCloudAccessExpiry,
-                                        shape = RoundedCornerShape(8.dp),
-                                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
-                                    ) {
-                                        Text("No expiry", fontSize = 10.sp, color = Color.White)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
             // Quick Actions Bar
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(
@@ -1180,10 +1081,7 @@ fun StaffApprovalAdminCard(
     onRevoke: () -> Unit,
     onDelete: () -> Unit,
     onCallPhone: (String) -> Unit,
-    onWhatsApp: (String) -> Unit,
-    onToggleCloudTier: (Boolean) -> Unit = {},
-    onExtendCloudAccess: (days: Int) -> Unit = {},
-    onClearCloudAccessExpiry: () -> Unit = {}
+    onWhatsApp: (String) -> Unit
 ) {
     val isActive = request.status.equals("ACTIVE", ignoreCase = true)
     val isRejected = request.status.equals("REJECTED", ignoreCase = true)
@@ -1321,75 +1219,6 @@ fun StaffApprovalAdminCard(
                             modifier = Modifier.size(28.dp)
                         ) {
                             Icon(Icons.Default.DeleteOutline, contentDescription = "Delete Staff", tint = Color(0xFFEF4444), modifier = Modifier.size(16.dp))
-                        }
-                    }
-                }
-            }
-
-            // 2b. Cloud Access: independent of approval status/permissions above.
-            Surface(
-                shape = RoundedCornerShape(10.dp),
-                color = Color(0xFF162238),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(
-                                if (request.isCloudTier) Icons.Default.Cloud else Icons.Default.CloudOff,
-                                contentDescription = null,
-                                tint = if (request.isCloudTier) Color(0xFF38BDF8) else Color(0xFF64748B),
-                                modifier = Modifier.size(16.dp)
-                            )
-                            Text(
-                                if (request.isCloudTier) "Cloud Access: Online" else "Cloud Access: Offline",
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = if (request.isCloudTier) Color(0xFF38BDF8) else Color(0xFF94A3B8)
-                            )
-                        }
-                        Switch(
-                            checked = request.isCloudTier,
-                            onCheckedChange = onToggleCloudTier,
-                            colors = SwitchDefaults.colors(checkedThumbColor = Color.White, checkedTrackColor = Color(0xFF2563EB))
-                        )
-                    }
-                    if (request.isCloudTier) {
-                        val grantedLabel = request.cloudAccessGrantedUntilEpochMs?.let { epochMs ->
-                            "Access until: ${android.text.format.DateFormat.format("dd MMM yyyy", java.util.Date(epochMs))}"
-                        } ?: "No end date (indefinite)"
-                        Text(grantedLabel, fontSize = 11.sp, color = Color(0xFF94A3B8))
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            OutlinedButton(
-                                onClick = { onExtendCloudAccess(30) },
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
-                            ) {
-                                Text("+30 days", fontSize = 10.sp, color = Color.White)
-                            }
-                            OutlinedButton(
-                                onClick = { onExtendCloudAccess(365) },
-                                shape = RoundedCornerShape(8.dp),
-                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
-                            ) {
-                                Text("+1 year", fontSize = 10.sp, color = Color.White)
-                            }
-                            if (request.cloudAccessGrantedUntilEpochMs != null) {
-                                OutlinedButton(
-                                    onClick = onClearCloudAccessExpiry,
-                                    shape = RoundedCornerShape(8.dp),
-                                    contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
-                                    border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFF334155))
-                                ) {
-                                    Text("No expiry", fontSize = 10.sp, color = Color.White)
-                                }
-                            }
                         }
                     }
                 }

@@ -13,13 +13,14 @@ export class LocalSessionStore implements SessionStore {
     });
   }
 
-  heartbeat(companyId: string, userId: string, sessionId: string): Promise<SessionRecord> {
+  heartbeat(companyId: string, userId: string, sessionId: string, expiresAtEpochMs: number): Promise<SessionRecord> {
     return this.store.write(state => {
       const session = state.sessions[sessionId];
       if (!session || session.companyId !== companyId || session.userId !== userId || session.revoked || session.expiresAtEpochMs <= Date.now()) {
         throw new AppError(401, 'SESSION_INVALID', 'Session is invalid, expired, or revoked');
       }
       session.lastSeenAtEpochMs = Date.now();
+      session.expiresAtEpochMs = Math.max(session.expiresAtEpochMs, expiresAtEpochMs);
       return session;
     });
   }

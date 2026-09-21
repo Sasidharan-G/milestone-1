@@ -35,6 +35,7 @@ fun SyncDiagnosticsScreen(
     onBack: () -> Unit
 ) {
     val deadLetters by viewModel.deadLetters.collectAsState()
+    val conflicts by viewModel.conflicts.collectAsState()
     val unresolvedItems by viewModel.unresolvedItems.collectAsState()
     val isSyncing by viewModel.isSyncing.collectAsState()
     val activeSession by viewModel.activeSession.collectAsState()
@@ -74,7 +75,7 @@ fun SyncDiagnosticsScreen(
                 .padding(padding)
                 .background(MaterialTheme.colorScheme.background)
         ) {
-            if (deadLetters.isEmpty() && unresolvedItems.isEmpty()) {
+            if (deadLetters.isEmpty() && unresolvedItems.isEmpty() && conflicts.isEmpty()) {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Column(
                         horizontalAlignment = Alignment.CenterHorizontally,
@@ -127,7 +128,7 @@ fun SyncDiagnosticsScreen(
                                     )
                                     val subtitle = when {
                                         activeSession?.accessToken.isNullOrBlank() ->
-                                            "Offline mode: Transactions are securely saved on device and will sync automatically."
+                                            "Connection problem: Transactions are saved and will sync automatically."
                                         unresolvedItems.firstOrNull()?.lastError != null ->
                                             unresolvedItems.firstOrNull()?.lastError.orEmpty()
                                         else ->
@@ -315,6 +316,58 @@ fun SyncDiagnosticsScreen(
                                         TextButton(onClick = { viewModel.retryItem(item) }) {
                                             Text("Retry")
                                         }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // Conflict log: every disagreement between devices and how it was settled.
+                    // Nothing here needs action to keep sync going; it is the record of what the
+                    // losing side was, so an edit that lost can be redone by hand.
+                    if (conflicts.isNotEmpty()) {
+                        item {
+                            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    "Resolved Conflicts (${conflicts.size})",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.onBackground,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                TextButton(onClick = { viewModel.clearConflictLog() }) { Text("Clear log") }
+                            }
+                        }
+                        items(conflicts, key = { it.id }) { conflict ->
+                            val df = SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault())
+                            var expanded by remember(conflict.id) { mutableStateOf(false) }
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        Surface(color = MaterialTheme.colorScheme.tertiaryContainer, shape = RoundedCornerShape(6.dp)) {
+                                            Text(
+                                                conflict.resolution.replace('_', ' '),
+                                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                                            )
+                                        }
+                                        Text(df.format(Date(conflict.createdAtEpochMs)), fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    }
+                                    Text(conflict.summary, fontSize = 13.sp, color = MaterialTheme.colorScheme.onSurface)
+                                    TextButton(onClick = { expanded = !expanded }) { Text(if (expanded) "Hide details" else "Show details") }
+                                    if (expanded) {
+                                        Text(
+                                            runCatching { org.json.JSONObject(conflict.detail).toString(2) }.getOrDefault(conflict.detail),
+                                            fontSize = 11.sp,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
                                     }
                                 }
                             }

@@ -93,14 +93,15 @@ class PurchaseRepositoryImpl(
                 val movements = items.map { StockMovementEntity(newRecordId(), company, it.productId, it.quantity, "PURCHASE", id, now) }
                 purchaseDao.insertStockMovements(movements)
                 if (draft.creditApplied.minorUnits > 0) {
-                    val credit = SupplierCreditEntity(id = "purchase-credit:$id:${purchase.revision}", companyId = company, supplierId = draft.supplierId,
+                    val credit = SupplierCreditEntity(id = newRecordId(), companyId = company, supplierId = draft.supplierId,
                         amountMinorUnits = draft.creditApplied.minorUnits, terms = "Purchase Order #$number", dueDateEpochMs = now + 2592000000L,
                         dateEpochMs = now, referenceId = id, syncStatus = SyncStatus.LOCAL_ONLY)
                     purchaseDao.insertSupplierCredit(credit)
                     syncManager.enqueueSupplierCredit(credit, "INSERT")
                 }
-                syncManager.enqueuePurchase(purchase, items)
+                syncManager.enqueuePurchase(purchase, items, if (old == null) "INSERT" else "UPDATE")
                 movements.forEach { syncManager.enqueueStockMovement(it) }
+                if (old != null) ConflictResolver(database, syncManager).onLocalDocumentEdit(company, "Purchase", id)
                 database.localOperationDao().put(LocalOperationEntity(company, key, id))
                 if (old != null) database.auditLogDao().insertAuditLog(AuditLogEntity(newRecordId(), company,
                     "PURCHASE_EDIT", number, purchase.totalMinorUnits, "Purchase corrected", session.userId, session.displayName, now))
@@ -139,6 +140,7 @@ class PurchaseRepositoryImpl(
             database.saleDao().movementsFor(session.companyId, old.id).forEach { syncManager.enqueueStockMovement(it, "DELETE") }
             purchaseDao.creditsFor(session.companyId, old.id).forEach { syncManager.enqueueSupplierCredit(it, "DELETE") }
             syncManager.enqueuePurchase(old, emptyList(), "DELETE")
+            database.localOperationDao().put(LocalOperationEntity(session.companyId, "${com.kadaikutty.pos.core.sync.ConflictResolver.DOC_TOMBSTONE_PREFIX}Purchase:${old.id}", System.currentTimeMillis().toString()))
             purchaseDao.deletePurchaseCascade(session.companyId, old.id, old.orderNumber ?: old.id)
             database.auditLogDao().insertAuditLog(AuditLogEntity(newRecordId(), session.companyId, "PURCHASE_CANCEL",
                 old.orderNumber ?: old.id, old.totalMinorUnits, "Purchase cancelled", session.userId, session.displayName, System.currentTimeMillis()))

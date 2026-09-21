@@ -1,8 +1,6 @@
 package com.kadaikutty.pos.feature.settings.presentation
 
 import android.content.Context
-import com.kadaikutty.pos.core.auth.OfflineCredentialStore
-import com.kadaikutty.pos.core.auth.OfflineCredentialVerifier
 import com.kadaikutty.pos.core.auth.Session
 import com.kadaikutty.pos.core.auth.SessionSecurityManager
 import com.kadaikutty.pos.core.auth.SessionStore
@@ -65,13 +63,11 @@ class SettingsViewModelTest {
     private lateinit var syncManager: SyncManager
     private lateinit var database: BillingDatabase
     private lateinit var sessionStore: SessionStore
-    private lateinit var verifier: OfflineCredentialVerifier
     private lateinit var licenseManager: LicenseManager
     private lateinit var sessionSecurityManager: SessionSecurityManager
     private lateinit var backendApi: BackendApiClient
     private lateinit var tenantDatabaseManager: TenantDatabaseManager
     private lateinit var liveBackupWriter: LiveBackupWriter
-    private lateinit var offlineCredentialStore: OfflineCredentialStore
     private lateinit var shareManager: ShareManager
 
     private val testSession = Session(
@@ -93,20 +89,17 @@ class SettingsViewModelTest {
         syncManager = mock(SyncManager::class.java)
         database = mock(BillingDatabase::class.java)
         sessionStore = mock(SessionStore::class.java)
-        verifier = mock(OfflineCredentialVerifier::class.java)
         licenseManager = mock(LicenseManager::class.java)
         sessionSecurityManager = mock(SessionSecurityManager::class.java)
         backendApi = mock(BackendApiClient::class.java)
         tenantDatabaseManager = mock(TenantDatabaseManager::class.java)
         liveBackupWriter = mock(LiveBackupWriter::class.java)
-        offlineCredentialStore = mock(OfflineCredentialStore::class.java)
         shareManager = mock(ShareManager::class.java)
 
         `when`(sessionStore.activeSession).thenReturn(flowOf(if (loggedIn) testSession else null))
         `when`(licenseManager.currentLicense).thenReturn(MutableStateFlow<LicenseEntity?>(null))
         `when`(licenseManager.isLicenseLoaded).thenReturn(MutableStateFlow(false))
         `when`(licenseManager.isClockTampered).thenReturn(MutableStateFlow(false))
-        `when`(licenseManager.highestSeenClockMs).thenReturn(MutableStateFlow<Long?>(null))
         `when`(sessionSecurityManager.isSessionTerminated).thenReturn(MutableStateFlow(false))
         `when`(sessionSecurityManager.terminationReason).thenReturn(MutableStateFlow<String?>(null))
         `when`(syncScheduler.syncNotificationFlow).thenReturn(flowOf(SyncNotificationState.Idle))
@@ -120,8 +113,10 @@ class SettingsViewModelTest {
 
         return SettingsViewModel(
             context, appPreferences, printerManager, backupManager, syncScheduler, syncManager,
-            database, sessionStore, verifier, licenseManager, sessionSecurityManager, backendApi,
-            tenantDatabaseManager, liveBackupWriter, offlineCredentialStore, shareManager,
+            database, sessionStore, licenseManager, sessionSecurityManager, backendApi,
+            tenantDatabaseManager, liveBackupWriter,
+            mock(com.kadaikutty.pos.core.auth.OfflineCredentialStore::class.java), shareManager,
+            mock(com.kadaikutty.pos.core.network.ConnectivityMonitor::class.java).also { `when`(it.isOnline).thenReturn(MutableStateFlow(true)) },
         )
     }
 

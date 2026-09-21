@@ -123,44 +123,6 @@ test('local object storage verifies tenant, size, and checksum', async t => {
   await assert.rejects(() => context.objects.readLocalContent('company-b', intent.backupId), /not found/i);
 });
 
-test('local staff cloud-tier defaults to true and Master Control can grant/revoke a cloud-access end date', async t => {
-  const context = await fixture();
-  t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
-  const owner = await context.dataStore.createAccount({ phone: '9876543210', displayName: 'Owner', businessName: 'Shop', password: '123456' });
-
-  const onlineStaff = await context.dataStore.createStaff({ companyId: owner.user.companyId, phone: '9876500001', displayName: 'Online Cashier', password: '111111', permissions: ['SALE_CREATE'] });
-  assert.equal(onlineStaff.isCloudTier, true);
-  assert.equal(onlineStaff.cloudAccessGrantedUntilEpochMs, undefined);
-
-  const offlineStaff = await context.dataStore.createStaff({ companyId: owner.user.companyId, phone: '9876500002', displayName: 'Offline Cashier', password: '222222', permissions: ['SALE_CREATE'], isCloudTier: false });
-  assert.equal(offlineStaff.isCloudTier, false);
-
-  const granted = await context.dataStore.updateStaff(owner.user.companyId, onlineStaff.userId, { cloudAccessGrantedUntilEpochMs: 1_700_000_000_000 });
-  assert.equal(granted.cloudAccessGrantedUntilEpochMs, 1_700_000_000_000);
-  assert.equal(granted.isCloudTier, true, 'unrelated field updates must not disturb isCloudTier');
-
-  const revoked = await context.dataStore.updateStaff(owner.user.companyId, onlineStaff.userId, { isCloudTier: false });
-  assert.equal(revoked.isCloudTier, false);
-  assert.equal(revoked.cloudAccessGrantedUntilEpochMs, 1_700_000_000_000, 'unrelated field updates must not disturb the granted date');
-});
-
-test('local Master Control can set the shop OWNER\'s own cloud access, separate from staff', async t => {
-  const context = await fixture();
-  t.after(() => fs.rm(context.directory, { recursive: true, force: true }));
-  const owner = await context.dataStore.createAccount({ phone: '9876543210', displayName: 'Owner', businessName: 'Shop', password: '123456', isCloudTier: false });
-
-  const found = await context.dataStore.findAdminByCompany(owner.user.companyId);
-  assert.equal(found?.userId, owner.user.userId);
-  assert.equal(found?.isCloudTier, false);
-
-  const upgraded = await context.dataStore.updateAccountCloudAccess(owner.user.companyId, owner.user.userId, { isCloudTier: true, cloudAccessGrantedUntilEpochMs: 1_800_000_000_000 });
-  assert.equal(upgraded.isCloudTier, true);
-  assert.equal(upgraded.cloudAccessGrantedUntilEpochMs, 1_800_000_000_000);
-
-  // Wrong company must not be able to touch another company's owner.
-  await assert.rejects(() => context.dataStore.updateAccountCloudAccess('someone-elses-company', owner.user.userId, { isCloudTier: false }));
-});
-
 test('purging company records clears idempotency so a replayed outbox is not silently dropped', async t => {
   const context = await fixture();
   t.after(() => fs.rm(context.directory, { recursive: true, force: true }));

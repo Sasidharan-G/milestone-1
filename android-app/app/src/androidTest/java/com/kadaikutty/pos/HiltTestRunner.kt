@@ -7,6 +7,9 @@ import dagger.hilt.android.testing.HiltTestApplication
 
 class HiltTestRunner : AndroidJUnitRunner() {
     override fun newApplication(cl: ClassLoader?, name: String?, context: Context?): Application {
+        // HiltTestApplication replaces BillingApplication, so do what its onCreate does before any
+        // test opens the encrypted database: SQLCipher's native library is loaded explicitly.
+        System.loadLibrary("sqlcipher")
         return super.newApplication(cl, HiltTestApplication::class.java.name, context)
     }
 }

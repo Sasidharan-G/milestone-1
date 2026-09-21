@@ -1,5 +1,6 @@
 package com.kadaikutty.pos.feature.settings.presentation
 
+import kotlinx.coroutines.sync.withLock
 import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
@@ -39,7 +40,6 @@ class SettingsViewModel @Inject constructor(
     private val syncManager: com.kadaikutty.pos.core.sync.SyncManager,
     private val database: com.kadaikutty.pos.core.database.BillingDatabase,
     private val sessionStore: com.kadaikutty.pos.core.auth.SessionStore,
-    private val verifier: com.kadaikutty.pos.core.auth.OfflineCredentialVerifier,
     private val licenseManager: com.kadaikutty.pos.core.license.LicenseManager,
     private val sessionSecurityManager: com.kadaikutty.pos.core.auth.SessionSecurityManager,
     private val backendApi: com.kadaikutty.pos.core.network.BackendApiClient,
@@ -47,7 +47,11 @@ class SettingsViewModel @Inject constructor(
     private val liveBackupWriter: LiveBackupWriter,
     private val offlineCredentialStore: com.kadaikutty.pos.core.auth.OfflineCredentialStore,
     private val shareManager: ShareManager,
+    connectivityMonitor: com.kadaikutty.pos.core.network.ConnectivityMonitor,
 ) : ViewModel() {
+
+    /** Server reachable right now. Billing works either way; this gates the online-only actions. */
+    val isOnline: StateFlow<Boolean> = connectivityMonitor.isOnline
 
     val isSessionTerminated: StateFlow<Boolean> = sessionSecurityManager.isSessionTerminated
     val terminationReason: StateFlow<String?> = sessionSecurityManager.terminationReason
@@ -106,9 +110,7 @@ class SettingsViewModel @Inject constructor(
                 displayName = obj.optString("displayName"),
                 role = obj.optString("role", "CASHIER"),
                 permissions = perms,
-                status = obj.optString("status", "ACTIVE"),
-                isCloudTier = obj.optBoolean("isCloudTier", true),
-                cloudAccessGrantedUntilEpochMs = obj.optLong("cloudAccessGrantedUntilEpochMs", 0L).takeIf { it > 0L }
+                status = obj.optString("status", "ACTIVE")
             )
         }
 
@@ -121,6 +123,7 @@ class SettingsViewModel @Inject constructor(
             for (action in actions) {
                 when (action) {
                     is com.kadaikutty.pos.core.auth.StaffReconciliationAction.Delete -> {
+                        targetDb.userDao().getUserById(action.localId)?.let { offlineCredentialStore.remove(it.username) }
                         targetDb.userDao().deleteUserById(action.localId)
                     }
                     is com.kadaikutty.pos.core.auth.StaffReconciliationAction.Rekey -> {
@@ -128,21 +131,14 @@ class SettingsViewModel @Inject constructor(
                         targetDb.userDao().insertUser(action.local.copy(
                             id = action.server.userId,
                             displayName = action.server.displayName,
-                            permissions = action.server.permissions,
-                            isCloudTier = action.server.isCloudTier,
-                            cloudAccessGrantedUntilEpochMs = action.server.cloudAccessGrantedUntilEpochMs
+                            permissions = action.server.permissions
                         ))
-                        val existingCredential = offlineCredentialStore.getCredential(action.local.username).first()
-                        if (existingCredential != null && existingCredential.userId == action.local.id) {
-                            offlineCredentialStore.save(existingCredential.copy(userId = action.server.userId))
-                        }
+                        offlineCredentialStore.rekey(action.local.username, action.local.id, action.server.userId)
                     }
                     is com.kadaikutty.pos.core.auth.StaffReconciliationAction.UpdateFields -> {
                         targetDb.userDao().updateUser(action.local.copy(
                             displayName = action.server.displayName,
-                            permissions = action.server.permissions,
-                            isCloudTier = action.server.isCloudTier,
-                            cloudAccessGrantedUntilEpochMs = action.server.cloudAccessGrantedUntilEpochMs
+                            permissions = action.server.permissions
                         ))
                     }
                     is com.kadaikutty.pos.core.auth.StaffReconciliationAction.InsertMissing -> {
@@ -150,15 +146,10 @@ class SettingsViewModel @Inject constructor(
                             id = action.server.userId,
                             username = com.kadaikutty.pos.core.auth.StaffReconciler.normalizePhone(action.server.phone),
                             displayName = action.server.displayName,
-                            salt = "",
-                            verifier = "",
                             permissions = action.server.permissions,
                             companyId = action.companyId,
                             role = action.server.role,
-                            lastOnlineVerifiedAt = 0L,
-                            offlineValidUntil = 0L,
-                            isCloudTier = action.server.isCloudTier,
-                            cloudAccessGrantedUntilEpochMs = action.server.cloudAccessGrantedUntilEpochMs
+                            lastOnlineVerifiedAt = 0L
                         ))
                     }
                 }
@@ -189,49 +180,18 @@ class SettingsViewModel @Inject constructor(
                     // Cancel any active sync workers so they don't upload/download stale data during reset
                     syncScheduler.cancelAllWork()
 
+                    // A push or pull already running is only cancelled cooperatively; holding the
+                    // sync lock makes sure none is still writing while the tables are emptied.
+                    var purgedEpoch: Long? = null
+                    com.kadaikutty.pos.core.sync.SyncLock.mutex.withLock {
                     val session = sessionStore.activeSession.first()
                     val companyId = session?.companyId ?: "company_main"
                     val tenantDb = tenantDatabaseManager.getDatabase(companyId)
                     val dbsToClear = listOfNotNull(tenantDb, if (tenantDb != database) database else null)
 
-                    val tables = listOf(
-                        "draft_cart",
-                        "sale_items",
-                        "sales",
-                        "purchase_items",
-                        "purchases",
-                        "stock_movements",
-                        "customer_credits",
-                        "supplier_credits",
-                        "products",
-                        "categories",
-                        "customers",
-                        "suppliers",
-                        "expenses",
-                        "sync_queue",
-                        "sync_dead_letter",
-                        "local_operations",
-                        "audit_logs",
-                        "shifts"
-                    )
-
-                    for (targetDb in dbsToClear) {
-                        val sqlite = targetDb.openHelper.writableDatabase
-                        sqlite.execSQL("PRAGMA foreign_keys = OFF")
-                        sqlite.beginTransaction()
-                        try {
-                            for (table in tables) {
-                                runCatching { sqlite.execSQL("DELETE FROM `$table`") }
-                            }
-                            runCatching { sqlite.execSQL("DELETE FROM `sqlite_sequence`") }
-                            sqlite.setTransactionSuccessful()
-                        } finally {
-                            sqlite.endTransaction()
-                            sqlite.execSQL("PRAGMA foreign_keys = ON")
-                        }
-                        runCatching { sqlite.execSQL("VACUUM") }
-                    }
-
+                    // Cloud first. If the purge fails nothing local has been touched yet; wiping
+                    // first left an empty device that the next pull silently refilled from the
+                    // cloud copy that was supposed to be gone.
                     if (clearCloudToo) {
                         _restoreStatus.value = "Purging cloud database records..."
                         var activeToken = session?.accessToken?.trim()?.takeIf { it.isNotBlank() }
@@ -244,6 +204,7 @@ class SettingsViewModel @Inject constructor(
                             val purgeResult = runCatching {
                                 backendApi.purgeCloudData(activeToken)
                             }
+                            purgedEpoch = purgeResult.getOrNull()?.optLong("epoch", 0L)
                             if (purgeResult.isFailure) {
                                 val err = purgeResult.exceptionOrNull()?.message ?: "Unknown cloud error"
                                 android.util.Log.e("SettingsViewModel", "Failed to purge cloud records: $err", purgeResult.exceptionOrNull())
@@ -253,11 +214,14 @@ class SettingsViewModel @Inject constructor(
                             throw Exception("No active session found to purge cloud database records.")
                         }
 
-                        for (targetDb in dbsToClear) {
-                            runCatching { targetDb.syncQueueDao().clearByCompany(companyId) }
-                            runCatching { targetDb.syncDeadLetterDao().deleteAllForCompany(companyId) }
-                        }
-                        runCatching { appPreferences.clearShopDetails() }
+                    }
+
+                    for (targetDb in dbsToClear) com.kadaikutty.pos.core.sync.ShopDataWiper.wipe(targetDb)
+                    // This device is already at the new data generation; without this its next
+                    // pull would see a newer epoch than it knows and wipe itself a second time.
+                    purgedEpoch?.let { com.kadaikutty.pos.core.sync.PullWorker.rememberEpoch(tenantDb, companyId, it) }
+
+                    if (clearCloudToo) runCatching { appPreferences.clearShopDetails() }
                     }
 
                     _restoreStatus.value = if (clearCloudToo) {
@@ -270,6 +234,13 @@ class SettingsViewModel @Inject constructor(
                     _restoreStatus.value = "Clear error: ${e.message}"
                     withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(false) }
                 } finally {
+                    // cancelAllWork() above also stopped the periodic sync, pull and daily cloud
+                    // backup; nothing rescheduled them until the app happened to restart.
+                    runCatching {
+                        syncScheduler.schedulePeriodicSync()
+                        syncScheduler.schedulePeriodicLiveBackupCompaction()
+                        if (!appPreferences.liveBackupFolderUri.first().isNullOrBlank()) syncScheduler.schedulePeriodicBackup()
+                    }
                     _isRestoreRunning.value = false
                 }
             }
@@ -356,57 +327,6 @@ class SettingsViewModel @Inject constructor(
     val currentLicense: StateFlow<com.kadaikutty.pos.core.license.LicenseEntity?> = licenseManager.currentLicense
     val isLicenseLoaded: StateFlow<Boolean> = licenseManager.isLicenseLoaded
     val isClockTampered: StateFlow<Boolean> = licenseManager.isClockTampered
-
-    // Checked only AFTER the company license lock passes (see BillingApp.kt) — this is the
-    // per-user rule, independent of the whole-company license.
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    private val currentUserCloudFields: StateFlow<com.kadaikutty.pos.core.auth.UserEntity?> = sessionStore.activeSession
-        .flatMapLatest { session ->
-            if (session == null) flowOf(null) else database.userDao().getUserByIdFlow(session.userId)
-        }
-        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
-
-    // Paired with the clock high-water mark so winding the device date back cannot push a
-    // cloud-access deadline further away. See CloudAccessPolicy.effectiveNow.
-    private val cloudFieldsWithClock = combine(currentUserCloudFields, licenseManager.highestSeenClockMs) { user, highestSeen ->
-        user to highestSeen
-    }
-
-    val isCloudAccessLocked: StateFlow<Boolean> = cloudFieldsWithClock
-        .map { (user, highestSeen) ->
-            user != null && com.kadaikutty.pos.core.security.CloudAccessPolicy.isExpiredLockout(
-                isCloudTier = user.isCloudTier,
-                cloudAccessGrantedUntilEpochMs = user.cloudAccessGrantedUntilEpochMs,
-                mustCheckInByEpochMs = user.mustCheckInByEpochMs,
-                highestSeenEpochMs = highestSeen
-            )
-        }
-        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = false)
-
-    // For gating individual cloud-sync buttons (Settings screen), independent of the full lock screen.
-    val hasCloudAccess: StateFlow<Boolean> = cloudFieldsWithClock
-        .map { (user, highestSeen) ->
-            user == null || com.kadaikutty.pos.core.security.CloudAccessPolicy.isAllowed(
-                isCloudTier = user.isCloudTier,
-                cloudAccessGrantedUntilEpochMs = user.cloudAccessGrantedUntilEpochMs,
-                mustCheckInByEpochMs = user.mustCheckInByEpochMs,
-                highestSeenEpochMs = highestSeen
-            )
-        }
-        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = true)
-
-    val cloudAccessDaysRemaining: StateFlow<Long?> = cloudFieldsWithClock
-        .map { (user, highestSeen) ->
-            user?.let {
-                com.kadaikutty.pos.core.security.CloudAccessPolicy.daysRemaining(
-                    isCloudTier = it.isCloudTier,
-                    cloudAccessGrantedUntilEpochMs = it.cloudAccessGrantedUntilEpochMs,
-                    mustCheckInByEpochMs = it.mustCheckInByEpochMs,
-                    highestSeenEpochMs = highestSeen
-                )
-            }
-        }
-        .stateIn(scope = viewModelScope, started = SharingStarted.WhileSubscribed(5000), initialValue = null)
 
     private var lastLicenseRefreshMs = 0L
 
@@ -906,9 +826,8 @@ class SettingsViewModel @Inject constructor(
             val result = liveBackupWriter.setup(treeUri)
             if (result.isSuccess) {
                 _backupStatus.value = "Live local backup set up! Every change will now be mirrored to this folder automatically."
-                // Live local backup alone still leaves a single-device risk (phone lost/damaged).
-                // Closing that gap is not optional/opt-in: every setup also takes an immediate
-                // cloud snapshot and registers a daily one going forward.
+                // Live local backup alone still leaves a single-device risk (phone lost/damaged), so
+                // every setup also takes an immediate cloud snapshot and registers a daily one.
                 syncScheduler.schedulePeriodicBackup()
                 runCloudBackup()
             } else {
@@ -999,6 +918,10 @@ class SettingsViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             try {
+                if (!isOnline.value) {
+                    onResult(false, "Staff changes need internet. Connect and try again.")
+                    return@launch
+                }
                 val session = sessionStore.activeSession.first() ?: run {
                     onResult(false, "No active session")
                     return@launch
@@ -1024,28 +947,21 @@ class SettingsViewModel @Inject constructor(
                 // The backend is the source of truth for the account's identity: it creates the
                 // account ACTIVE immediately (the shop admin owns staff onboarding, no separate
                 // master approval step) and assigns the real userId. Calling it first — and only
-                // writing the local offline-login cache once it succeeds, keyed by that same
+                // writing the local user row once it succeeds, keyed by that same
                 // server userId — is what keeps this device's local record and the cloud record
                 // pointing at the same account; inventing a local ID first (as before) meant every
                 // later edit/deactivate for that staff member silently 404'd against the backend.
                 val created = backendApi.createStaff(token, cleanPhone, displayName, password.concatToString(), permissions.map { it.name })
                 val serverUserId = created.getJSONObject("user").getString("userId")
 
-                val credResult = createCredentials(cleanPhone, password, serverUserId, displayName)
                 val userEntity = com.kadaikutty.pos.core.auth.UserEntity(
-                    id = credResult.userId,
+                    id = serverUserId,
                     username = cleanPhone,
                     displayName = displayName,
-                    // Blank on purpose: createCredentials already stored the real salt and
-                    // verifier in OfflineCredentialStore, which is where every offline login
-                    // reads them from. See UserEntity for why these columns stay empty.
-                    salt = "",
-                    verifier = "",
                     permissions = permissions.joinToString(",") { it.name },
                     companyId = companyId,
                     role = role,
-                    lastOnlineVerifiedAt = System.currentTimeMillis(),
-                    offlineValidUntil = System.currentTimeMillis() + (30 * 24 * 60 * 60 * 1000L)
+                    lastOnlineVerifiedAt = System.currentTimeMillis()
                 )
                 database.userDao().insertUser(userEntity)
 
@@ -1066,6 +982,10 @@ class SettingsViewModel @Inject constructor(
     ) {
         viewModelScope.launch {
             try {
+                if (!isOnline.value) {
+                    onResult(false, "Staff changes need internet. Connect and try again.")
+                    return@launch
+                }
                 val session = sessionStore.activeSession.first()
                 if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE)) {
                     onResult(false, "You do not have permission to manage users.")
@@ -1084,25 +1004,15 @@ class SettingsViewModel @Inject constructor(
                 // changes, so this device's cache never diverges from what the cloud actually has.
                 val token = session.accessToken ?: error("Online session token is missing")
                 backendApi.updateStaff(token, existing.id, finalDisplayName, newPassword?.concatToString(), permissions.map { it.name })
+                // The old password must stop working offline on this device too; the staff member
+                // gets a fresh offline credential on their next online sign-in.
+                if (newPassword != null && newPassword.isNotEmpty()) offlineCredentialStore.remove(existing.username)
 
-                val updatedUser = if (newPassword != null && newPassword.isNotEmpty()) {
-                    // The new credential is stored by createCredentials in OfflineCredentialStore;
-                    // these columns are vestigial and stay blank. See UserEntity.
-                    createCredentials(existing.username, newPassword, existing.id, finalDisplayName)
-                    existing.copy(
-                        displayName = finalDisplayName,
-                        role = finalRole,
-                        salt = "",
-                        verifier = "",
-                        permissions = permissions.joinToString(",") { it.name }
-                    )
-                } else {
-                    existing.copy(
-                        displayName = finalDisplayName,
-                        role = finalRole,
-                        permissions = permissions.joinToString(",") { it.name }
-                    )
-                }
+                val updatedUser = existing.copy(
+                    displayName = finalDisplayName,
+                    role = finalRole,
+                    permissions = permissions.joinToString(",") { it.name }
+                )
                 userDao.updateUser(updatedUser)
 
                 onResult(true, "Staff account updated successfully!")
@@ -1115,6 +1025,10 @@ class SettingsViewModel @Inject constructor(
     fun deleteUser(userId: String, onResult: (Boolean, String) -> Unit = { _, _ -> }) {
         viewModelScope.launch {
             try {
+                if (!isOnline.value) {
+                    onResult(false, "Staff changes need internet. Connect and try again.")
+                    return@launch
+                }
                 val session = sessionStore.activeSession.first()
                 if (session == null || !session.permissions.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE)) {
                     onResult(false, "You do not have permission to manage users.")
@@ -1133,6 +1047,7 @@ class SettingsViewModel @Inject constructor(
                 val token = session.accessToken ?: error("Online session token is missing")
                 backendApi.deactivateStaff(token, userId)
                 userDao.deleteUser(existing)
+                offlineCredentialStore.remove(existing.username)
 
                 onResult(true, "Staff user deleted successfully!")
             } catch (e: Exception) {
@@ -1158,14 +1073,5 @@ class SettingsViewModel @Inject constructor(
         val activeNetwork = connectivityManager?.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(activeNetwork) ?: return false
         return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
-    }
-
-    private data class CredentialResult(val userId: String, val saltStr: String, val verifierStr: String)
-
-    private fun createCredentials(username: String, password: CharArray, id: String, displayName: String): CredentialResult {
-        val cred = verifier.create(username, password, id, displayName)
-        val saltStr = java.util.Base64.getEncoder().encodeToString(cred.salt)
-        val verifierStr = java.util.Base64.getEncoder().encodeToString(cred.verifier)
-        return CredentialResult(cred.userId, saltStr, verifierStr)
     }
 }

@@ -39,7 +39,6 @@ class SyncManager(
             android.util.Log.w("SyncManager", "Pending local operations will retry later", e)
         }
     }
-    private val OPERATION_PRECEDENCE = mapOf("DELETE" to 3, "INSERT" to 2, "PARTIAL_UPDATE" to 2, "UPDATE" to 1)
 
     suspend fun enqueueCategory(category: com.kadaikutty.pos.feature.masters.data.CategoryEntity, operation: String) {
         val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
@@ -152,7 +151,7 @@ class SyncManager(
         enqueueItem(companyId, "Expense", expense.id, operation, payload)
     }
 
-    suspend fun enqueueSale(sale: com.kadaikutty.pos.feature.billing.data.SaleEntity, items: List<com.kadaikutty.pos.feature.billing.data.SaleItemEntity>, operation: String = "INSERT") {
+    suspend fun enqueueSale(sale: com.kadaikutty.pos.feature.billing.data.SaleEntity, items: List<com.kadaikutty.pos.feature.billing.data.SaleItemEntity>, operation: String = "INSERT", editedAt: Long? = null) {
         val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
         val companyId = session.companyId
         val itemsList = items.map { item ->
@@ -184,10 +183,10 @@ class SyncManager(
             "_schemaVersion" to 1,
             "items" to itemsList
         ))
-        enqueueItem(companyId, "Sale", sale.id, operation, payload)
+        enqueueItem(companyId, "Sale", sale.id, operation, payload, editedAtOverride = editedAt)
     }
 
-    suspend fun enqueuePurchase(purchase: com.kadaikutty.pos.feature.purchase.data.PurchaseEntity, items: List<com.kadaikutty.pos.feature.purchase.data.PurchaseItemEntity>, operation: String = "INSERT") {
+    suspend fun enqueuePurchase(purchase: com.kadaikutty.pos.feature.purchase.data.PurchaseEntity, items: List<com.kadaikutty.pos.feature.purchase.data.PurchaseItemEntity>, operation: String = "INSERT", editedAt: Long? = null) {
         val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
         val companyId = session.companyId
         val itemsList = items.map { item ->
@@ -217,7 +216,7 @@ class SyncManager(
             "_schemaVersion" to 1,
             "items" to itemsList
         ))
-        enqueueItem(companyId, "Purchase", purchase.id, operation, payload)
+        enqueueItem(companyId, "Purchase", purchase.id, operation, payload, editedAtOverride = editedAt)
     }
 
     suspend fun enqueueCustomerCredit(credit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity, operation: String) {
@@ -281,54 +280,40 @@ class SyncManager(
         enqueueItem(companyId, entityType, entityId, "PARTIAL_UPDATE", payload)
     }
 
+    /**
+     * Queues a write decided by ConflictResolver. The payload is already the full record in the
+     * sync shape, and the caller has closed every older queue item for this record first, so this
+     * always starts a fresh item rather than merging into a stale one.
+     *
+     * [editedAt] is the time the content was really decided, not now: a restore or a re-send must
+     * not look like a brand-new edit, or it would beat a genuinely later edit on another device.
+     */
+    suspend fun enqueueResolved(companyId: String, entityType: String, entityId: String, operation: String, payload: org.json.JSONObject, editedAt: Long) {
+        enqueueItem(companyId, entityType, entityId, operation, payload.toString(), editedAtOverride = editedAt)
+    }
+
     private suspend fun enqueueItem(
         companyId: String,
         entityType: String,
         entityId: String,
         operation: String,
-        payloadJson: String,
-        requestSync: Boolean = true
+        rawPayload: String,
+        requestSync: Boolean = true,
+        editedAtOverride: Long? = null
     ) {
+        // When this change was made, in server time (TrustedClock), so a conflict with another
+        // device can be settled by which edit really came last. See ConflictPolicy.
+        val payloadJson = stampEditTime(rawPayload, editedAtOverride ?: com.kadaikutty.pos.core.common.TrustedClock.now())
         val existing = database.syncQueueDao().findPending(companyId, entityType, entityId)
         val now = System.currentTimeMillis()
 
         if (existing != null) {
-            val incomingPrec = OPERATION_PRECEDENCE[operation] ?: 1
-            val existingPrec = OPERATION_PRECEDENCE[existing.operation] ?: 1
-
-            if (incomingPrec >= existingPrec) {
-                if (operation == "PARTIAL_UPDATE" && existing.operation == "PARTIAL_UPDATE") {
-                    try {
-                        val existingMap = org.json.JSONObject(existing.payload)
-                        val incomingMap = org.json.JSONObject(payloadJson)
-                        val incomingKeys = incomingMap.keys()
-                        while (incomingKeys.hasNext()) {
-                            val key = incomingKeys.next()
-                            existingMap.put(key, incomingMap.get(key))
-                        }
-                        database.syncQueueDao().updatePending(existing.id, operation, existingMap.toString(), now)
-                    } catch (e: Exception) {
-                        database.syncQueueDao().updatePending(existing.id, operation, payloadJson, now)
-                    }
-                } else if (operation == "PARTIAL_UPDATE" && existing.operation == "INSERT") {
-                    try {
-                        val existingMap = org.json.JSONObject(existing.payload)
-                        val incomingMap = org.json.JSONObject(payloadJson)
-                        val incomingKeys = incomingMap.keys()
-                        while (incomingKeys.hasNext()) {
-                            val key = incomingKeys.next()
-                            existingMap.put(key, incomingMap.get(key))
-                        }
-                        database.syncQueueDao().updatePending(existing.id, "INSERT", existingMap.toString(), now)
-                    } catch (e: Exception) {
-                        // ignore
-                    }
-                } else {
-                    database.syncQueueDao().updatePending(existing.id, operation, payloadJson, now)
-                }
-                // Only record what the queue actually accepted. Appending a lower-precedence
-                // operation the queue rejected (an edit arriving after a queued DELETE) made the
-                // backup changelog disagree with the queue and resurrected deleted rows on restore.
+            val folded = foldQueuedOperation(existing.operation, existing.payload, operation, payloadJson)
+            if (folded != null) {
+                database.syncQueueDao().updatePending(existing.id, folded.first, folded.second, now)
+                // Only record what the queue actually accepted. Appending an operation the queue
+                // rejected (an edit arriving after a queued DELETE) made the backup changelog
+                // disagree with the queue and resurrected deleted rows on restore.
                 liveBackupWriter?.appendChange(entityType, entityId, operation, payloadJson)
             }
             if (requestSync) requestSafely()
@@ -385,6 +370,47 @@ class SyncManager(
         
         // Trigger the scheduler immediately
         requestSafely()
+    }
+
+    companion object {
+        /**
+         * Folds a new write for a record into the one already waiting in the queue, so each record
+         * has at most one pending operation. Returns the operation and payload to keep, or null to
+         * keep the queued one unchanged.
+         *
+         * The old precedence table ranked a full UPDATE below everything else, so a bill edited
+         * before its first sync, or a full update after a partial one, was silently dropped.
+         */
+        fun foldQueuedOperation(existingOp: String, existingPayload: String, incomingOp: String, incomingPayload: String): Pair<String, String>? {
+            // A queued delete stands; nothing after it can bring the record back from this queue.
+            if (existingOp == "DELETE" && incomingOp != "DELETE") return null
+            if (incomingOp == "DELETE") return "DELETE" to incomingPayload
+            val payload = if (incomingOp == "PARTIAL_UPDATE") mergePayloads(existingPayload, incomingPayload) else incomingPayload
+            val op = when {
+                // Never reached the server yet: whatever follows is still its first write.
+                existingOp == "INSERT" -> "INSERT"
+                existingOp == "PARTIAL_UPDATE" && incomingOp == "PARTIAL_UPDATE" -> "PARTIAL_UPDATE"
+                else -> "UPDATE"
+            }
+            return op to payload
+        }
+
+        const val EDITED_AT = "editedAtEpochMs"
+
+        fun stampEditTime(payload: String, editedAt: Long): String = try {
+            org.json.JSONObject(payload).put(EDITED_AT, editedAt).toString()
+        } catch (e: Exception) {
+            payload
+        }
+
+        private fun mergePayloads(base: String, overlay: String): String = try {
+            val merged = org.json.JSONObject(base)
+            val incoming = org.json.JSONObject(overlay)
+            incoming.keys().forEach { key -> merged.put(key, incoming.get(key)) }
+            merged.toString()
+        } catch (e: Exception) {
+            overlay
+        }
     }
 
     private fun toJson(value: Any?): String {

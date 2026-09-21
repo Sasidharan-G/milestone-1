@@ -27,8 +27,6 @@ import com.kadaikutty.pos.core.database.migration8To9
 import com.kadaikutty.pos.core.database.migration9To10
 import com.kadaikutty.pos.core.auth.AuthRepository
 import com.kadaikutty.pos.core.auth.DefaultAuthRepository
-import com.kadaikutty.pos.core.auth.OfflineCredentialStore
-import com.kadaikutty.pos.core.auth.OfflineCredentialVerifier
 import com.kadaikutty.pos.core.auth.SessionStore
 import com.kadaikutty.pos.core.logging.AndroidLogger
 import com.kadaikutty.pos.core.logging.AppLogger
@@ -74,20 +72,21 @@ object CoreModule {
 
     @Provides @Singleton fun preferences(@ApplicationContext context: Context) = AppPreferences(context.billingDataStore)
     @Provides @Singleton fun sessionStore(@ApplicationContext context: Context) = SessionStore(context.billingDataStore)
-    @Provides @Singleton fun offlineCredentialStore(@ApplicationContext context: Context) = OfflineCredentialStore(context.billingDataStore)
-    @Provides @Singleton fun offlineCredentialVerifier() = OfflineCredentialVerifier()
+    @Provides @Singleton fun offlineCredentialStore(@ApplicationContext context: Context) = com.kadaikutty.pos.core.auth.OfflineCredentialStore(context.billingDataStore)
+    @Provides @Singleton fun offlineCredentialVerifier() = com.kadaikutty.pos.core.auth.OfflineCredentialVerifier()
     @Provides @Singleton fun sessionSecurityManager(
         backendApi: com.kadaikutty.pos.core.network.BackendApiClient,
         sessionStore: SessionStore,
         appPreferences: AppPreferences,
         webSocketManager: com.kadaikutty.pos.core.network.WebSocketManager,
+        offlineCredentials: com.kadaikutty.pos.core.auth.OfflineCredentialStore,
     ): com.kadaikutty.pos.core.auth.SessionSecurityManager =
-        com.kadaikutty.pos.core.auth.SessionSecurityManager(backendApi, sessionStore, appPreferences, webSocketManager)
+        com.kadaikutty.pos.core.auth.SessionSecurityManager(backendApi, sessionStore, appPreferences, webSocketManager, offlineCredentials)
 
     @Provides @Singleton fun authRepository(
-        sessions: SessionStore, 
-        credentials: OfflineCredentialStore, 
-        verifier: OfflineCredentialVerifier, 
+        sessions: SessionStore,
+        credentials: com.kadaikutty.pos.core.auth.OfflineCredentialStore,
+        verifier: com.kadaikutty.pos.core.auth.OfflineCredentialVerifier,
         tenantDatabaseManager: com.kadaikutty.pos.core.database.TenantDatabaseManager,
         backendApi: com.kadaikutty.pos.core.network.BackendApiClient,
         sessionSecurityManager: com.kadaikutty.pos.core.auth.SessionSecurityManager,

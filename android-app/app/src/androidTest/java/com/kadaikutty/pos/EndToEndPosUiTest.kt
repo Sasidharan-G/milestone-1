@@ -38,15 +38,22 @@ class EndToEndPosUiTest {
         hiltRule.inject()
     }
 
+    /**
+     * Signs in against whatever BACKEND_BASE_URL this build points at and writes real records there,
+     * and sign-in revokes that account's session on every other device. Run it only against a
+     * staging backend with a throwaway account: -Pandroid.testInstrumentationRunnerArguments.e2e=true
+     */
     @Test
     fun completeE2EFlowTest() {
+        org.junit.Assume.assumeTrue("E2E needs a staging backend; pass e2e=true to run it",
+            InstrumentationRegistry.getArguments().getString("e2e") == "true")
         // Random suffix to prevent unique constraint errors during multiple test runs
         val randomSuffix = System.currentTimeMillis().toString().takeLast(4)
 
         // 1. LOGIN FLOW
         composeTestRule.waitUntilExactlyOneExists(hasText("Mobile Number"), timeoutMillis = 10000)
         composeTestRule.onNodeWithText("Mobile Number").performTextInput("9789418144")
-        composeTestRule.onNodeWithText("Password").performTextInput("123456")
+        composeTestRule.onNodeWithText("Password (6-Digit PIN)").performTextInput("123456")
         composeTestRule.onNodeWithText("Sign In").performClick()
 
         // Wait for Dashboard to load (look for "Point of Sale (POS)")

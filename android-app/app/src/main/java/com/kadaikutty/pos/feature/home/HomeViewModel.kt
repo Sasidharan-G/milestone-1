@@ -37,7 +37,8 @@ class HomeViewModel @Inject constructor(
     private val sessionStore: SessionStore,
     private val database: BillingDatabase,
     private val syncScheduler: SyncScheduler,
-    private val webSocketManager: WebSocketManager
+    private val webSocketManager: WebSocketManager,
+    private val backendApiClient: com.kadaikutty.pos.core.network.BackendApiClient
 ) : ViewModel() {
 
     init {
@@ -58,6 +59,18 @@ class HomeViewModel @Inject constructor(
         viewModelScope.launch {
             webSocketManager.dataChangedFlow.collect { syncScheduler.requestPull() }
         }
+        // The socket's access token expired (it lives an hour). Refreshing it updates the session,
+        // and the collector above then reopens the socket with the new one. At most once a minute,
+        // so a server that keeps refusing is not hammered.
+        viewModelScope.launch {
+            var lastAttempt = 0L
+            webSocketManager.tokenRejectedFlow.collect {
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (lastAttempt != 0L && now - lastAttempt < 60_000L) return@collect
+                lastAttempt = now
+                runCatching { backendApiClient.autoRecoverSession(forceRefresh = true) }
+            }
+        }
     }
 
     override fun onCleared() {
@@ -77,6 +90,16 @@ class HomeViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Products sold below zero. Offline billing never refuses a sale for stock another device may
+     * have sold meanwhile, so after sync this is how an oversell becomes visible.
+     */
+    val negativeStockProducts: StateFlow<List<com.kadaikutty.pos.feature.masters.data.NegativeStockProduct>> = sessionStore.activeSession
+        .flatMapLatest { session ->
+            if (session == null) flowOf(emptyList()) else database.masterDao().negativeStockProducts(session.companyId)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val hasStaleUnsyncedData: StateFlow<Boolean> = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
@@ -86,22 +109,6 @@ class HomeViewModel @Inject constructor(
             StaleSyncDetector.isStale(oldestPendingCreatedAt, now)
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    // Null = unrestricted (offline-tier, or cloud-tier with no deadline set yet) — dashboard hides the ring.
-    val cloudAccessDaysRemaining: StateFlow<Long?> = sessionStore.activeSession
-        .flatMapLatest { session ->
-            if (session == null) flowOf(null) else database.userDao().getUserByIdFlow(session.userId)
-        }
-        .map { user ->
-            user?.let {
-                com.kadaikutty.pos.core.security.CloudAccessPolicy.daysRemaining(
-                    isCloudTier = it.isCloudTier,
-                    cloudAccessGrantedUntilEpochMs = it.cloudAccessGrantedUntilEpochMs,
-                    mustCheckInByEpochMs = it.mustCheckInByEpochMs
-                )
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     val dashboardState: StateFlow<HomeDashboardUiState> = sessionStore.activeSession
         .flatMapLatest { session ->
@@ -137,7 +144,7 @@ class HomeViewModel @Inject constructor(
                     HomeDashboardUiState(
                         todaySalesMinorUnits = stats.second,
                         todayInvoicesCount = stats.first,
-                        lowStockCount = stockList.count { it.minStockLevel > 0.0 && it.currentStock.toDouble() <= it.minStockLevel },
+                        lowStockCount = stockList.count { com.kadaikutty.pos.feature.stock.domain.isLowStock(it.currentStock, it.minStockLevel, it.unitType) },
                         customerCreditDueMinorUnits = customerDue,
                         todayPurchasesMinorUnits = stats.third,
                         recentSales = recent,
@@ -153,7 +160,7 @@ class HomeViewModel @Inject constructor(
                     state.copy(
                         isSyncing = actualSyncing,
                         lastSyncMessage = when {
-                            !isOnline -> "Offline Mode (Local)"
+                            !isOnline -> "Not signed in"
                             actualSyncing -> "Sync in progress..."
                             state.pendingSyncCount == 0 -> "All data backed up to cloud"
                             else -> "${state.pendingSyncCount} items ready to sync"

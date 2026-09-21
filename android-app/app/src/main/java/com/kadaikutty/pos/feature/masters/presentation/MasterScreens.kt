@@ -193,7 +193,7 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
             title = "Delete Category",
             message = "Are you sure you want to delete category \"${deletingCategory!!.name}\"? This action cannot be undone.",
             onConfirm = {
-                val cat = deletingCategory!!
+                val cat = deletingCategory ?: return@DeleteConfirmationDialog
                 deletingCategory = null
                 viewModel.deleteCategory(
                     category = cat,
@@ -587,7 +587,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
             title = "Delete Product",
             message = "Are you sure you want to delete product \"${deletingProduct!!.name}\"? This action cannot be undone.",
             onConfirm = {
-                val prod = deletingProduct!!
+                val prod = deletingProduct ?: return@DeleteConfirmationDialog
                 deletingProduct = null
                 viewModel.deleteProduct(prod, onSuccess = {
                     android.widget.Toast.makeText(context, "Product deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
@@ -898,7 +898,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     }
                                     Column(horizontalAlignment = Alignment.End) {
                                         Text(saleText, fontWeight = FontWeight.Bold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
-                                        Text("Stock: $formattedStock $unitLabel", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = if (product.minStockLevel > 0.0 && curStock.toDouble() <= product.minStockLevel) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Text("Stock: $formattedStock $unitLabel", fontSize = 12.sp, fontWeight = FontWeight.Medium, color = if (com.kadaikutty.pos.feature.stock.domain.isLowStock(curStock, product.minStockLevel, product.unitType)) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
                                     }
                                 }
 
@@ -1268,7 +1268,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
             title = "Delete Customer",
             message = "Are you sure you want to delete customer \"${deletingCustomer!!.name}\"? This action cannot be undone.",
             onConfirm = {
-                val cust = deletingCustomer!!
+                val cust = deletingCustomer ?: return@DeleteConfirmationDialog
                 deletingCustomer = null
                 viewModel.deleteCustomer(cust, onSuccess = {
                     android.widget.Toast.makeText(context, "Customer deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
@@ -1682,7 +1682,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
             title = "Delete Supplier",
             message = "Are you sure you want to delete supplier \"${deletingSupplier!!.name}\"? This action cannot be undone.",
             onConfirm = {
-                val supp = deletingSupplier!!
+                val supp = deletingSupplier ?: return@DeleteConfirmationDialog
                 deletingSupplier = null
                 viewModel.deleteSupplier(supp, onSuccess = {
                     android.widget.Toast.makeText(context, "Supplier deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
@@ -2077,7 +2077,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
             title = "Delete Expense",
             message = "Are you sure you want to delete this expense? This action cannot be undone.",
             onConfirm = {
-                val exp = deletingExpense!!
+                val exp = deletingExpense ?: return@DeleteConfirmationDialog
                 deletingExpense = null
                 viewModel.deleteExpense(exp, onSuccess = {
                     android.widget.Toast.makeText(context, "Expense deleted successfully", android.widget.Toast.LENGTH_SHORT).show()
@@ -3830,7 +3830,7 @@ fun LowStockAlertsBanner(lowStockProducts: List<com.kadaikutty.pos.core.database
             val displayList = lowStockProducts.take(8)
             displayList.forEach { item ->
                 Text(
-                    text = "• ${item.productName}: ${item.currentStock} remaining (Threshold: ${item.minStockLevel})",
+                    text = "• ${item.productName}: ${if (item.unitType == "KG" || item.unitType == "LITER") (item.currentStock / 1000.0).toString() else item.currentStock.toString()} remaining (Threshold: ${item.minStockLevel})",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onErrorContainer
                 )

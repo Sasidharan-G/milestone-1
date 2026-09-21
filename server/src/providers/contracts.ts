@@ -17,11 +17,6 @@ export interface UserAccount {
   status: AccountStatus;
   createdAtEpochMs: number;
   updatedAtEpochMs: number;
-  /** Whether this account may use cloud sync features at all. Kept separate from `permissions` so
-   *  an offline-tier ADMIN still gets every other admin capability but never cloud access. */
-  isCloudTier: boolean;
-  /** Master-granted cloud access end date; null/undefined means no end date has been set. */
-  cloudAccessGrantedUntilEpochMs?: number | null;
 }
 
 export type LicenseStatus = 'PENDING_APPROVAL' | 'TRIAL' | 'ACTIVE_PAID' | 'EXPIRED' | 'REVOKED';
@@ -100,10 +95,15 @@ export interface SyncOperation {
 
 export interface SyncResult {
   operationId: string;
-  status: 'APPLIED' | 'DUPLICATE' | 'CONFLICT';
+  status: 'APPLIED' | 'DUPLICATE' | 'CONFLICT' | 'REJECTED';
   version?: number;
   record?: CloudRecord;
+  /** Only on REJECTED: why this operation can never be applied as sent. */
+  error?: { code: string; message: string };
 }
+
+/** Who is pushing, as the account holds it now (see requireAuth). */
+export interface SyncActor { role: string; permissions: string[] }
 
 export interface SyncPage {
   records: CloudRecord[];
@@ -116,8 +116,6 @@ export interface NewAccountInput {
   displayName: string;
   businessName: string;
   password: string;
-  /** Registration-time choice; defaults to true (online tier) when omitted for backward compatibility. */
-  isCloudTier?: boolean;
 }
 
 export interface StaffInput {
@@ -126,7 +124,6 @@ export interface StaffInput {
   displayName: string;
   password?: string;
   permissions: string[];
-  isCloudTier?: boolean;
 }
 
 export interface DataStore {
@@ -134,21 +131,26 @@ export interface DataStore {
   findUserByPhone(phone: string): Promise<UserAccount | null>;
   findUserById(userId: string): Promise<UserAccount | null>;
   listStaff(companyId: string): Promise<UserAccount[]>;
+  /** Every user of one company, owner included. A point query, never a table scan. */
+  listCompanyUsers(companyId: string): Promise<UserAccount[]>;
   createStaff(input: StaffInput): Promise<UserAccount>;
   deleteStaff(companyId: string, userId: string): Promise<void>;
-  updateStaff(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'displayName' | 'permissions' | 'status' | 'isCloudTier' | 'cloudAccessGrantedUntilEpochMs'>>): Promise<UserAccount>;
-  // Separate from updateStaff, which deliberately only ever touches CASHIER accounts (its
-  // permission-filtering logic assumes that role). This targets the company's own ADMIN/owner
-  // account instead, and only ever changes the two cloud-access fields.
-  findAdminByCompany(companyId: string): Promise<UserAccount | null>;
-  updateAccountCloudAccess(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'isCloudTier' | 'cloudAccessGrantedUntilEpochMs'>>): Promise<UserAccount>;
+  updateStaff(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'displayName' | 'permissions' | 'status'>>): Promise<UserAccount>;
   getLicense(companyId: string): Promise<LicenseRecord | null>;
   getShopProfile(companyId: string): Promise<ShopProfileRecord | null>;
   updateShopProfile(companyId: string, changes: Partial<Omit<ShopProfileRecord, 'companyId' | 'version' | 'updatedAtEpochMs'>>): Promise<ShopProfileRecord>;
   consumeNonce(scope: string, nonce: string, expiresAtEpochMs: number): Promise<boolean>;
-  applySyncBatch(companyId: string, operations: SyncOperation[]): Promise<SyncResult[]>;
+  /** With [actor], each write that would land is also checked against that user's permissions. */
+  applySyncBatch(companyId: string, operations: SyncOperation[], actor?: SyncActor): Promise<SyncResult[]>;
   pullSync(companyId: string, cursor: string, limit: number): Promise<SyncPage>;
   purgeCompanyRecords(companyId: string): Promise<number>;
+  /**
+   * Which generation of the shop's cloud data this is. A purge moves it on, and a device that
+   * still holds data from before must throw it away instead of pushing it back up (see
+   * syncController). 0 until the first purge.
+   */
+  getSyncEpoch(companyId: string): Promise<number>;
+  bumpSyncEpoch(companyId: string): Promise<number>;
   adminOverview(): Promise<{ licenses: LicenseRecord[]; users: UserAccount[]; masterConfig: MasterConfig }>;
   updateLicense(companyId: string, changes: Partial<LicenseRecord>): Promise<LicenseRecord>;
   deleteCompany(companyId: string): Promise<void>;
@@ -204,7 +206,8 @@ export interface SessionRecord {
 
 export interface SessionStore {
   register(input: Omit<SessionRecord, 'revoked' | 'lastSeenAtEpochMs'>): Promise<SessionRecord>;
-  heartbeat(companyId: string, userId: string, sessionId: string): Promise<SessionRecord>;
+  /** Marks the session seen and moves its expiry to [expiresAtEpochMs]: a device in use stays signed in. */
+  heartbeat(companyId: string, userId: string, sessionId: string, expiresAtEpochMs: number): Promise<SessionRecord>;
   revoke(companyId: string, actorUserId: string, sessionId: string): Promise<void>;
   validate(companyId: string, userId: string, sessionId: string): Promise<boolean>;
   /** Single-device policy: revokes every other live session of the user and returns them. */

@@ -67,9 +67,23 @@ export const requireAuth = async (req: AuthenticatedRequest, res: Response, next
     if (!sessionId) throw new AppError(401, 'SESSION_REQUIRED', 'Register a device session before calling this endpoint');
     const valid = await providers().sessionStore.validate(user.companyId, user.userId, sessionId);
     if (!valid) throw new AppError(401, 'SESSION_REVOKED', 'This device session was signed out. Please sign in again.');
-    req.user = { ...user, sessionId };
+    req.user = { ...await withCurrentAccount(user), sessionId };
     return next();
   } catch (error) { return sendRouteError(res, req, error); }
+};
+
+/**
+ * Role and permissions as the account holds them now, not as the token remembers them. The
+ * Cognito token carries the permissions it was issued with and is only re-issued from Cognito's
+ * own copy, which a staff edit never updated, so a permission taken away from a cashier kept
+ * working until the next password change. The account record is the authority.
+ */
+const withCurrentAccount = async (user: AuthenticatedUser): Promise<AuthenticatedUser> => {
+  if (user.super_admin) return user;
+  const account = await providers().dataStore.findUserById(user.userId);
+  if (!account || account.companyId !== user.companyId) throw new AppError(401, 'ACCOUNT_NOT_FOUND', 'This account no longer exists. Please sign in again.');
+  if (account.status !== 'ACTIVE') throw new AppError(403, 'AUTH_ACCOUNT_INACTIVE', 'Your account has been deactivated. Contact your shop administrator');
+  return { ...user, role: account.role, permissions: [...account.permissions] };
 };
 
 /** Token only — used by /sessions/register, which is how a device obtains its session in the first place. */

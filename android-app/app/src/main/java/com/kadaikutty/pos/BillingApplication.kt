@@ -12,6 +12,7 @@ class BillingApplication : Application() {
         // sqlcipher-android (16 KB page size compatible) loads its native library explicitly,
         // unlike the deprecated android-database-sqlcipher's SQLiteDatabase.loadLibs(context).
         System.loadLibrary("sqlcipher")
+        com.kadaikutty.pos.core.common.TrustedClock.init(this)
         initSentry()
     }
 

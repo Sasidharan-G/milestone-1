@@ -809,7 +809,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                     Button(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         onClick = {
-                            val targetSale = deletingSale!!
+                            val targetSale = deletingSale ?: return@Button
                             deletingSale = null
                             viewModel.deleteSale(targetSale.id, targetSale.billNumber, onSuccess = {
                                 message = "Bill #${targetSale.billNumber} deleted and stock restored"

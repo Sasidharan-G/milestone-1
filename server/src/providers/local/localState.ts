@@ -26,6 +26,8 @@ export interface LocalState {
   records: Record<string, CloudRecord>;
   changes: Array<{ sequence: number; record: CloudRecord }>;
   idempotency: Record<string, { result: import('../contracts').SyncResult; createdAtEpochMs: number }>;
+  /** Per company; see DataStore.getSyncEpoch. Optional so state files from before it still load. */
+  syncEpochs?: Record<string, number>;
   consumedNonces: Record<string, number>;
   backups: Record<string, BackupRecord>;
   masterConfig: MasterConfig;

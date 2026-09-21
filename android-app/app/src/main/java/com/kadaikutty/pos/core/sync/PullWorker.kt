@@ -14,6 +14,7 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.components.SingletonComponent
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.withLock
 import org.json.JSONObject
 
 class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
@@ -24,6 +25,7 @@ class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         fun tenantDatabaseManager(): com.kadaikutty.pos.core.database.TenantDatabaseManager
         fun sessionStore(): SessionStore
         fun backendApiClient(): BackendApiClient
+        fun syncManager(): SyncManager
     }
 
     override suspend fun doWork(): Result {
@@ -36,11 +38,20 @@ class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             token = recovered?.first
         }
         if (token.isNullOrBlank()) return Result.success()
-        val cursorKey = "sync_pull_cursor"
-        var cursor = database.localOperationDao().get(session.companyId, cursorKey) ?: "0"
+        return SyncLock.mutex.withLock { pull(entry, database, session.companyId, token) }
+    }
+
+    private suspend fun pull(entry: PullEntryPoint, database: BillingDatabase, companyId: String, token: String): Result {
+        val cursorKey = CURSOR_KEY
+        val resolver = ConflictResolver(database, entry.syncManager())
+        var cursor = database.localOperationDao().get(companyId, cursorKey) ?: "0"
         return try {
-            do {
-                val response = entry.backendApiClient().pullSync(token, session.companyId, cursor)
+            while (true) {
+                val response = entry.backendApiClient().pullSync(token, companyId, cursor)
+                if (resetIfPurged(database, companyId, response.optLong("epoch", 0L))) {
+                    cursor = "0"
+                    continue
+                }
                 val records = response.optJSONArray("records") ?: response.optJSONArray("data")
                 val nextCursor = response.optString("nextCursor", cursor)
                 database.withTransaction {
@@ -52,18 +63,34 @@ class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                         // It is skipped and counted instead, so Sync Diagnostics can show it.
                         // A cross-tenant record is different - that is not bad data but a
                         // server or cursor fault, so it still aborts the whole batch.
-                        requireSameTenant(record, session.companyId)
+                        requireSameTenant(record, companyId)
                         try {
-                            applyRecord(database, session.companyId, record)
+                            applyRecord(database, resolver, companyId, record)
                         } catch (error: Exception) {
-                            recordSkipped(database, session.companyId, record, error)
+                            recordSkipped(database, companyId, record, error)
                         }
                     }
-                    database.localOperationDao().put(LocalOperationEntity(session.companyId, cursorKey, nextCursor))
+                    database.localOperationDao().put(LocalOperationEntity(companyId, cursorKey, nextCursor))
                 }
                 cursor = nextCursor
-                val hasMore = response.optBoolean("hasMore", false)
-            } while (hasMore)
+                if (!response.optBoolean("hasMore", false)) break
+            }
+            // Children of bills cancelled elsewhere, and customers/products that money or stock
+            // still points at, are only knowable once the whole pull has landed.
+            resolver.sweep(companyId)
+            // Once per install, after a complete pull: rebuild bills whose stock or credit rows an
+            // older build doubled. See ConflictResolver.repairDocumentChildren.
+            if (database.localOperationDao().get(companyId, CHILD_REPAIR_KEY) == null) {
+                // Marked done only when every document could be checked; ones with sync work still
+                // queued are retried after the next pull.
+                if (resolver.repairDocumentChildren(companyId) == 0) {
+                    database.localOperationDao().put(LocalOperationEntity(companyId, CHILD_REPAIR_KEY, System.currentTimeMillis().toString()))
+                }
+            }
+            // A sweep or a restore may have queued writes; send them now rather than in 15 minutes.
+            if (database.syncQueueDao().pending(companyId, 1).isNotEmpty()) {
+                runCatching { SyncScheduler(applicationContext).request() }
+            }
             Result.success()
         } catch (error: BackendApiException) {
             if (error.code == "SESSION_REVOKED" || error.message.contains("signed out", ignoreCase = true)) Result.failure(errorData(error.message))
@@ -74,6 +101,28 @@ class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         } catch (error: Exception) {
             Result.failure(errorData(error.message ?: "Cloud pull failed"))
         }
+    }
+
+    /**
+     * The shop's cloud data was cleared on another device since this one last synced (its data
+     * epoch moved on). Everything here predates that, including writes still waiting to go out,
+     * which the server would refuse anyway. Empty this device and pull again from the start.
+     *
+     * A device with no epoch and no pull cursor has never synced (a fresh install), so it just
+     * takes the current epoch; one that has synced before epochs existed is reset like any other.
+     */
+    private suspend fun resetIfPurged(database: BillingDatabase, companyId: String, serverEpoch: Long): Boolean {
+        val dao = database.localOperationDao()
+        val known = dao.get(companyId, EPOCH_KEY)?.toLongOrNull()
+        if (known == serverEpoch) return false
+        if (known == null && (serverEpoch == 0L || dao.get(companyId, CURSOR_KEY) == null)) {
+            rememberEpoch(database, companyId, serverEpoch)
+            return false
+        }
+        ShopDataWiper.wipe(database)
+        rememberEpoch(database, companyId, serverEpoch)
+        dao.put(LocalOperationEntity(companyId, REMOTE_RESET_KEY, System.currentTimeMillis().toString()))
+        return true
     }
 
     private fun requireSameTenant(record: JSONObject, companyId: String) {
@@ -89,27 +138,45 @@ class PullWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
         dao.put(LocalOperationEntity(companyId, SKIPPED_LAST_KEY, "$type/$id: ${error.message ?: error::class.java.simpleName}"))
     }
 
-    private suspend fun applyRecord(database: BillingDatabase, companyId: String, record: JSONObject) {
+    private suspend fun applyRecord(database: BillingDatabase, resolver: ConflictResolver, companyId: String, record: JSONObject) {
         val type = record.getString("entityType")
         val id = record.getString("entityId")
         val version = record.getLong("version")
+        val payload = record.optJSONObject("payload") ?: JSONObject()
+        // This device has its own change to this record still on the way out. Writing the cloud
+        // copy over it would lose that change, and recording the new version would make the push
+        // look current and overwrite the other device instead of conflicting. So leave both alone:
+        // the push will get a CONFLICT carrying this same record, and ConflictResolver merges.
+        if (database.syncQueueDao().hasUnresolved(companyId, type, id, SyncWorker.MAX_SYNC_ATTEMPTS)) return
         if (record.optBoolean("deleted")) {
-            RecordApplier.deleteRecord(database, companyId, type, id)
-        } else {
-            val tombstone = database.syncQueueDao().findPending(companyId, type, id)
-            val serverUpdatedAt = record.optLong("updatedAtEpochMs")
-            if (tombstone != null && tombstone.operation == "DELETE" && tombstone.createdAtEpochMs > serverUpdatedAt) {
-                // Local tombstone is newer than cloud update -> preserve local deletion
-                return
+            if (!resolver.applyPulledDeletion(companyId, type, id, version, payload)) {
+                RecordApplier.deleteRecord(database, companyId, type, id)
             }
-            RecordApplier.upsertRecord(database, companyId, type, id, record.getJSONObject("payload"), serverUpdatedAt)
+        } else {
+            if (type == "Sale" || type == "Purchase") resolver.onPulledDocument(companyId, type, id, version)
+            resolver.preparePulledUpsert(companyId, type, id, payload)
+            RecordApplier.upsertRecord(database, companyId, type, id, payload, record.optLong("updatedAtEpochMs"))
+            resolver.recordCloudState(companyId, type, id, version, payload)
         }
-        database.localOperationDao().put(LocalOperationEntity(companyId, "cloud_version:$type:$id", version.toString()))
     }
 
     private fun errorData(message: String) = androidx.work.workDataOf("error_reason" to message, "error_next_steps" to "Check your connection or Sync Diagnostics, then retry.")
 
     companion object {
+        const val CURSOR_KEY = "sync_pull_cursor"
+        /** The generation of cloud data this device holds; see the server's getSyncEpoch. */
+        const val EPOCH_KEY = "sync_data_epoch"
+        /** When this device last threw its data away because the cloud copy had been cleared. */
+        const val REMOTE_RESET_KEY = "sync_remote_reset_at"
+
+        suspend fun knownEpoch(database: BillingDatabase, companyId: String): Long =
+            database.localOperationDao().get(companyId, EPOCH_KEY)?.toLongOrNull() ?: 0L
+
+        suspend fun rememberEpoch(database: BillingDatabase, companyId: String, epoch: Long) {
+            database.localOperationDao().put(LocalOperationEntity(companyId, EPOCH_KEY, epoch.toString()))
+        }
+        private const val CHILD_REPAIR_KEY = "legacy_child_repair_v1"
+
         /** Records the server sent that this build could not apply. Surfaced in Sync Diagnostics. */
         const val SKIPPED_COUNT_KEY = "sync_pull_skipped_count"
         const val SKIPPED_LAST_KEY = "sync_pull_skipped_last"

@@ -20,7 +20,7 @@ data class StockReportRow(
 data class ProfitReportRawRow(val productId: String, val productName: String, val totalQty: Long, val totalRevenue: Long, val recordedCost: Long? = null)
 data class PurchaseReportRow(val purchaseId: String, val orderNumber: String?, val invoiceNumber: String?, val date: String, val supplierName: String, val paymentMode: String, val totalAmount: Long)
 data class ExpenseReportRow(val expenseId: String, val date: String, val description: String, val amount: Long)
-data class LowStockRow(val productName: String, val categoryName: String, val currentStock: Long, val minStockLevel: Double)
+data class LowStockRow(val productName: String, val categoryName: String, val currentStock: Long, val minStockLevel: Double, val unitType: String = "PIECE")
 
 @Dao
 interface ReportDao {
@@ -69,13 +69,14 @@ interface ReportDao {
             p.name as productName, 
             cat.name as categoryName, 
             COALESCE(SUM(sm.quantityDelta), 0) as currentStock,
-            p.minStockLevel
+            p.minStockLevel,
+            p.unitType as unitType
         FROM products p
         INNER JOIN categories cat ON p.categoryId = cat.id AND cat.companyId = :companyId
         LEFT JOIN stock_movements sm ON p.id = sm.productId AND sm.companyId = :companyId
         WHERE p.companyId = :companyId AND p.minStockLevel > 0
         GROUP BY p.id
-        HAVING currentStock <= p.minStockLevel
+        HAVING currentStock <= p.minStockLevel * (CASE WHEN p.unitType IN ('KG', 'LITER') THEN 1000 ELSE 1 END)
         ORDER BY currentStock ASC
     """)
     fun getLowStockProducts(companyId: String): kotlinx.coroutines.flow.Flow<List<LowStockRow>>

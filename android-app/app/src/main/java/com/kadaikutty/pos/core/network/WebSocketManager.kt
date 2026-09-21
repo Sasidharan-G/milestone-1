@@ -24,11 +24,21 @@ class WebSocketManager @Inject constructor() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private var socket: Socket? = null
     private var connectedCompanyId: String? = null
+    // Held so a refreshed access token reaches the socket: the client sends this same map again on
+    // every reconnect, and the token it was opened with expires after an hour.
+    private var socketAuth: MutableMap<String, String>? = null
+    private val _tokenRejectedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /** The server refused the socket's access token; the collector refreshes it, which reconnects. */
+    val tokenRejectedFlow = _tokenRejectedFlow.asSharedFlow()
     private val _dataChangedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val dataChangedFlow = _dataChangedFlow.asSharedFlow()
 
     private val _sessionRevokedFlow = MutableSharedFlow<String>(extraBufferCapacity = 1)
     val sessionRevokedFlow = _sessionRevokedFlow.asSharedFlow()
+    // Set when the account itself was disabled or deleted, not just this session, so the
+    // offline credential has to go too. Read by the sessionRevokedFlow collector before it clears.
+    @Volatile var lastRevokeDisabledAccount: Boolean = false
+        private set
 
     // Master Control connects a second, independent socket (its own auth context — a different
     // userId/companyId than any tenant session that may also be live in this process) so the two
@@ -39,17 +49,21 @@ class WebSocketManager @Inject constructor() {
 
     @Synchronized
     fun connect(companyId: String, accessToken: String, sessionId: String? = null) {
-        if (socket?.connected() == true && connectedCompanyId == companyId) return
+        if (socket?.connected() == true && connectedCompanyId == companyId) {
+            socketAuth?.put("token", accessToken)
+            return
+        }
         if (sessionId.isNullOrBlank()) {
             Log.w(TAG, "Tenant socket not opened: active device session is required")
             return
         }
         disconnect()
         try {
+            val authMap = java.util.concurrent.ConcurrentHashMap(mapOf("token" to accessToken, "sessionId" to sessionId))
             val options = IO.Options().apply {
                 forceNew = true
                 reconnection = true
-                auth = mapOf("token" to accessToken, "sessionId" to sessionId)
+                auth = authMap
             }
             val newSocket = IO.socket(BuildConfig.BACKEND_BASE_URL.trimEnd('/'), options)
             newSocket.on(Socket.EVENT_CONNECT) {
@@ -57,6 +71,11 @@ class WebSocketManager @Inject constructor() {
                 newSocket.emit("join_company", companyId)
             }
             newSocket.on("data_changed") {
+                scope.launch { _dataChangedFlow.emit(Unit) }
+            }
+            // Another device cleared the shop's cloud data. The pull sees the new data epoch and
+            // resets this device (see PullWorker).
+            newSocket.on("data_purged") {
                 scope.launch { _dataChangedFlow.emit(Unit) }
             }
             newSocket.on("license_changed") {
@@ -79,14 +98,21 @@ class WebSocketManager @Inject constructor() {
                     "Your account was signed in on another device${if (!deviceName.isNullOrBlank()) " ($deviceName)" else ""}. Active session ended."
                 } else "Your session has been signed out."
                 Log.w(TAG, "session_revoked event received: $msg")
+                lastRevokeDisabledAccount = reason == "ACCOUNT_DISABLED" || reason == "ACCOUNT_DELETED"
                 scope.launch { _sessionRevokedFlow.emit(msg) }
             }
             newSocket.on(Socket.EVENT_CONNECT_ERROR) { args ->
                 Log.w(TAG, "Connect error: ${args.firstOrNull()}")
+                // A middleware refusal is final for this socket; it does not retry on its own.
+                val reason = (args.firstOrNull() as? Exception)?.message ?: args.firstOrNull()?.toString().orEmpty()
+                if (reason.contains("AUTH_INVALID_TOKEN") || reason.contains("AUTH_REQUIRED")) {
+                    scope.launch { _tokenRejectedFlow.emit(Unit) }
+                }
             }
             newSocket.on(Socket.EVENT_DISCONNECT) { Log.d(TAG, "Disconnected") }
             newSocket.connect()
             socket = newSocket
+            socketAuth = authMap
             connectedCompanyId = companyId
         } catch (e: Exception) {
             Log.e(TAG, "Error connecting to socket: ${e.message}")
@@ -98,6 +124,7 @@ class WebSocketManager @Inject constructor() {
         socket?.off()
         socket?.disconnect()
         socket = null
+        socketAuth = null
         connectedCompanyId = null
     }
 

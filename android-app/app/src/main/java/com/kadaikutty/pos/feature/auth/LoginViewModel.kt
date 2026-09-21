@@ -3,16 +3,13 @@ package com.kadaikutty.pos.feature.auth
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kadaikutty.pos.core.auth.AuthRepository
-import com.kadaikutty.pos.core.auth.LoginMode
 import com.kadaikutty.pos.core.auth.LoginResult
 import com.kadaikutty.pos.core.auth.MasterAuthSession
-import com.kadaikutty.pos.core.auth.OfflineCredentialStore
 import com.kadaikutty.pos.core.auth.SessionSecurityManager
 import com.kadaikutty.pos.core.network.BackendApiClient
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -22,7 +19,6 @@ import com.kadaikutty.pos.BuildConfig
 data class LoginUiState(
     val mobileNumber: String = "", 
     val password: String = "", 
-    val mode: LoginMode = LoginMode.Online, 
     val loading: Boolean = false, 
     val error: String? = null, 
     val complete: Boolean = false,
@@ -33,34 +29,18 @@ data class LoginUiState(
     val resetVerificationId: String? = null,
     // Once the user explicitly flips the toggle themselves, the auto-suggestion below backs off
     // and never overrides their choice again for this screen visit.
-    val hasUserPickedModeManually: Boolean = false,
 )
 @HiltViewModel class LoginViewModel @Inject constructor(
     private val authRepository: AuthRepository,
     private val backendApiClient: BackendApiClient,
     private val sessionSecurityManager: SessionSecurityManager,
-    private val offlineCredentialStore: OfflineCredentialStore,
 ) : ViewModel() {
     private val mutableState = MutableStateFlow(LoginUiState()); val state = mutableState.asStateFlow()
 
     fun updateMobileNumber(value: String) {
         mutableState.update { it.copy(mobileNumber = value, error = null) }
-        // Non-blocking convenience only: guesses the mode most likely to actually work on this
-        // device for this phone, so the user isn't left picking the wrong toggle and seeing a
-        // confusing failure. Never overrides a mode the user picked themselves.
-        val normalized = value.filter(Char::isDigit).takeLast(10)
-        if (normalized.length == 10 && !state.value.hasUserPickedModeManually) {
-            viewModelScope.launch {
-                val hasOfflineCredential = offlineCredentialStore.getCredential(normalized).first() != null
-                val current = state.value
-                if (!current.hasUserPickedModeManually && current.mobileNumber.filter(Char::isDigit).takeLast(10) == normalized) {
-                    mutableState.update { it.copy(mode = if (hasOfflineCredential) LoginMode.Offline else LoginMode.Online) }
-                }
-            }
-        }
     }
     fun updatePassword(value: String) = mutableState.update { it.copy(password = value, error = null) }
-    fun updateMode(value: LoginMode) = mutableState.update { it.copy(mode = value, error = null, hasUserPickedModeManually = true) }
     fun updateResetOtp(value: String) = mutableState.update { it.copy(resetOtp = value, error = null) }
     fun updateNewPassword(value: String) = mutableState.update { it.copy(newPasswordString = value, error = null) }
     fun dismissResetDialog() = mutableState.update { it.copy(showResetOtpDialog = false, resetOtp = "", newPasswordString = "", resetVerificationId = null) }
@@ -77,13 +57,7 @@ data class LoginUiState(
             val sessionEstablished = if (token != null) {
                 MasterAuthSession.save(token)
                 sessionSecurityManager.registerMasterSession()
-            } else {
-                val offlineResult = authRepository.loginOffline(BuildConfig.MASTER_SUPPORT_PHONE, pin.toCharArray())
-                if (offlineResult is LoginResult.Success) {
-                    MasterAuthSession.save("offline_master_session")
-                    true
-                } else false
-            }
+            } else false
             if (token != null && !sessionEstablished) MasterAuthSession.clear()
             onResult(sessionEstablished)
         }
@@ -157,9 +131,15 @@ data class LoginUiState(
         viewModelScope.launch {
             mutableState.update { it.copy(loading = true, error = null) }
             val password = current.password.toCharArray()
-            val result = when (current.mode) {
-                LoginMode.Online -> authRepository.loginOnline(cleanPhone, password)
-                LoginMode.Offline -> authRepository.loginOffline(cleanPhone, password)
+            // Online first, always. Only when the server could not be reached does this fall back to
+            // the credential saved by this number's last successful online sign-in here. A wrong
+            // password or a disabled account is a server answer, not a connection problem, so it
+            // never falls through — see DefaultAuthRepository.isServerRejection.
+            val online = authRepository.loginOnline(cleanPhone, password)
+            val result = if (online is LoginResult.Failure && online.canTryOffline) {
+                authRepository.loginOffline(cleanPhone, password)
+            } else {
+                online
             }
             password.fill('\u0000')
             

@@ -80,7 +80,8 @@ class TenantDatabaseManager @Inject constructor(
                 migration9To10, migration10To11, migration11To12, migration12To13,
                 migration13To14, migration14To15, migration15To16, migration16To17,
                 migration17To18, migration18To19, migration19To20, migration20To21,
-                migration21To22, migration22To23
+                migration21To22, migration22To23, migration23To24, migration24To25,
+                migration25To26
             )
             .fallbackToDestructiveMigrationOnDowngrade()
             .build()

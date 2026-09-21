@@ -8,6 +8,9 @@ import { providers } from '../providers/providerRegistry';
 import { sendRouteError } from './http';
 
 const router = Router();
+// How long a device may go unused before it has to sign in again. Every heartbeat restarts it, so
+// a shop that opens the app keeps its session; only the Cognito refresh token (365 days, see
+// cloudformation-template.yaml) still ends it.
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1000;
 
 /** Registers this device and signs every other device of the user out (single active device). */
@@ -31,7 +34,7 @@ router.post('/heartbeat', requireAuth, async (req: AuthenticatedRequest, res) =>
   try {
     const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId : req.user!.sessionId!;
     if (sessionId !== req.user!.sessionId) throw new AppError(401, 'SESSION_REVOKED', 'This device session was signed out. Please sign in again.');
-    const session = await providers().sessionStore.heartbeat(req.user!.companyId, req.user!.userId, sessionId);
+    const session = await providers().sessionStore.heartbeat(req.user!.companyId, req.user!.userId, sessionId, Date.now() + SESSION_LIFETIME_MS);
     return res.json({ success: true, session });
   } catch (error) { return sendRouteError(res, req, error); }
 });

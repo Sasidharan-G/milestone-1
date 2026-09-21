@@ -1,5 +1,6 @@
 package com.kadaikutty.pos.feature.auth
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -13,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -43,10 +45,7 @@ data class RegisterUiState(
     val complete: Boolean = false,
     val showOtpDialog: Boolean = false,
     val otp: String = "",
-    val verificationId: String? = null,
-    // Online = full cloud sync + backup from day one. Offline = local-only; Master Control can
-    // upgrade this later, but this account never gets auto-granted cloud access via its role.
-    val isCloudTier: Boolean = true
+    val verificationId: String? = null
 )
 
 @HiltViewModel
@@ -62,7 +61,6 @@ class RegisterViewModel @Inject constructor(
     fun updatePassword(value: String) = _state.update { it.copy(passwordString = value, error = null) }
     fun updateConfirmPassword(value: String) = _state.update { it.copy(confirmPasswordString = value, error = null) }
     fun updateOtp(value: String) = _state.update { it.copy(otp = value, error = null) }
-    fun updateCloudTier(isCloudTier: Boolean) = _state.update { it.copy(isCloudTier = isCloudTier) }
     fun dismissOtpDialog() = _state.update { it.copy(showOtpDialog = false, otp = "", verificationId = null) }
 
     fun register(activity: android.app.Activity) {
@@ -177,8 +175,7 @@ class RegisterViewModel @Inject constructor(
                 mobileNumber = phoneWithCode,
                 password = passChars,
                 ownerName = current.ownerName.trim(),
-                businessName = current.businessName.trim(),
-                isCloudTier = current.isCloudTier
+                businessName = current.businessName.trim()
             )
             passChars.fill('\u0000')
 
@@ -349,34 +346,6 @@ fun RegisterScreenContent(
                             }
                         }
                     }
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("Local", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
-                    Switch(
-                        checked = state.isCloudTier,
-                        onCheckedChange = { viewModel.updateCloudTier(it) },
-                        modifier = Modifier.padding(horizontal = 8.dp),
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = Color.White,
-                            checkedTrackColor = Color(0xFF8E2128),
-                            uncheckedThumbColor = Color.White,
-                            uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
-                        )
-                    )
-                    Text("Cloud", fontSize = 12.sp, color = Color.White.copy(alpha = 0.7f))
-                }
-                Text(
-                    if (state.isCloudTier) "Cloud: full cloud backup & sync from day one."
-                    else "Local: local-only. Ask Master Control to enable cloud access later.",
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = 0.6f),
-                    modifier = Modifier.fillMaxWidth(),
-                    textAlign = androidx.compose.ui.text.style.TextAlign.Center
                 )
 
                 Button(

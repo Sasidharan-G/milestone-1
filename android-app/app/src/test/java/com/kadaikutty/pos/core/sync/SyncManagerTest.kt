@@ -55,6 +55,15 @@ class SyncManagerTest {
         override fun oldestPendingCreatedAt(companyId: String): Flow<Long?> = flowOf(null)
         override suspend fun clearByCompany(companyId: String) {}
         override suspend fun migrateTenantData(oldCompanyId: String, newCompanyId: String) {}
+        override suspend fun requeueConflicts(companyId: String, now: Long) {}
+        override suspend fun getById(id: String): SyncQueueEntity? = null
+        override suspend fun pendingWindow(companyId: String, limit: Int): List<SyncQueueEntity> = emptyList()
+        override suspend fun hasUnresolved(companyId: String, entityType: String, entityId: String, maxAttempts: Int): Boolean = false
+        override suspend fun unresolvedEntityIds(companyId: String, entityTypes: List<String>, maxAttempts: Int): List<String> = emptyList()
+        override suspend fun supersede(companyId: String, entityType: String, entityId: String, note: String, now: Long) {}
+        override suspend fun hasPendingDelete(companyId: String, entityType: String, entityId: String): Boolean = false
+        override suspend fun markSyncedIfUnchanged(id: String, operation: String, payload: String, now: Long): Int = 0
+        override suspend fun markRejectedIfUnchanged(id: String, operation: String, payload: String, attempts: Int, error: String, now: Long): Int = 0
     }
 
     private lateinit var database: BillingDatabase

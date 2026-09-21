@@ -10,4 +10,8 @@ interface LocalOperationDao {
     suspend fun get(companyId: String, key: String): String?
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun put(entry: LocalOperationEntity)
+    @Query("SELECT * FROM local_operations WHERE companyId = :companyId AND `key` LIKE :prefix || '%'")
+    suspend fun byPrefix(companyId: String, prefix: String): List<LocalOperationEntity>
+    @Query("DELETE FROM local_operations WHERE companyId = :companyId AND `key` = :key")
+    suspend fun delete(companyId: String, key: String)
 }

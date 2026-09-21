@@ -22,7 +22,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.kadaikutty.pos.core.auth.LoginMode
 
 
 @Composable
@@ -150,27 +149,9 @@ fun LoginScreenContent(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
+                    horizontalArrangement = Arrangement.End,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Offline", fontSize = 12.sp, color = Color(0xFF94A3B8))
-                        Switch(
-                            checked = state.mode == LoginMode.Online,
-                            onCheckedChange = { online ->
-                                viewModel.updateMode(if (online) LoginMode.Online else LoginMode.Offline)
-                            },
-                            modifier = Modifier.padding(horizontal = 8.dp),
-                            colors = SwitchDefaults.colors(
-                                checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFF8E2128), // Matches maroon theme
-                                uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color.White.copy(alpha = 0.3f)
-                            )
-                        )
-                        Text("Online", fontSize = 12.sp, color = Color(0xFF94A3B8))
-                    }
-
                     Text(
                         text = "Forgot Password?",
                         fontSize = 12.sp,
@@ -290,7 +271,7 @@ fun LoginScreenContent(
                                 masterPinError = false
                             },
                             label = { Text("Master PIN", color = Color.White.copy(alpha = 0.8f)) },
-                            placeholder = { Text("Enter 4-6 digit PIN", color = Color.White.copy(alpha = 0.5f)) },
+                            placeholder = { Text("Enter 6-digit PIN", color = Color.White.copy(alpha = 0.5f)) },
                             isError = masterPinError,
                             supportingText = if (masterPinError) { { Text("Incorrect Master PIN.", color = Color(0xFFFF5252)) } } else null,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
@@ -435,7 +416,7 @@ fun LoginScreenContent(
                         OutlinedTextField(
                             value = masterNewPin,
                             onValueChange = { masterNewPin = it.filter { ch -> ch.isDigit() }.take(6) },
-                            label = { Text("New Master PIN (4-6 Digits)", color = Color.White.copy(alpha = 0.8f)) },
+                            label = { Text("New Master PIN (6 Digits)", color = Color.White.copy(alpha = 0.8f)) },
                             placeholder = { Text("Enter new secret PIN", color = Color.White.copy(alpha = 0.5f)) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
                             trailingIcon = {
@@ -558,9 +539,9 @@ fun LoginScreenContent(
                         ) {
                             OutlinedTextField(
                                 value = state.newPasswordString,
-                                onValueChange = { viewModel.updateNewPassword(it) },
-                                label = { Text("New Password / 4-6 Digit PIN", color = Color.White.copy(alpha = 0.7f)) },
-                                placeholder = { Text("Enter new password or PIN", color = Color.White.copy(alpha = 0.4f)) },
+                                onValueChange = { viewModel.updateNewPassword(it.filter { ch -> ch.isDigit() }.take(6)) },
+                                label = { Text("New 6-Digit PIN", color = Color.White.copy(alpha = 0.7f)) },
+                                placeholder = { Text("Enter a new 6-digit PIN", color = Color.White.copy(alpha = 0.4f)) },
                                 trailingIcon = {
                                     IconButton(onClick = { forgotPasswordVisible = !forgotPasswordVisible }) {
                                         Icon(
@@ -605,7 +586,7 @@ fun LoginScreenContent(
                                 ),
                                 shape = RoundedCornerShape(percent = 50),
                                 elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 2.dp),
-                                enabled = !state.loading && state.resetOtp.length == 6 && state.newPasswordString.isNotBlank()
+                                enabled = !state.loading && state.resetOtp.length == 6 && state.newPasswordString.length == 6
                             ) {
                                 if (state.loading) {
                                     CircularProgressIndicator(

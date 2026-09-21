@@ -744,7 +744,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                 products = products,
                 viewModel = viewModel,
                 onEdit = {
-                    val targetP = viewingPurchase!!
+                    val targetP = viewingPurchase ?: return@PurchaseDetailsDialog
                     viewingPurchase = null
                     viewModel.loadPurchaseForEditing(targetP) { invNum ->
                         supplierInvoiceNumber = invNum ?: ""
@@ -753,7 +753,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                     }
                 },
                 onDelete = {
-                    val targetP = viewingPurchase!!
+                    val targetP = viewingPurchase ?: return@PurchaseDetailsDialog
                     viewingPurchase = null
                     deletingPurchase = targetP
                 },
@@ -772,7 +772,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                     Button(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
                         onClick = {
-                            val targetPurchase = deletingPurchase!!
+                            val targetPurchase = deletingPurchase ?: return@Button
                             deletingPurchase = null
                             viewModel.deletePurchase(targetPurchase, onSuccess = {
                                 message = "Purchase order deleted and stock deducted"

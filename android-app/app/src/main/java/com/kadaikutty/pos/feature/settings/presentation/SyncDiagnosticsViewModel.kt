@@ -80,98 +80,44 @@ class SyncDiagnosticsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Retry goes through SyncWorker like every other sync, so a conflict hit here is resolved by
+     * the same ConflictResolver instead of being parked. This screen used to run its own copy of
+     * the push loop, which marked conflicts and left them stuck.
+     */
     fun retryUnresolved() {
         if (_isDirectSyncing.value) return
         viewModelScope.launch(Dispatchers.IO) {
             _isDirectSyncing.value = true
             _syncErrorMessage.value = null
             try {
-                var session = sessionStore.activeSession.first()
-                var token = session?.accessToken
-                var sessionToken = session?.sessionToken
-
-                if (token.isNullOrBlank() || sessionToken.isNullOrBlank()) {
-                    val recovered = runCatching { backendApiClient.autoRecoverSession(forceRefresh = false) }.getOrNull()
-                    if (recovered != null) {
-                        token = recovered.first
-                        sessionToken = recovered.second
-                        session = sessionStore.activeSession.first()
-                    }
-                }
-
-                if (session == null || token.isNullOrBlank()) {
-                    _syncErrorMessage.value = "Offline mode: Items are safely saved on device and will sync when connected."
+                val session = sessionStore.activeSession.first()
+                if (session == null) {
+                    _syncErrorMessage.value = "Sign in to sync."
                     return@launch
                 }
-                val currentCompanyId = session.companyId
-                val effectiveToken = token
-                val effectiveSessionToken = sessionToken
-
-                runCatching { com.kadaikutty.pos.core.sync.LegacyTenantMigration.runOnce(database, currentCompanyId) }
                 // Manual retry: ignore the dead-letter cap the background worker honours.
-                database.syncQueueDao().retryFailed(currentCompanyId, System.currentTimeMillis(), Int.MAX_VALUE)
-
-                val queue = database.syncQueueDao()
-                val items = queue.pending(currentCompanyId, 50)
-                if (items.isNotEmpty()) {
-                    val operations = JSONArray()
-                    for (item in items) {
-                        val versionKey = "cloud_version:${item.entityType}:${item.entityId}"
-                        val baseVersion = database.localOperationDao().get(currentCompanyId, versionKey)?.toLongOrNull() ?: 0L
-                        val payloadObj = if (item.operation == "DELETE") JSONObject() else JSONObject(item.payload)
-                        if (payloadObj.has("companyId")) {
-                            payloadObj.put("companyId", currentCompanyId)
-                        }
-                        operations.put(JSONObject()
-                            .put("operationId", item.id)
-                            .put("companyId", currentCompanyId)
-                            .put("entityType", item.entityType)
-                            .put("entityId", item.entityId)
-                            .put("operation", item.operation)
-                            .put("baseVersion", baseVersion)
-                            .put("schemaVersion", 1)
-                            .put("payload", payloadObj))
-                    }
-                    val response = backendApiClient.pushSync(effectiveToken, currentCompanyId, operations, effectiveSessionToken)
-                    val results = response.optJSONArray("results") ?: JSONArray()
-                    val now = System.currentTimeMillis()
-                    for (index in 0 until results.length()) {
-                        val result = results.getJSONObject(index)
-                        val item = items.firstOrNull { it.id == result.optString("operationId") } ?: continue
-                        when (result.optString("status")) {
-                            "APPLIED", "DUPLICATE" -> {
-                                queue.updateStatus(item.id, SyncStatus.SYNCED, now)
-                                queue.updateLastSyncedAt(item.id, now)
-                                result.optLong("version", -1).takeIf { it >= 0 }?.let { version ->
-                                    database.localOperationDao().put(LocalOperationEntity(currentCompanyId, "cloud_version:${item.entityType}:${item.entityId}", version.toString()))
-                                }
-                                updateEntitySyncStatus(database, item.entityType, item.entityId, "SYNCED")
-                            }
-                            "CONFLICT" -> {
-                                queue.updateStatus(item.id, SyncStatus.CONFLICT, now, "Record changed on another device")
-                                updateEntitySyncStatus(database, item.entityType, item.entityId, "CONFLICT")
-                            }
-                            else -> {
-                                queue.updateStatus(item.id, SyncStatus.FAILED, now, result.optString("error", "Sync rejected"))
-                            }
-                        }
-                    }
-                }
-                // Pull cloud changes quietly
+                database.syncQueueDao().retryFailed(session.companyId, System.currentTimeMillis(), Int.MAX_VALUE)
+                syncScheduler.request(replaceExisting = true)
                 syncScheduler.requestPull()
-            } catch (e: BackendApiException) {
-                val msg = when {
-                    e.statusCode == 401 || e.code.contains("TOKEN") -> "Cloud session refreshed. Please tap Retry to sync."
-                    e.statusCode == 403 && e.code == "LICENSE_INACTIVE" -> "Cloud sync paused: Subscription is inactive."
-                    else -> "${e.code}: ${e.message}"
-                }
-                _syncErrorMessage.value = msg
             } catch (e: Exception) {
                 _syncErrorMessage.value = e.message ?: "Sync failed"
             } finally {
                 _isDirectSyncing.value = false
                 loadDeadLetters()
             }
+        }
+    }
+
+    /** Every conflict and how it was settled, newest first. */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    val conflicts: StateFlow<List<com.kadaikutty.pos.core.database.SyncConflictEntity>> = sessionStore.activeSession
+        .flatMapLatest { session -> if (session == null) flowOf(emptyList()) else database.syncConflictDao().recent(session.companyId, 200) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun clearConflictLog() {
+        viewModelScope.launch(Dispatchers.IO) {
+            sessionStore.activeSession.first()?.let { database.syncConflictDao().clear(it.companyId) }
         }
     }
 

@@ -39,8 +39,8 @@ class BackendApiClient @Inject constructor(
         .retryOnConnectionFailure(false)
         .build()
 
-    suspend fun pushSync(token: String, companyId: String, operations: JSONArray, sessionId: String? = null): JSONObject =
-        request("POST", "sync/push", token, JSONObject().put("companyId", companyId).put("operations", operations), allowConflict = true, sessionId = sessionId)
+    suspend fun pushSync(token: String, companyId: String, operations: JSONArray, sessionId: String? = null, epoch: Long = 0L): JSONObject =
+        request("POST", "sync/push", token, JSONObject().put("companyId", companyId).put("epoch", epoch).put("operations", operations), allowConflict = true, sessionId = sessionId)
 
     suspend fun pullSync(token: String, companyId: String, cursor: String, limit: Int = 200, sessionId: String? = null): JSONObject =
         request("GET", "sync/pull?companyId=$companyId&cursor=$cursor&limit=$limit", token, sessionId = sessionId)
@@ -115,10 +115,10 @@ class BackendApiClient @Inject constructor(
     suspend fun loginMaster(mobileNumber: String, pin: String): JSONObject =
         request("POST", "auth/master/login", body = JSONObject().put("mobileNumber", mobileNumber).put("pin", pin))
 
-    suspend fun registerMerchant(mobileNumber: String, ownerName: String, businessName: String, password: String, otpProof: String, isCloudTier: Boolean = true): JSONObject =
+    suspend fun registerMerchant(mobileNumber: String, ownerName: String, businessName: String, password: String, otpProof: String): JSONObject =
         request("POST", "auth/register", body = JSONObject()
             .put("mobileNumber", mobileNumber).put("ownerName", ownerName).put("businessName", businessName)
-            .put("password", password).put("resetToken", otpProof).put("isCloudTier", isCloudTier))
+            .put("password", password).put("resetToken", otpProof))
 
     suspend fun resetPassword(mobileNumber: String, password: String, otpProof: String): JSONObject =
         request("POST", "auth/password/reset", body = JSONObject()
@@ -160,13 +160,21 @@ class BackendApiClient @Inject constructor(
         var activeSessionId = currentSession.sessionToken?.trim()?.takeIf { it.isNotBlank() }
 
         if ((activeAccessToken.isNullOrBlank() || forceRefresh) && !activeRefreshToken.isNullOrBlank()) {
-            val refreshResult = runCatching {
+            val attempt = runCatching {
                 val refreshResp = refreshAuthToken(activeRefreshToken)
                 val tokens = refreshResp.optJSONObject("tokens")
                 val newAccess = tokens?.optString("accessToken")?.trim()?.takeIf { it.isNotBlank() }
                 val newRefresh = tokens?.optString("refreshToken")?.trim()?.takeIf { it.isNotBlank() } ?: activeRefreshToken
                 if (newAccess != null) newAccess to newRefresh else null
-            }.getOrNull()
+            }
+            // The server looked at the refresh token and refused it (expired, revoked,
+            // account gone). The stored access token is then dead too. Handing it back made every
+            // caller retry with it forever: the app looked signed in while nothing synced. Null
+            // makes callers end the session so the user signs in again. A network failure is not a
+            // refusal and keeps the tokens, so going offline never signs anyone out.
+            val refused = attempt.exceptionOrNull().let { it is BackendApiException && it.statusCode in 400..499 && it.statusCode != 408 && it.statusCode != 429 }
+            if (refused) return@withLock null
+            val refreshResult = attempt.getOrNull()
 
             if (refreshResult != null) {
                 activeAccessToken = refreshResult.first
@@ -275,6 +283,8 @@ class BackendApiClient @Inject constructor(
             }
         }
 
+        // Every response carries the server clock; offline edits are timestamped against it.
+        response.headers.getDate("Date")?.let { com.kadaikutty.pos.core.common.TrustedClock.onServerTime(it.time) }
         response.use {
             if (!response.isSuccessful && !(allowConflict && response.code == 409 && parsed.has("results"))) {
                 val error = parsed.optJSONObject("error")

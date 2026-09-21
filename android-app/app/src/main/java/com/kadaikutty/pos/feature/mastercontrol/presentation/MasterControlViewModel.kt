@@ -22,7 +22,6 @@ data class StaffApprovalRequest(
     // a status the server never produces made the pending-approval UI look reachable.
     val businessName: String = "", val role: String = "CASHIER", val status: String,
     val permissions: String = "", val createdAt: Long = 0L,
-    val isCloudTier: Boolean = true, val cloudAccessGrantedUntilEpochMs: Long? = null,
     // Which admin/shop this staff member belongs to â€” a staff record itself carries no owner
     // info server-side, so this is filled in from the matching license by companyId (see refresh()).
     val ownerName: String = "",
@@ -34,7 +33,6 @@ data class MasterControlUiState(
     val staffRequests: List<StaffApprovalRequest> = emptyList(),
     val activeTrialCount: Int = 0, val activePaidCount: Int = 0, val expiredCount: Int = 0,
     val errorMessage: String? = null, val successMessage: String? = null,
-    val adminByCompany: Map<String, StaffApprovalRequest> = emptyMap(),
 )
 
 @HiltViewModel
@@ -50,7 +48,6 @@ class MasterControlViewModel @Inject constructor(
     val masterMobile = MutableStateFlow("")
     private var allLicenses = emptyList<LicenseEntity>()
     private var allStaff = emptyList<StaffApprovalRequest>()
-    private var adminByCompany = emptyMap<String, StaffApprovalRequest>()
 
     init {
         refresh()
@@ -96,7 +93,6 @@ class MasterControlViewModel @Inject constructor(
                     val license = licenseByCompany[staff.companyId]
                     staff.copy(businessName = license?.businessName.orEmpty(), ownerName = license?.ownerName.orEmpty())
                 }
-                adminByCompany = parseAdminsByCompany(usersArray)
                 applyFilters()
                 webSocketManager.connectMaster(tokenStr, sessId)
             }.onFailure { _state.value = _state.value.copy(isLoading = false, errorMessage = it.message ?: "Unable to load platform data") }
@@ -105,15 +101,6 @@ class MasterControlViewModel @Inject constructor(
 
     fun deleteShopRecord(companyId: String, ownerMobile: String, businessName: String) = mutate("DELETE", "admin/companies/$companyId", JSONObject(), "$businessName deleted")
 
-    // Targets the shop OWNER's own account (not staff) â€” see adminRoutes.ts's dedicated
-    // /companies/:companyId/cloud-access route, since PATCH /staff/:id only ever accepts CASHIER.
-    fun enableOwnerCloudTier(companyId: String, businessName: String) =
-        mutate("PATCH", "admin/companies/$companyId/cloud-access", JSONObject().put("isCloudTier", true), "$businessName upgraded to online (cloud) access")
-    fun disableOwnerCloudTier(companyId: String, businessName: String) =
-        mutate("PATCH", "admin/companies/$companyId/cloud-access", JSONObject().put("isCloudTier", false), "$businessName moved to offline-only access")
-    fun setOwnerCloudAccessGrantedUntil(companyId: String, businessName: String, grantedUntilEpochMs: Long?) =
-        mutate("PATCH", "admin/companies/$companyId/cloud-access", JSONObject().put("isCloudTier", true).put("cloudAccessGrantedUntilEpochMs", grantedUntilEpochMs ?: JSONObject.NULL),
-            if (grantedUntilEpochMs == null) "$businessName's cloud access end date cleared (no expiry)" else "$businessName's cloud access updated")
     fun setTab(tab: String) { _state.value = _state.value.copy(currentTab = tab) }
 
     private var masterProfileOtpRequestId: String? = null
@@ -167,16 +154,6 @@ class MasterControlViewModel @Inject constructor(
     fun revokeStaff(request: StaffApprovalRequest) = staff(request, "INACTIVE", "", "Staff access revoked")
     fun deleteStaffPermanently(request: StaffApprovalRequest) = mutate("DELETE", "admin/staff/${request.id}", JSONObject(), "Staff disabled")
 
-    // Cloud-tier controls: independent of status/permissions above, so granting/revoking cloud
-    // access never disturbs a staff member's approval state or feature permissions.
-    fun enableCloudTier(request: StaffApprovalRequest) =
-        mutate("PATCH", "admin/staff/${request.id}", JSONObject().put("isCloudTier", true), "${request.displayName} upgraded to online (cloud) access")
-    fun disableCloudTier(request: StaffApprovalRequest) =
-        mutate("PATCH", "admin/staff/${request.id}", JSONObject().put("isCloudTier", false), "${request.displayName} moved to offline-only access")
-    fun setCloudAccessGrantedUntil(request: StaffApprovalRequest, grantedUntilEpochMs: Long?) =
-        mutate("PATCH", "admin/staff/${request.id}", JSONObject().put("isCloudTier", true).put("cloudAccessGrantedUntilEpochMs", grantedUntilEpochMs ?: JSONObject.NULL),
-            if (grantedUntilEpochMs == null) "${request.displayName}'s cloud access end date cleared (no expiry)" else "${request.displayName}'s cloud access updated")
-
     private fun licenseAction(companyId: String, body: JSONObject, message: String) =
         mutate("PATCH", "admin/licenses/$companyId", body, message)
 
@@ -213,19 +190,8 @@ class MasterControlViewModel @Inject constructor(
 
     private fun parseStaff(array: JSONArray): List<StaffApprovalRequest> = (0 until array.length()).mapNotNull { index ->
         val item = array.getJSONObject(index)
-        if (item.optString("role") != "CASHIER") null else StaffApprovalRequest(item.optString("userId"), item.optString("phone"), item.optString("displayName"), item.optString("companyId"), role = "CASHIER", status = item.optString("status"), permissions = item.optJSONArray("permissions")?.let { permissions -> (0 until permissions.length()).joinToString(",") { permissions.getString(it) } }.orEmpty(), createdAt = item.optLong("createdAtEpochMs"), isCloudTier = item.optBoolean("isCloudTier", true), cloudAccessGrantedUntilEpochMs = item.optLong("cloudAccessGrantedUntilEpochMs", 0L).takeIf { it > 0L })
+        if (item.optString("role") != "CASHIER") null else StaffApprovalRequest(item.optString("userId"), item.optString("phone"), item.optString("displayName"), item.optString("companyId"), role = "CASHIER", status = item.optString("status"), permissions = item.optJSONArray("permissions")?.let { permissions -> (0 until permissions.length()).joinToString(",") { permissions.getString(it) } }.orEmpty(), createdAt = item.optLong("createdAtEpochMs"))
     }
-
-    // The shop owner's own cloud-tier record â€” an ADMIN is not "staff", so this is parsed and
-    // keyed separately (by companyId) rather than folding into allStaff/parseStaff above.
-    private fun parseAdminsByCompany(array: JSONArray): Map<String, StaffApprovalRequest> = (0 until array.length()).mapNotNull { index ->
-        val item = array.getJSONObject(index)
-        if (item.optString("role") != "ADMIN") null else item.optString("companyId") to StaffApprovalRequest(
-            item.optString("userId"), item.optString("phone"), item.optString("displayName"), item.optString("companyId"),
-            role = "ADMIN", status = item.optString("status"), createdAt = item.optLong("createdAtEpochMs"),
-            isCloudTier = item.optBoolean("isCloudTier", true), cloudAccessGrantedUntilEpochMs = item.optLong("cloudAccessGrantedUntilEpochMs", 0L).takeIf { it > 0L }
-        )
-    }.toMap()
 
     private fun applyFilters() {
         val query = _state.value.searchQuery.trim().lowercase()
@@ -237,8 +203,7 @@ class MasterControlViewModel @Inject constructor(
         val staff = allStaff.filter { query.isBlank() || it.displayName.lowercase().contains(query) || it.username.contains(query) }
         _state.value = _state.value.copy(isLoading = false, licenses = licenses, staffRequests = staff,
             activeTrialCount = allLicenses.count { it.licenseStatus == "TRIAL" },
-            activePaidCount = allLicenses.count { it.licenseStatus == "ACTIVE_PAID" }, expiredCount = allLicenses.count { it.isExpired },
-            adminByCompany = adminByCompany)
+            activePaidCount = allLicenses.count { it.licenseStatus == "ACTIVE_PAID" }, expiredCount = allLicenses.count { it.isExpired })
     }
 
     private fun token(): String = MasterAuthSession.accessToken ?: error("Master session expired. Verify Master PIN again")

@@ -36,7 +36,8 @@ interface PurchaseDao {
             p.name as productName, 
             c.name as categoryName, 
             COALESCE(SUM(sm.quantityDelta), 0) as currentStock,
-            p.minStockLevel as minStockLevel
+            p.minStockLevel as minStockLevel,
+            p.unitType as unitType
         FROM products p
         INNER JOIN categories c ON p.categoryId = c.id
         LEFT JOIN stock_movements sm ON p.id = sm.productId AND sm.companyId = :companyId

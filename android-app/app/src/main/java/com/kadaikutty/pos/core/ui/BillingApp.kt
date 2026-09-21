@@ -114,16 +114,15 @@ fun BillingApp() {
 
     // Checked only once the company-wide license lock above has already passed, so a shop that's
     // simply mid-renewal never sees two different lock screens fighting for the same problem.
-    val isCloudAccessLocked by settingsViewModel.isCloudAccessLocked.collectAsState()
 
     if (isLoggedIn == null || isLicenseLoading) {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0F172A)),
+                .background(MaterialTheme.colorScheme.background),
             contentAlignment = Alignment.Center,
         ) {
-            CircularProgressIndicator(color = Color(0xFF1E88E5))
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         }
         return
     }
@@ -133,7 +132,7 @@ fun BillingApp() {
             if (isSessionTerminated) {
                 AlertDialog(
                     onDismissRequest = { },
-                    containerColor = Color(0xFF1E293B),
+                    containerColor = MaterialTheme.colorScheme.surface,
                     title = {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(
@@ -146,14 +145,14 @@ fun BillingApp() {
                             Text(
                                 text = "Session Expired",
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     },
                     text = {
                         Text(
                             text = terminationReason ?: "Your account has been logged in on another device. This session has expired.",
-                            color = Color(0xFFE2E8F0),
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 14.sp
                         )
                     },
@@ -173,6 +172,8 @@ fun BillingApp() {
                 )
             }
 
+            val isOnline by settingsViewModel.isOnline.collectAsState()
+
             if (isLicenseLocked) {
                 com.kadaikutty.pos.feature.subscription.LicenseExpiredLockScreen(
                     license = currentLicense,
@@ -189,20 +190,6 @@ fun BillingApp() {
                 return@BillingTheme
             }
 
-            if (isLoggedIn == true && activeSession?.role != "SUPER_ADMIN" && isCloudAccessLocked) {
-                com.kadaikutty.pos.feature.subscription.CloudAccessLockScreen(
-                    shopName = shopName,
-                    onRefreshStatus = { settingsViewModel.refreshLicenseStatus() },
-                    onLogout = {
-                        settingsViewModel.logout {
-                            navController.navigate(AppRoute.Login.path) {
-                                popUpTo(0) { inclusive = true }
-                            }
-                        }
-                    }
-                )
-                return@BillingTheme
-            }
 
             val startDest = if (isLoggedIn == true) AppRoute.Home.path else AppRoute.Login.path
             Box(modifier = Modifier.fillMaxSize()) {
@@ -456,10 +443,10 @@ fun BillingApp() {
                         settingsViewModel.markRenewalAlertShown()
                         showRenewalDailyDialog = false
                     },
-                    containerColor = Color(0xFFFDF7F7), // Light maroon shade
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
                     tonalElevation = 8.dp,
                     icon = { Icon(Icons.Default.Timer, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(36.dp)) },
-                    title = { Text("License Expiry Reminder", fontWeight = FontWeight.Bold, color = Color(0xFF5C151A)) },
+                    title = { Text("License Expiry Reminder", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimaryContainer) },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Your KadaiKutty POS License expires in ${currentLicense!!.remainingDays} days!", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
@@ -489,7 +476,7 @@ fun BillingApp() {
                                 showRenewalDailyDialog = false
                             }
                         ) {
-                            Text("Remind Later", color = Color(0xFF5C151A))
+                            Text("Remind Later", color = MaterialTheme.colorScheme.onPrimaryContainer)
                         }
                     }
                 )
@@ -504,48 +491,26 @@ fun BillingApp() {
                     .align(Alignment.TopCenter)
                     .padding(top = 16.dp)
             )
+
+            // Offline is a normal state, not an error: billing keeps working and syncs later, so
+            // this is a thin strip, never a blocking screen. Hidden on the login screen, which
+            // explains a failed sign-in itself.
+            if (isLoggedIn == true) {
+                ConnectionStatusBanner(
+                    isOnline = isOnline,
+                    needsSignIn = isOnline && activeSession != null && activeSession?.accessToken.isNullOrBlank(),
+                    onSignIn = {
+                        settingsViewModel.logout {
+                            navController.navigate(AppRoute.Login.path) { popUpTo(0) { inclusive = true } }
+                        }
+                    },
+                    modifier = Modifier.align(Alignment.TopCenter)
+                )
+            }
         } // Close Box
         } // Close BillingTheme
     } // Close CompositionLocalProvider
 } // Close BillingApp function
-
-// Persistent, glanceable "days until access needs renewing" — replaces interrupting warning
-// popups. Caps its visual fullness at 30 days so a far-off deadline still reads as "healthy"
-// rather than needing to know which of the two underlying rules produced this number.
-@Composable
-private fun CloudAccessCountdownRing(daysRemaining: Long, modifier: Modifier = Modifier) {
-    val ringWindowDays = 30f
-    val fraction = (daysRemaining.toFloat() / ringWindowDays).coerceIn(0f, 1f)
-    val ringColor = when {
-        daysRemaining <= 1 -> Color(0xFFEF4444)
-        daysRemaining <= 3 -> Color(0xFFF59E0B)
-        else -> Color(0xFF10B981)
-    }
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        Box(modifier = Modifier.size(48.dp), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(
-                progress = { fraction },
-                modifier = Modifier.fillMaxSize(),
-                color = ringColor,
-                trackColor = ringColor.copy(alpha = 0.15f),
-                strokeWidth = 4.dp
-            )
-            Text(daysRemaining.toString(), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = ringColor)
-        }
-        Column {
-            Text("Access renews soon", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.onSurface)
-            Text(
-                if (daysRemaining <= 1) "Connect to the internet today to keep access active" else "$daysRemaining day${if (daysRemaining == 1L) "" else "s"} left — connect to the internet before then",
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.outline
-            )
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -560,6 +525,7 @@ fun HomeScreen(
     val context = LocalContext.current
     val dashboardState by viewModel.dashboardState.collectAsState()
     val hasStaleUnsyncedData by viewModel.hasStaleUnsyncedData.collectAsState()
+    val negativeStockProducts by viewModel.negativeStockProducts.collectAsState()
 
     val permissions = session?.permissions ?: emptySet()
     val isAdmin = session?.role == "ADMIN" || session?.role == "SUPER_ADMIN"
@@ -607,9 +573,9 @@ fun HomeScreen(
     if (showLogoutDialog) {
         AlertDialog(
             onDismissRequest = { showLogoutDialog = false },
-            containerColor = Color(0xFFFDF7F7), // Light maroon shade
+            containerColor = MaterialTheme.colorScheme.primaryContainer,
             tonalElevation = 8.dp, // Light shadow
-            title = { Text("Confirm Logout", color = Color(0xFF5C151A)) },
+            title = { Text("Confirm Logout", color = MaterialTheme.colorScheme.onPrimaryContainer) },
             text = { Text("Are you sure you want to logout? Unsynced data will be preserved in cloud queue.", color = Color.Black.copy(alpha = 0.7f)) },
             confirmButton = {
                 TextButton(
@@ -623,7 +589,7 @@ fun HomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = { showLogoutDialog = false }) {
-                    Text("Cancel", color = Color(0xFF5C151A))
+                    Text("Cancel", color = MaterialTheme.colorScheme.onPrimaryContainer)
                 }
             }
         )
@@ -633,7 +599,7 @@ fun HomeScreen(
     // All remember/composable hooks above run unconditionally. This return is safe.
     if (session == null) {
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            CircularProgressIndicator(color = Color(0xFF5C151A))
+            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
         }
         return
     }
@@ -809,7 +775,7 @@ fun HomeScreen(
                                 value = Money(dashboardState.todaySalesMinorUnits).toString(),
                                 subtitle = "${dashboardState.todayInvoicesCount} Invoices",
                                 icon = Icons.Default.ShoppingCart,
-                                accentColor = Color(0xFF8B252C),
+                                accentColor = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.fillMaxWidth().height(150.dp),
                                 onClick = { if (showReports) onNavigateTo(AppRoute.Reports) }
                             )
@@ -818,7 +784,7 @@ fun HomeScreen(
                                 value = "${dashboardState.lowStockCount} Items",
                                 subtitle = if (dashboardState.lowStockCount > 0) "Needs Restock" else "Stock Healthy",
                                 icon = Icons.Default.Warning,
-                                accentColor = if (dashboardState.lowStockCount > 0) MaterialTheme.colorScheme.error else Color(0xFF8B252C),
+                                accentColor = if (dashboardState.lowStockCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.fillMaxWidth().height(150.dp),
                                 onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
                             )
@@ -827,7 +793,7 @@ fun HomeScreen(
                                 value = Money(dashboardState.customerCreditDueMinorUnits).toString(),
                                 subtitle = "Ledger Balance",
                                 icon = Icons.Default.AccountBox,
-                                accentColor = Color(0xFF8B252C),
+                                accentColor = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.fillMaxWidth().height(150.dp),
                                 onClick = { if (showMasters) onNavigateTo(AppRoute.Masters) }
                             )
@@ -836,7 +802,7 @@ fun HomeScreen(
                                 value = Money(dashboardState.todayPurchasesMinorUnits).toString(),
                                 subtitle = "Purchased Today",
                                 icon = Icons.Default.Add,
-                                accentColor = Color(0xFF8B252C),
+                                accentColor = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.fillMaxWidth().height(150.dp),
                                 onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
                             )
@@ -875,38 +841,24 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(0.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    val isOnline = !session?.accessToken.isNullOrBlank()
-                    if (isOnline) {
-                        IconButton(onClick = {
-                            viewModel.triggerCloudSync()
-                            Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
-                        }) {
-                            val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
-                            Icon(
-                                imageVector = if (dashboardState.pendingSyncCount == 0 && !dashboardState.isSyncing) Icons.Default.CloudDone else Icons.Default.Sync,
-                                contentDescription = "Cloud Sync",
-                                tint = if (dashboardState.isSyncing) Color(0xFF38BDF8) else Color(0xFF5C151A),
-                                modifier = Modifier.size(24.dp).then(syncIconModifier)
-                            )
-                        }
-                    } else {
-                        IconButton(onClick = {
-                            Toast.makeText(context, "Offline mode - Sync requires online connection", Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(
-                                imageVector = Icons.Default.CloudOff,
-                                contentDescription = "Offline Mode",
-                                tint = Color(0xFF5C151A).copy(alpha = 0.5f),
-                                modifier = Modifier.size(24.dp)
-                            )
-                        }
+                    IconButton(onClick = {
+                        viewModel.triggerCloudSync()
+                        Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
+                    }) {
+                        val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
+                        Icon(
+                            imageVector = if (dashboardState.pendingSyncCount == 0 && !dashboardState.isSyncing) Icons.Default.CloudDone else Icons.Default.Sync,
+                            contentDescription = "Cloud Sync",
+                            tint = if (dashboardState.isSyncing) Color(0xFF38BDF8) else MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(24.dp).then(syncIconModifier)
+                        )
                     }
                     IconButton(onClick = onCloseShiftClick) {
-                        Icon(Icons.Default.Lock, contentDescription = "Close Shift", tint = Color(0xFF5C151A))
+                        Icon(Icons.Default.Lock, contentDescription = "Close Shift", tint = MaterialTheme.colorScheme.primary)
                     }
                     Box {
                         IconButton(onClick = { showSettingsMenu = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color(0xFF5C151A))
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.primary)
                         }
                         DropdownMenu(
                             expanded = showSettingsMenu,
@@ -942,11 +894,6 @@ fun HomeScreen(
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
 
-            val cloudAccessDaysRemaining by viewModel.cloudAccessDaysRemaining.collectAsState()
-            cloudAccessDaysRemaining?.let { days ->
-                CloudAccessCountdownRing(daysRemaining = days)
-            }
-
             if (hasStaleUnsyncedData) {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
@@ -969,8 +916,34 @@ fun HomeScreen(
                 }
             }
 
+            if (negativeStockProducts.isNotEmpty()) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = MaterialTheme.colorScheme.onErrorContainer)
+                        val names = negativeStockProducts.take(3).joinToString { it.name }
+                        val more = if (negativeStockProducts.size > 3) " and ${negativeStockProducts.size - 3} more" else ""
+                        Text(
+                            "Stock below zero: $names$more. These were sold on more than one device while offline — count the stock and adjust it.",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onErrorContainer
+                        )
+                    }
+                }
+            }
+
             // 2. Hero Point of Sale Card
             if (showSales) {
+                // Deliberately fixed maroon, not a theme role: this is a branded panel that
+                // carries white content in both themes, the way the app bar above it does.
                 val heroGradient = androidx.compose.ui.graphics.Brush.linearGradient(
                     colors = listOf(
                         Color(0xFF5C151A),
@@ -986,7 +959,7 @@ fun HomeScreen(
                         .clickable { onNavigateTo(AppRoute.Billing) }
                         .border(
                             width = 1.dp,
-                            color = Color(0xFF8B252C).copy(alpha = 0.4f),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
                             shape = RoundedCornerShape(20.dp)
                         ),
                     shape = RoundedCornerShape(20.dp),
@@ -1059,13 +1032,13 @@ fun HomeScreen(
                                             text = "START NEW BILL",
                                             fontWeight = FontWeight.ExtraBold,
                                             fontSize = 13.sp,
-                                            color = Color(0xFF5C151A)
+                                            color = MaterialTheme.colorScheme.primary
                                         )
                                     }
                                     Icon(
                                         imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
                                         contentDescription = null,
-                                        tint = Color(0xFF5C151A),
+                                        tint = MaterialTheme.colorScheme.primary,
                                         modifier = Modifier.size(14.dp)
                                     )
                                 }
@@ -1141,22 +1114,14 @@ fun HomeScreen(
                                     color = MaterialTheme.colorScheme.primary
                                 )
                                 Surface(
-                                    color = when (sale.paymentMode.uppercase()) {
-                                        "CASH" -> Color(0xFFD1FAE5)
-                                        "UPI" -> Color(0xFFDBEAFE)
-                                        else -> Color(0xFFFEF3C7)
-                                    },
+                                    color = com.kadaikutty.pos.core.ui.theme.paymentChipColors(sale.paymentMode).first,
                                     shape = RoundedCornerShape(4.dp)
                                 ) {
                                     Text(
                                         text = sale.paymentMode,
                                         fontSize = 10.sp,
                                         fontWeight = FontWeight.Bold,
-                                        color = when (sale.paymentMode.uppercase()) {
-                                            "CASH" -> Color(0xFF065F46)
-                                            "UPI" -> Color(0xFF1E40AF)
-                                            else -> Color(0xFF92400E)
-                                        },
+                                        color = com.kadaikutty.pos.core.ui.theme.paymentChipColors(sale.paymentMode).second,
                                         modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                     )
                                 }

@@ -36,6 +36,40 @@ class MigrationTest {
         upgraded.close()
     }
 
+    /**
+     * Every exported schema from 18 up, migrated all the way to the current version and validated
+     * against it: a device on any of these builds opens the new app without a crash or data loss.
+     */
+    @Test
+    fun everyExportedVersionMigratesToTheCurrentSchema() {
+        val all = arrayOf(
+            migration18To19, migration19To20, migration20To21, migration21To22, migration22To23,
+            migration23To24, migration24To25, migration25To26
+        )
+        for (start in 18..25) {
+            val name = "migration-chain-$start"
+            helper.createDatabase(name, start).close()
+            helper.runMigrationsAndValidate(name, 26, true, *all).close()
+        }
+    }
+
+    @Test
+    fun migrate23To26KeepsUsersAndAddsTheConflictLog() {
+        val old = helper.createDatabase("migration-23-26", 23)
+        old.execSQL("INSERT INTO users (id, username, displayName, salt, verifier, permissions, companyId, role, lastOnlineVerifiedAt, offlineValidUntil, isCloudTier, cloudAccessGrantedUntilEpochMs) VALUES ('u1', '9876543210', 'Owner', 's', 'v', 'SALE_CREATE', 'shop', 'ADMIN', 5, 0, 1, NULL)")
+        old.close()
+        val upgraded = helper.runMigrationsAndValidate("migration-23-26", 26, true, migration23To24, migration24To25, migration25To26)
+        upgraded.query("SELECT username, permissions, companyId, role, lastOnlineVerifiedAt FROM users WHERE id = 'u1'").use {
+            assertTrue(it.moveToFirst())
+            org.junit.Assert.assertEquals("9876543210", it.getString(0))
+            org.junit.Assert.assertEquals("SALE_CREATE", it.getString(1))
+            org.junit.Assert.assertEquals("ADMIN", it.getString(3))
+            org.junit.Assert.assertEquals(5L, it.getLong(4))
+        }
+        upgraded.query("SELECT COUNT(*) FROM sync_conflicts").use { assertTrue(it.moveToFirst()); org.junit.Assert.assertEquals(0, it.getInt(0)) }
+        upgraded.close()
+    }
+
     companion object {
         private const val TEST_DB = "migration-test"
     }

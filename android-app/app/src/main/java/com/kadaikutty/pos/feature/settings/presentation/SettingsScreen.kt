@@ -288,7 +288,7 @@ fun SettingsScreen(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("Offline: Please log in to enable Cloud Sync.", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
+                                Text("Not signed in: Please log in to enable Cloud Sync.", fontSize = 13.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
                             }
                         }
 
@@ -439,14 +439,6 @@ fun SettingsScreen(
                                 })
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text("Dark Mode")
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = currentThemeMode == "Amoled", onClick = {
-                                    currentThemeMode = "Amoled"
-                                    viewModel.saveThemeMode("Amoled")
-                                })
-                                Spacer(modifier = Modifier.width(8.dp))
-                                Text("AMOLED High-Contrast Dark (Pure Black #000000)")
                             }
                         }
                     }
@@ -729,7 +721,7 @@ fun SettingsScreen(
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .background(Color(0xFFF1F5F9), RoundedCornerShape(12.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp))
                                 .padding(vertical = 14.dp, horizontal = 8.dp),
                             contentAlignment = Alignment.Center
                         ) {
@@ -737,7 +729,7 @@ fun SettingsScreen(
                                 modifier = Modifier
                                     .widthIn(max = if (previewPaperSize == 32) 300.dp else 420.dp)
                                     .fillMaxWidth(if (previewPaperSize == 32) 0.88f else 1f)
-                                    .border(1.dp, Color(0xFFE2E8F0), RoundedCornerShape(8.dp)),
+                                    .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp)),
                                 shape = RoundedCornerShape(8.dp),
                                 color = Color.White,
                                 shadowElevation = 4.dp
@@ -798,6 +790,9 @@ fun SettingsScreen(
                                         )
                                     }
 
+                                    // Hoisted: a DrawScope is not a composable scope, so the theme
+                                    // has to be read before the Canvas, not inside drawLine.
+                                    val dashColor = MaterialTheme.colorScheme.onSurfaceVariant
                                     Canvas(
                                         modifier = Modifier
                                             .fillMaxWidth()
@@ -805,7 +800,7 @@ fun SettingsScreen(
                                             .height(1.dp)
                                     ) {
                                         drawLine(
-                                            color = Color(0xFF94A3B8),
+                                            color = dashColor,
                                             start = Offset(0f, 0f),
                                             end = Offset(size.width, 0f),
                                             pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f),
@@ -836,7 +831,7 @@ fun SettingsScreen(
                                             .height(1.dp)
                                     ) {
                                         drawLine(
-                                            color = Color(0xFF94A3B8),
+                                            color = dashColor,
                                             start = Offset(0f, 0f),
                                             end = Offset(size.width, 0f),
                                             pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f),
@@ -887,7 +882,7 @@ fun SettingsScreen(
                                             .height(1.dp)
                                     ) {
                                         drawLine(
-                                            color = Color(0xFF94A3B8),
+                                            color = dashColor,
                                             start = Offset(0f, 0f),
                                             end = Offset(size.width, 0f),
                                             pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f),
@@ -918,7 +913,7 @@ fun SettingsScreen(
                                             .height(1.dp)
                                     ) {
                                         drawLine(
-                                            color = Color(0xFF94A3B8),
+                                            color = dashColor,
                                             start = Offset(0f, 0f),
                                             end = Offset(size.width, 0f),
                                             pathEffect = PathEffect.dashPathEffect(floatArrayOf(6f, 4f), 0f),
@@ -1046,9 +1041,7 @@ fun SettingsScreen(
                                                 Surface(
                                                     shape = RoundedCornerShape(12.dp),
                                                     color = when (user.role.uppercase()) {
-                                                        "STORE_MANAGER" -> Color(0xFFF5F3FF)
-                                                        "ADMIN" -> Color(0xFFFEF3C7)
-                                                        else -> Color(0xFFEFF6FF)
+                                                        else -> com.kadaikutty.pos.core.ui.theme.roleChipColors(user.role).first
                                                     },
                                                     modifier = Modifier.size(44.dp)
                                                 ) {
@@ -1057,9 +1050,7 @@ fun SettingsScreen(
                                                             imageVector = Icons.Default.Person,
                                                             contentDescription = null,
                                                             tint = when (user.role.uppercase()) {
-                                                                "STORE_MANAGER" -> Color(0xFF7C3AED)
-                                                                "ADMIN" -> Color(0xFFD97706)
-                                                                else -> Color(0xFF2563EB)
+                                                                else -> com.kadaikutty.pos.core.ui.theme.roleChipColors(user.role).second
                                                             },
                                                             modifier = Modifier.size(24.dp)
                                                         )
@@ -1075,9 +1066,7 @@ fun SettingsScreen(
                                                         Surface(
                                                             shape = RoundedCornerShape(4.dp),
                                                             color = when (user.role.uppercase()) {
-                                                                "STORE_MANAGER" -> Color(0xFFEDE9FE)
-                                                                "ADMIN" -> Color(0xFFFEF3C7)
-                                                                else -> Color(0xFFDBEAFE)
+                                                                else -> com.kadaikutty.pos.core.ui.theme.roleChipColors(user.role).first
                                                             }
                                                         ) {
                                                             Text(
@@ -1088,9 +1077,7 @@ fun SettingsScreen(
                                                                 fontSize = 9.sp,
                                                                 fontWeight = FontWeight.ExtraBold,
                                                                 color = when (user.role.uppercase()) {
-                                                                    "STORE_MANAGER" -> Color(0xFF6D28D9)
-                                                                    "ADMIN" -> Color(0xFFB45309)
-                                                                    else -> Color(0xFF1D4ED8)
+                                                                    else -> com.kadaikutty.pos.core.ui.theme.roleChipColors(user.role).second
                                                                 },
                                                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                             )
@@ -1102,9 +1089,7 @@ fun SettingsScreen(
                                                             Surface(
                                                                 shape = RoundedCornerShape(4.dp),
                                                                 color = when {
-                                                                    isPending -> Color(0xFFFFFBEB)
-                                                                    isInactive -> Color(0xFFFEE2E2)
-                                                                    else -> Color(0xFFDCFCE7)
+                                                                    else -> com.kadaikutty.pos.core.ui.theme.statusChipColors(isPending, isInactive).first
                                                                 }
                                                             ) {
                                                                 Text(
@@ -1116,9 +1101,7 @@ fun SettingsScreen(
                                                                     fontSize = 9.sp,
                                                                     fontWeight = FontWeight.Bold,
                                                                     color = when {
-                                                                        isPending -> Color(0xFFD97706)
-                                                                        isInactive -> Color(0xFFDC2626)
-                                                                        else -> Color(0xFF15803D)
+                                                                        else -> com.kadaikutty.pos.core.ui.theme.statusChipColors(isPending, isInactive).second
                                                                     },
                                                                     modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                                                                 )
@@ -1324,17 +1307,19 @@ fun SettingsScreen(
 
                         Text(lastBackupLabel, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
 
-                        // Cloud: off-site protection against a lost, stolen, or damaged phone. Hidden
-                        // entirely (not just disabled) for an offline-tier account — there is nothing
-                        // cloud-related this account can ever do, so the buttons simply don't exist.
-                        val hasCloudAccess by viewModel.hasCloudAccess.collectAsState()
-                        if (hasCloudAccess) {
+                        // Cloud: off-site protection against a lost, stolen, or damaged phone.
+                        // Needs the server, so disabled (with a reason) while offline.
+                        run {
+                        val isOnline by viewModel.isOnline.collectAsState()
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
+                        if (!isOnline) {
+                            Text("Cloud backup and restore need internet.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
+                        }
                         if (isMobile) {
                             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Button(
                                     onClick = { viewModel.runCloudBackup() },
-                                    enabled = session != null && !isBackupRunning,
+                                    enabled = session != null && !isBackupRunning && isOnline,
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
@@ -1342,7 +1327,7 @@ fun SettingsScreen(
                                 }
                                 OutlinedButton(
                                     onClick = { showCloudRestoreDialog = true },
-                                    enabled = session != null && !isRestoreRunning,
+                                    enabled = session != null && !isRestoreRunning && isOnline,
                                     modifier = Modifier.fillMaxWidth(),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
@@ -1353,7 +1338,7 @@ fun SettingsScreen(
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Button(
                                     onClick = { viewModel.runCloudBackup() },
-                                    enabled = session != null && !isBackupRunning,
+                                    enabled = session != null && !isBackupRunning && isOnline,
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
@@ -1361,7 +1346,7 @@ fun SettingsScreen(
                                 }
                                 OutlinedButton(
                                     onClick = { showCloudRestoreDialog = true },
-                                    enabled = session != null && !isRestoreRunning,
+                                    enabled = session != null && !isRestoreRunning && isOnline,
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
@@ -2438,10 +2423,13 @@ fun EditUserDialog(
                 }
 
                 // Account Status (Active / Deactivated)
+                val (statusFill, statusInk) = com.kadaikutty.pos.core.ui.theme.statusChipColors(
+                    isPending = false, isInactive = !isActive
+                )
                 Surface(
-                    color = if (isActive) Color(0xFFEFF6FF) else Color(0xFFFEF2F2),
+                    color = statusFill,
                     shape = RoundedCornerShape(12.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, if (isActive) Color(0xFFBFDBFE) else Color(0xFFFECACA)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, statusInk.copy(alpha = 0.4f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -2454,12 +2442,12 @@ fun EditUserDialog(
                                 text = if (isActive) "Account is Active" else "Account is Deactivated",
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 14.sp,
-                                color = if (isActive) Color(0xFF1D4ED8) else Color(0xFFB91C1C)
+                                color = statusInk
                             )
                             Text(
                                 text = if (isActive) "User can login to their device" else "User is blocked from logging in",
                                 fontSize = 11.sp,
-                                color = if (isActive) Color(0xFF3B82F6) else Color(0xFFEF4444)
+                                color = statusInk.copy(alpha = 0.8f)
                             )
                         }
                         Switch(
@@ -2468,9 +2456,9 @@ fun EditUserDialog(
                             enabled = !isSubmitting,
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
-                                checkedTrackColor = Color(0xFF3B82F6),
+                                checkedTrackColor = MaterialTheme.colorScheme.primary,
                                 uncheckedThumbColor = Color.White,
-                                uncheckedTrackColor = Color(0xFFEF4444)
+                                uncheckedTrackColor = MaterialTheme.colorScheme.error
                             )
                         )
                     }

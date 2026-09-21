@@ -90,7 +90,8 @@ test('AWS DynamoDB sync preserves tenant, idempotency, version, and cursor contr
   assert.equal(conflict[0].status, 'CONFLICT');
   const pull = await store.pullSync('company-a', '0', 10);
   assert.equal(pull.records.length, 1);
-  assert.equal(pull.nextCursor, '1');
+  // Hands over to the change log a little early (SNAPSHOT_TAIL_OVERLAP), never as a bare "0".
+  assert.equal(pull.nextCursor, 'T:0');
   await assert.rejects(() => store.applySyncBatch('company-a', [{ ...insert, operationId: 'operation-3', companyId: 'company-b' }]), /tenant/i);
 });
 
@@ -121,12 +122,18 @@ test('AWS sync pull reconstructs full state from durable records even after chan
     if (!page.hasMore) break;
   }
   assert.deepEqual(collected.sort(), entityIds.slice().sort());
-  assert.match(cursor, /^\d+$/, 'cursor should have switched to a plain numeric tail sequence once the scan finished');
+  assert.match(cursor, /^(\d+|T:\d+)$/, 'cursor should have switched to a tail sequence once the scan finished');
 
   // A change made after the snapshot completed is delivered exactly once, via the tail.
   const followUp = { operationId: 'follow-up', companyId, entityType: 'Product', entityId: 'p6', operation: 'INSERT' as const, schemaVersion: 1, payload: { name: 'p6' } };
   await store.applySyncBatch(companyId, [followUp]);
-  const tailPage = await store.pullSync(companyId, cursor, 10);
+  // Sequences 1-5 expired, so p6 sits behind a hole. While p6 is seconds old the hole could still be
+  // a write in flight and the pull waits (CHANGE_GAP_SETTLE_MS); once it has settled, p6 arrives.
+  const followUpChange = [...client.items.values()].find(item => item.sk.startsWith('CHANGE#') && item.data.record.entityId === 'p6');
+  const waiting = await store.pullSync(companyId, cursor, 10);
+  assert.deepEqual(waiting.records, []);
+  followUpChange.data.record.updatedAtEpochMs -= 60_000;
+  const tailPage = await store.pullSync(companyId, waiting.nextCursor, 10);
   assert.deepEqual(tailPage.records.map(record => record.entityId), ['p6']);
 });
 
@@ -191,7 +198,7 @@ test('AWS shop profile is tenant-partitioned and atomically mirrors shop summary
 });
 
 test('AWS Cognito provider provisions backend-owned users and returns ID tokens', async () => {
-  const user: UserAccount = { userId: 'user-1', companyId: 'company-a', phone: '9876543210', displayName: 'Owner', role: 'ADMIN', permissions: ['USER_MANAGE'], status: 'ACTIVE', createdAtEpochMs: 1, updatedAtEpochMs: 1, isCloudTier: true };
+  const user: UserAccount = { userId: 'user-1', companyId: 'company-a', phone: '9876543210', displayName: 'Owner', role: 'ADMIN', permissions: ['USER_MANAGE'], status: 'ACTIVE', createdAtEpochMs: 1, updatedAtEpochMs: 1 };
   const commands: string[] = [];
   const client = { send: async (command: any) => {
     commands.push(command.constructor.name);
@@ -207,43 +214,6 @@ test('AWS Cognito provider provisions backend-owned users and returns ID tokens'
   const login = await identity.authenticate(user.phone, '123456');
   assert.equal(login.tokens.accessToken, 'id-token');
   assert.equal(login.tokens.refreshToken, 'refresh-token');
-});
-
-test('AWS staff cloud-tier defaults to true and Master Control can grant/revoke a cloud-access end date', async () => {
-  const client = new FakeDocumentClient();
-  const store = new AwsDataStore(client as any, config.tableName);
-  const owner = await store.createAccount({ phone: '9876543210', displayName: 'Owner', businessName: 'Shop', password: '123456' });
-
-  const onlineStaff = await store.createStaff({ companyId: owner.user.companyId, phone: '9876500001', displayName: 'Online Cashier', password: '111111', permissions: ['SALE_CREATE'] });
-  assert.equal(onlineStaff.isCloudTier, true);
-  assert.equal(onlineStaff.cloudAccessGrantedUntilEpochMs, undefined);
-
-  const offlineStaff = await store.createStaff({ companyId: owner.user.companyId, phone: '9876500002', displayName: 'Offline Cashier', password: '222222', permissions: ['SALE_CREATE'], isCloudTier: false });
-  assert.equal(offlineStaff.isCloudTier, false);
-
-  const granted = await store.updateStaff(owner.user.companyId, onlineStaff.userId, { cloudAccessGrantedUntilEpochMs: 1_700_000_000_000 });
-  assert.equal(granted.cloudAccessGrantedUntilEpochMs, 1_700_000_000_000);
-  assert.equal(granted.isCloudTier, true, 'unrelated field updates must not disturb isCloudTier');
-
-  const revoked = await store.updateStaff(owner.user.companyId, onlineStaff.userId, { isCloudTier: false });
-  assert.equal(revoked.isCloudTier, false);
-  assert.equal(revoked.cloudAccessGrantedUntilEpochMs, 1_700_000_000_000, 'unrelated field updates must not disturb the granted date');
-});
-
-test('AWS Master Control can set the shop OWNER\'s own cloud access, separate from staff', async () => {
-  const client = new FakeDocumentClient();
-  const store = new AwsDataStore(client as any, config.tableName);
-  const owner = await store.createAccount({ phone: '9876543210', displayName: 'Owner', businessName: 'Shop', password: '123456', isCloudTier: false });
-
-  const found = await store.findAdminByCompany(owner.user.companyId);
-  assert.equal(found?.userId, owner.user.userId);
-  assert.equal(found?.isCloudTier, false);
-
-  const upgraded = await store.updateAccountCloudAccess(owner.user.companyId, owner.user.userId, { isCloudTier: true, cloudAccessGrantedUntilEpochMs: 1_800_000_000_000 });
-  assert.equal(upgraded.isCloudTier, true);
-  assert.equal(upgraded.cloudAccessGrantedUntilEpochMs, 1_800_000_000_000);
-
-  await assert.rejects(() => store.updateAccountCloudAccess('someone-elses-company', owner.user.userId, { isCloudTier: false }));
 });
 
 test('AWS S3 provider signs tenant-scoped uploads and verifies completion metadata', async () => {
@@ -345,7 +315,7 @@ test('AWS provider registry fails fast on missing MSG91 configuration without fa
  * comes back out, not Cognito's signature checking.
  */
 test('AWS refresh reuses the caller refresh token, where the local provider would have rotated it', async () => {
-  const user: UserAccount = { userId: 'user-1', companyId: 'company-a', phone: '9876543210', displayName: 'Owner', role: 'ADMIN', permissions: ['USER_MANAGE'], status: 'ACTIVE', createdAtEpochMs: 1, updatedAtEpochMs: 1, isCloudTier: true };
+  const user: UserAccount = { userId: 'user-1', companyId: 'company-a', phone: '9876543210', displayName: 'Owner', role: 'ADMIN', permissions: ['USER_MANAGE'], status: 'ACTIVE', createdAtEpochMs: 1, updatedAtEpochMs: 1 };
   const seen: string[] = [];
   const client = { send: async (command: any) => {
     seen.push(command.input?.AuthParameters?.REFRESH_TOKEN ?? '');
@@ -367,7 +337,7 @@ test('AWS refresh reuses the caller refresh token, where the local provider woul
 });
 
 test('AWS refresh refuses a token whose account is no longer active', async () => {
-  const inactive: UserAccount = { userId: 'user-2', companyId: 'company-a', phone: '9876500000', displayName: 'Staff', role: 'CASHIER', permissions: [], status: 'INACTIVE', createdAtEpochMs: 1, updatedAtEpochMs: 1, isCloudTier: true };
+  const inactive: UserAccount = { userId: 'user-2', companyId: 'company-a', phone: '9876500000', displayName: 'Staff', role: 'CASHIER', permissions: [], status: 'INACTIVE', createdAtEpochMs: 1, updatedAtEpochMs: 1 };
   const client = { send: async () => ({ AuthenticationResult: { IdToken: 'fresh-id-token', ExpiresIn: 900 } }) };
   const identity = new AwsIdentityProvider(client as any, { findUserById: async () => inactive } as any, config);
   (identity as any).verifier = { verify: async () => ({ 'custom:user_id': 'user-2', 'custom:company_id': 'company-a', 'custom:role': 'CASHIER' }) };

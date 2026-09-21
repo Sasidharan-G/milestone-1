@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import {
   BatchWriteCommand,
-  DeleteCommand,
   DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
@@ -21,6 +20,7 @@ import {
   MasterConfig,
   NewAccountInput,
   StaffInput,
+  SyncActor,
   SyncOperation,
   SyncPage,
   SyncResult,
@@ -30,6 +30,7 @@ import { activePermissions } from '../local/localDataStore';
 import { newTrialLicense } from '../../core/license';
 import { isAwsError, mapAwsError } from './awsErrors';
 import { encodeSnapshotCursor, encodeTailCursor, parseCursor } from '../sync/syncCursor';
+import { CHANGE_GAP_SETTLE_MS, SNAPSHOT_TAIL_OVERLAP, decideSyncOperation, permissionDenial, rejectedResult, rejectionReason, replayStoredResult } from '../sync/syncRules';
 
 const companyPk = (companyId: string) => `COMPANY#${companyId}`;
 const userPk = (userId: string) => `USER#${userId}`;
@@ -39,7 +40,6 @@ const idempotencySk = (operationId: string) => `IDEMPOTENCY#${operationId}`;
 const sequenceWidth = 20;
 const changeSk = (sequence: number) => `CHANGE#${String(sequence).padStart(sequenceWidth, '0')}`;
 const ttlSeconds = (milliseconds: number) => Math.floor(milliseconds / 1000);
-const supportedEntities = new Set(['Category', 'Product', 'Customer', 'Supplier', 'Expense', 'Sale', 'Purchase', 'CustomerCredit', 'SupplierCredit', 'StockMovement']);
 
 interface StoredItem<T> {
   pk: string;
@@ -64,8 +64,7 @@ export class AwsDataStore implements DataStore {
     const companyId = randomUUID();
     const user: UserAccount = {
       userId: randomUUID(), companyId, phone: input.phone, displayName: input.displayName, businessName: input.businessName,
-      role: 'ADMIN', permissions: [...activePermissions], status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now,
-      isCloudTier: input.isCloudTier ?? true
+      role: 'ADMIN', permissions: [...activePermissions], status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now
     };
     const license: LicenseRecord = newTrialLicense(companyId, input.phone, input.businessName, input.displayName, now);
     const shopProfile: ShopProfileRecord = { companyId, shopName: input.businessName, ownerName: input.displayName, gstNumber: '', address: '', phone: input.phone, email: '', version: 1, updatedAtEpochMs: now, updatedByUserId: user.userId };
@@ -95,12 +94,14 @@ export class AwsDataStore implements DataStore {
     return users.filter(user => user.role === 'CASHIER');
   }
 
+  listCompanyUsers(companyId: string): Promise<UserAccount[]> { return this.queryCompanyUsers(companyId); }
+
   async createStaff(input: StaffInput): Promise<UserAccount> {
     const now = Date.now();
     const user: UserAccount = {
       userId: randomUUID(), companyId: input.companyId, phone: input.phone, displayName: input.displayName, role: 'CASHIER',
       permissions: input.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE'),
-      status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now, isCloudTier: input.isCloudTier ?? true
+      status: 'ACTIVE', createdAtEpochMs: now, updatedAtEpochMs: now
     };
     try {
       await this.client.send(new TransactWriteCommand({ TransactItems: [
@@ -125,7 +126,7 @@ export class AwsDataStore implements DataStore {
     } catch (error) { throw mapAwsError(error, 'DynamoDB staff rollback'); }
   }
 
-  async updateStaff(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'displayName' | 'permissions' | 'status' | 'isCloudTier' | 'cloudAccessGrantedUntilEpochMs'>>): Promise<UserAccount> {
+  async updateStaff(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'displayName' | 'permissions' | 'status'>>): Promise<UserAccount> {
     const current = await this.findUserById(userId);
     if (!current || current.companyId !== companyId || current.role !== 'CASHIER') throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff account was not found');
     const updated: UserAccount = {
@@ -133,34 +134,12 @@ export class AwsDataStore implements DataStore {
       ...(changes.displayName === undefined ? {} : { displayName: changes.displayName }),
       ...(changes.status === undefined ? {} : { status: changes.status }),
       ...(changes.permissions === undefined ? {} : { permissions: changes.permissions.filter(permission => activePermissions.includes(permission) && permission !== 'USER_MANAGE') }),
-      ...(changes.isCloudTier === undefined ? {} : { isCloudTier: changes.isCloudTier }),
-      ...(changes.cloudAccessGrantedUntilEpochMs === undefined ? {} : { cloudAccessGrantedUntilEpochMs: changes.cloudAccessGrantedUntilEpochMs }),
       updatedAtEpochMs: Date.now()
     };
     try {
       await this.client.send(new PutCommand({ TableName: this.tableName, Item: this.userItem(updated), ConditionExpression: 'attribute_exists(pk)' }));
       return updated;
     } catch (error) { throw mapAwsError(error, 'DynamoDB staff update'); }
-  }
-
-  async findAdminByCompany(companyId: string): Promise<UserAccount | null> {
-    const users = await this.queryCompanyUsers(companyId);
-    return users.find(user => user.role === 'ADMIN') || null;
-  }
-
-  async updateAccountCloudAccess(companyId: string, userId: string, changes: Partial<Pick<UserAccount, 'isCloudTier' | 'cloudAccessGrantedUntilEpochMs'>>): Promise<UserAccount> {
-    const current = await this.findUserById(userId);
-    if (!current || current.companyId !== companyId) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account was not found');
-    const updated: UserAccount = {
-      ...current,
-      ...(changes.isCloudTier === undefined ? {} : { isCloudTier: changes.isCloudTier }),
-      ...(changes.cloudAccessGrantedUntilEpochMs === undefined ? {} : { cloudAccessGrantedUntilEpochMs: changes.cloudAccessGrantedUntilEpochMs }),
-      updatedAtEpochMs: Date.now()
-    };
-    try {
-      await this.client.send(new PutCommand({ TableName: this.tableName, Item: this.userItem(updated), ConditionExpression: 'attribute_exists(pk)' }));
-      return updated;
-    } catch (error) { throw mapAwsError(error, 'DynamoDB account cloud-access update'); }
   }
 
   getLicense(companyId: string): Promise<LicenseRecord | null> { return this.get<LicenseRecord>(companyPk(companyId), 'LICENSE'); }
@@ -202,9 +181,9 @@ export class AwsDataStore implements DataStore {
     }
   }
 
-  async applySyncBatch(companyId: string, operations: SyncOperation[]): Promise<SyncResult[]> {
+  async applySyncBatch(companyId: string, operations: SyncOperation[], actor?: SyncActor): Promise<SyncResult[]> {
     const results: SyncResult[] = [];
-    for (const operation of operations) results.push(await this.applySyncOperation(companyId, operation));
+    for (const operation of operations) results.push(await this.applySyncOperation(companyId, operation, actor));
     return results;
   }
 
@@ -221,8 +200,19 @@ export class AwsDataStore implements DataStore {
           ConsistentRead: true
         }));
         const items = (response.Items || []) as Array<StoredItem<{ sequence: number; record: CloudRecord }>>;
-        const nextCursor = items.length ? encodeTailCursor(items[items.length - 1].data.sequence) : encodeTailCursor(parsed.afterSequence);
-        return { records: items.map(item => item.data.record), nextCursor, hasMore: Boolean(response.LastEvaluatedKey) };
+        // Stop in front of a recent hole in the sequence: that write is still in flight and would
+        // otherwise be stepped over for good (see CHANGE_GAP_SETTLE_MS).
+        const records: CloudRecord[] = [];
+        let last = parsed.afterSequence;
+        let heldBack = false;
+        const now = Date.now();
+        for (const item of items) {
+          const { sequence, record } = item.data;
+          if (sequence !== last + 1 && now - (record.updatedAtEpochMs || 0) < CHANGE_GAP_SETTLE_MS) { heldBack = true; break; }
+          records.push(record);
+          last = sequence;
+        }
+        return { records, nextCursor: encodeTailCursor(last), hasMore: !heldBack && Boolean(response.LastEvaluatedKey) };
       } catch (error) { throw mapAwsError(error, 'DynamoDB sync pull'); }
     }
     // Fresh pull (new device, full resync, or "restore from cloud"): the CHANGE# log this
@@ -235,38 +225,42 @@ export class AwsDataStore implements DataStore {
     if (nextPageToken) {
       return { records: items.map(item => item.data), nextCursor: encodeSnapshotCursor(capturedMaxSequence, nextPageToken), hasMore: true };
     }
-    return { records: items.map(item => item.data), nextCursor: encodeTailCursor(capturedMaxSequence), hasMore: false };
+    return { records: items.map(item => item.data), nextCursor: encodeTailCursor(Math.max(0, capturedMaxSequence - SNAPSHOT_TAIL_OVERLAP)), hasMore: false };
+  }
+
+  async getSyncEpoch(companyId: string): Promise<number> {
+    try {
+      const response = await this.client.send(new GetCommand({ TableName: this.tableName, Key: { pk: companyPk(companyId), sk: 'SYNC_EPOCH' }, ConsistentRead: true }));
+      const epoch = Number(response.Item?.epoch);
+      return Number.isSafeInteger(epoch) ? epoch : 0;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB sync epoch read'); }
+  }
+
+  async bumpSyncEpoch(companyId: string): Promise<number> {
+    try {
+      const response = await this.client.send(new UpdateCommand({
+        TableName: this.tableName, Key: { pk: companyPk(companyId), sk: 'SYNC_EPOCH' },
+        UpdateExpression: 'SET itemType = if_not_exists(itemType, :type) ADD #epoch :one',
+        ExpressionAttributeNames: { '#epoch': 'epoch' }, ExpressionAttributeValues: { ':one': 1, ':type': 'SYNC_EPOCH' }, ReturnValues: 'UPDATED_NEW'
+      }));
+      const epoch = Number(response.Attributes?.epoch);
+      if (!Number.isSafeInteger(epoch)) throw new AppError(502, 'SYNC_EPOCH_INVALID', 'DynamoDB returned an invalid sync epoch', true);
+      return epoch;
+    } catch (error) { throw mapAwsError(error, 'DynamoDB sync epoch update'); }
   }
 
   async purgeCompanyRecords(companyId: string): Promise<number> {
-    const records = await this.queryPartition<CloudRecord>(companyPk(companyId), 'RECORD#');
-    let count = 0;
-    for (const item of records) {
-      const record = item.data;
-      await this.client.send(new DeleteCommand({
-        TableName: this.tableName,
-        Key: { pk: companyPk(companyId), sk: recordSk(record.entityType, record.entityId) }
-      }));
-      count += 1;
-    }
-    const changes = await this.queryPartition<any>(companyPk(companyId), 'CHANGE#');
-    for (const ch of changes) {
-      await this.client.send(new DeleteCommand({
-        TableName: this.tableName,
-        Key: { pk: companyPk(companyId), sk: ch.sk }
-      }));
-    }
+    const pk = companyPk(companyId);
+    const records = await this.queryPartition<CloudRecord>(pk, 'RECORD#');
+    const changes = await this.queryPartition<unknown>(pk, 'CHANGE#');
     // applySyncOperation short-circuits on a cached operationId and returns DUPLICATE. Leaving
     // these rows behind after a purge means a client replaying its outbox gets DUPLICATE for a
     // record that no longer exists, so the entity is silently dropped.
-    const idempotency = await this.queryPartition<any>(companyPk(companyId), 'IDEMPOTENCY#');
-    for (const entry of idempotency) {
-      await this.client.send(new DeleteCommand({
-        TableName: this.tableName,
-        Key: { pk: companyPk(companyId), sk: entry.sk }
-      }));
-    }
-    return count;
+    const idempotency = await this.queryPartition<unknown>(pk, 'IDEMPOTENCY#');
+    // Batched 25 at a time: one DeleteCommand per row took minutes for a real shop and ran past
+    // API Gateway's 29-second limit, leaving the purge half done.
+    await this.batchDelete([...records, ...changes, ...idempotency].map(item => ({ pk: item.pk, sk: item.sk })), 'DynamoDB sync purge');
+    return records.length;
   }
 
   async adminOverview(): Promise<{ licenses: LicenseRecord[]; users: UserAccount[]; masterConfig: MasterConfig }> {
@@ -296,6 +290,12 @@ export class AwsDataStore implements DataStore {
         ...companyItems.map(item => ({ pk: item.pk, sk: item.sk })),
         ...users.flatMap(user => [{ pk: userPk(user.userId), sk: 'PROFILE' }, { pk: phonePk(user.phone), sk: 'USER' }])
       ];
+      await this.batchDelete(keys, 'DynamoDB company deletion');
+    } catch (error) { throw mapAwsError(error, 'DynamoDB company deletion'); }
+  }
+
+  private async batchDelete(keys: Array<{ pk: string; sk: string }>, operation: string): Promise<void> {
+    try {
       for (let index = 0; index < keys.length; index += 25) {
         let pending: Array<{ DeleteRequest: { Key: Record<string, string> } }> = keys.slice(index, index + 25).map(Key => ({ DeleteRequest: { Key } }));
         for (let attempt = 0; pending.length && attempt < 5; attempt += 1) {
@@ -303,9 +303,9 @@ export class AwsDataStore implements DataStore {
           pending = (response.UnprocessedItems?.[this.tableName] || []).filter(item => item.DeleteRequest?.Key).map(item => ({ DeleteRequest: { Key: item.DeleteRequest!.Key! as Record<string, string> } }));
           if (pending.length) await new Promise(resolve => setTimeout(resolve, 25 * (2 ** attempt)));
         }
-        if (pending.length) throw new AppError(503, 'AWS_BATCH_INCOMPLETE', 'DynamoDB company deletion is temporarily incomplete', true);
+        if (pending.length) throw new AppError(503, 'AWS_BATCH_INCOMPLETE', `${operation} is temporarily incomplete`, true);
       }
-    } catch (error) { throw mapAwsError(error, 'DynamoDB company deletion'); }
+    } catch (error) { throw mapAwsError(error, operation); }
   }
 
   async getMasterConfig(): Promise<MasterConfig> {
@@ -348,18 +348,19 @@ export class AwsDataStore implements DataStore {
     } catch (error) { throw mapAwsError(error, 'DynamoDB audit query'); }
   }
 
-  private async applySyncOperation(companyId: string, operation: SyncOperation): Promise<SyncResult> {
+  private async applySyncOperation(companyId: string, operation: SyncOperation, actor?: SyncActor): Promise<SyncResult> {
     if (operation.companyId !== companyId) throw new AppError(403, 'TENANT_MISMATCH', 'Operation tenant does not match authenticated tenant');
-    if (!supportedEntities.has(operation.entityType)) throw new AppError(422, 'SYNC_ENTITY_UNSUPPORTED', 'Unsupported sync entity type');
-    if (Buffer.byteLength(JSON.stringify(operation.payload || {}), 'utf8') > 350_000) throw new AppError(413, 'SYNC_RECORD_TOO_LARGE', 'Sync record exceeds DynamoDB safe item size');
+    const rejection = rejectionReason(operation);
+    if (rejection) return rejectedResult(operation, rejection);
     const pk = companyPk(companyId);
     const prior = await this.get<SyncResult>(pk, idempotencySk(operation.operationId));
-    if (prior) return { ...prior, status: 'DUPLICATE' };
+    if (prior) return replayStoredResult(prior);
     const current = await this.get<CloudRecord>(pk, recordSk(operation.entityType, operation.entityId));
-    const baseVersion = operation.baseVersion || 0;
-    if ((current && current.version !== baseVersion && operation.operation !== 'INSERT') || (!current && baseVersion > 0)) {
-      return this.storeConflict(pk, operation.operationId, current || undefined);
-    }
+    const decision = decideSyncOperation(current, operation);
+    if (decision === 'CONFLICT') return this.storeConflict(pk, operation.operationId, current || undefined);
+    if (decision === 'NOOP') return this.storeNoop(pk, operation.operationId, current!.version);
+    const denial = actor ? permissionDenial(actor, operation, current) : null;
+    if (denial) return rejectedResult(operation, denial);
     const now = Date.now();
     const payload = operation.operation === 'PARTIAL_UPDATE' ? { ...(current?.payload || {}), ...(operation.payload || {}) } : { ...(operation.payload || {}) };
     payload.companyId = companyId;
@@ -385,11 +386,29 @@ export class AwsDataStore implements DataStore {
     } catch (error) {
       if (isAwsError(error, 'TransactionCanceledException')) {
         const duplicate = await this.get<SyncResult>(pk, idempotencySk(operation.operationId));
-        if (duplicate) return { ...duplicate, status: 'DUPLICATE' };
+        if (duplicate) return replayStoredResult(duplicate);
         const authoritative = await this.get<CloudRecord>(pk, recordSk(operation.entityType, operation.entityId));
         return this.storeConflict(pk, operation.operationId, authoritative || undefined);
       }
       throw mapAwsError(error, 'DynamoDB sync mutation');
+    }
+  }
+
+  private async storeNoop(pk: string, operationId: string, version: number): Promise<SyncResult> {
+    const result: SyncResult = { operationId, status: 'APPLIED', version };
+    try {
+      await this.client.send(new PutCommand({
+        TableName: this.tableName,
+        Item: { pk, sk: idempotencySk(operationId), itemType: 'IDEMPOTENCY', data: result, expiresAtEpochSeconds: ttlSeconds(Date.now() + 7 * 86_400_000) },
+        ConditionExpression: 'attribute_not_exists(pk) AND attribute_not_exists(sk)'
+      }));
+      return result;
+    } catch (error) {
+      if (isAwsError(error, 'ConditionalCheckFailedException')) {
+        const stored = await this.get<SyncResult>(pk, idempotencySk(operationId));
+        return stored ? replayStoredResult(stored) : result;
+      }
+      throw mapAwsError(error, 'DynamoDB no-op persistence');
     }
   }
 
@@ -516,7 +535,13 @@ export class AwsDataStore implements DataStore {
       const items: Array<StoredItem<unknown>> = [];
       let ExclusiveStartKey: Record<string, unknown> | undefined;
       do {
-        const response = await this.client.send(new ScanCommand({ TableName: this.tableName, ExclusiveStartKey }));
+        // Only licenses and users are wanted; the filter keeps every tenant's sync records out
+        // of the response (DynamoDB still reads them, so this stays an operator-only call).
+        const response = await this.client.send(new ScanCommand({
+          TableName: this.tableName, ExclusiveStartKey,
+          FilterExpression: 'itemType IN (:license, :user)',
+          ExpressionAttributeValues: { ':license': 'LICENSE', ':user': 'USER' }
+        }));
         items.push(...(response.Items || []) as Array<StoredItem<unknown>>);
         ExclusiveStartKey = response.LastEvaluatedKey;
       } while (ExclusiveStartKey);

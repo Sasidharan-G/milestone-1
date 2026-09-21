@@ -56,6 +56,7 @@ class DefaultAuthRepository(
             val session = persistOnlineSession(backend.login(normalizePhone(username), password.concatToString()), password)
             if (session.permissions.contains(Permission.ACCOUNT_INACTIVE)) {
                 sessions.clear()
+                credentials.remove(normalizePhone(username))
                 return LoginResult.Failure(DEACTIVATED_MESSAGE)
             }
             tenantDatabaseManager?.setActiveCompany(session.companyId)
@@ -74,42 +75,59 @@ class DefaultAuthRepository(
                 // The active company was switched above; put it back so a failed sign-in never
                 // leaves the app pointed at this tenant's database.
                 previousCompany?.let { tenantDatabaseManager?.setActiveCompany(it) }
-                LoginResult.Failure("Signed in, but could not establish a device session. Check your connection and try again.")
+                // The server did accept the password, so this is a connection problem and the
+                // offline credential saved above may be used.
+                LoginResult.Failure("Signed in, but could not establish a device session. Check your connection and try again.", canTryOffline = true)
             }
-        } catch (e: Exception) { LoginResult.Failure(e.message ?: "Unable to sign in") }
+        } catch (e: Exception) {
+            if (isServerRejection(e)) {
+                // The server was reached and said no: wrong password, or the account was disabled
+                // or removed. Whatever this device remembered for that number is now stale, and
+                // keeping it would let the old password in the next time the network drops.
+                credentials.remove(normalizePhone(username))
+                LoginResult.Failure(e.message ?: "Invalid mobile number or password")
+            } else {
+                LoginResult.Failure(e.message ?: "Unable to sign in", canTryOffline = true)
+            }
+        }
     }
 
+    /**
+     * Signs in against the verifier saved by the last successful online sign-in of this number on
+     * this device. Only called when [loginOnline] failed for a reason other than the server
+     * rejecting the credentials, so it can never outvote the server.
+     */
     override suspend fun loginOffline(username: String, password: CharArray): LoginResult {
         sessionSecurityManager.resetSessionTermination()
         val normalized = normalizePhone(username)
         val credential = credentials.getCredential(normalized).first()
-            ?: credentials.credential.first()
-            ?: return LoginResult.Failure("No verified offline sign-in is available on this device")
-        if (credential.username != normalized || !verifier.matches(credential, password)) return LoginResult.Failure("Invalid mobile number or password")
-        val companyId = credential.companyId
-        tenantDatabaseManager?.setActiveCompany(companyId)
-        val targetDb = getDb(companyId)
-        val local = targetDb.userDao().getUserById(credential.userId) ?: return LoginResult.Failure("Offline account data is unavailable")
+            ?: return LoginResult.Failure("No internet. Sign in once with internet on this device to use it offline.")
+        if (!verifier.matches(credential, password)) return LoginResult.Failure("Invalid mobile number or password")
+        tenantDatabaseManager?.setActiveCompany(credential.companyId)
+        val local = getDb(credential.companyId).userDao().getUserById(credential.userId)
+            ?: return LoginResult.Failure("No internet. Sign in once with internet on this device to use it offline.")
         if (local.toPermissionsSet().contains(Permission.ACCOUNT_INACTIVE)) return LoginResult.Failure(DEACTIVATED_MESSAGE)
-        val offlineValidUntil = if (local.offlineValidUntil == 0L) System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000 else local.offlineValidUntil
-        if (System.currentTimeMillis() >= offlineValidUntil) return LoginResult.Failure("Offline sign-in expired. Connect to the internet.")
-        val existingSession = sessions.activeSession.first()
-        val preservedAccess = if (existingSession?.userId == local.id) existingSession.accessToken else null
-        val preservedRefresh = if (existingSession?.userId == local.id) existingSession.refreshToken else null
-        val preservedSessionToken = if (existingSession?.userId == local.id) existingSession.sessionToken else null
+        // Keep this user's own tokens if they are still stored, so sync resumes on its own when the
+        // network is back. Another user's tokens are never carried over.
+        val existing = sessions.activeSession.first()?.takeIf { it.userId == local.id }
         val session = Session(
             userId = local.id,
             displayName = local.displayName,
             permissions = local.toPermissionsSet(),
-            accessToken = preservedAccess,
-            refreshToken = preservedRefresh,
+            accessToken = existing?.accessToken,
+            refreshToken = existing?.refreshToken,
             companyId = local.companyId,
             role = local.role,
-            sessionToken = preservedSessionToken
+            sessionToken = existing?.sessionToken
         )
         sessions.save(session)
         return LoginResult.Success(session)
     }
+
+    // 401/403: bad password or disabled account. 404: the account no longer exists. Anything else,
+    // including a timeout, a 5xx or a 429, says nothing about the credentials themselves.
+    private fun isServerRejection(e: Exception): Boolean =
+        e is com.kadaikutty.pos.core.network.BackendApiException && e.statusCode in setOf(401, 403, 404)
 
     override suspend fun logout() {
         sessionSecurityManager.resetSessionTermination()
@@ -123,10 +141,10 @@ class DefaultAuthRepository(
     override suspend fun registerMerchant(mobileNumber: String, password: CharArray, ownerName: String, businessName: String) = RegisterResult.Failure("Mobile OTP verification is required before registration")
     override fun sendRegistrationOtp(mobileNumber: String, activity: Activity, onCodeSent: (String) -> Unit, onVerificationFailed: (String) -> Unit) = sendOtp(mobileNumber, onCodeSent, onVerificationFailed)
 
-    override suspend fun verifyRegistrationOtpAndRegister(verificationId: String, otp: String, mobileNumber: String, password: CharArray, ownerName: String, businessName: String, isCloudTier: Boolean): RegisterResult = try {
+    override suspend fun verifyRegistrationOtpAndRegister(verificationId: String, otp: String, mobileNumber: String, password: CharArray, ownerName: String, businessName: String): RegisterResult = try {
         val phone = normalizePhone(mobileNumber)
         val proof = backend.verifyOtp(phone, otp, verificationId).getString("resetToken")
-        val companyId = backend.registerMerchant(phone, ownerName, businessName, password.concatToString(), proof, isCloudTier).getString("companyId")
+        val companyId = backend.registerMerchant(phone, ownerName, businessName, password.concatToString(), proof).getString("companyId")
         val loginRes = loginOnline(phone, password)
         if (loginRes is LoginResult.Success) {
             RegisterResult.Success(companyId)
@@ -162,9 +180,11 @@ class DefaultAuthRepository(
         val perms = if (parsedPerms.contains(Permission.ACCOUNT_INACTIVE)) {
             // A deactivated account must not be promoted to a full permission set by role.
             parsedPerms
-        } else if (role == "ADMIN" || role == "SUPER_ADMIN" || parsedPerms.isEmpty()) {
+        } else if (role == "ADMIN" || role == "SUPER_ADMIN") {
             Permission.ALL_ACTIVE
         } else {
+            // A cashier the owner gave no permissions has none. This used to hand such a cashier
+            // every permission, owner screens included (SessionStore already refused to).
             parsedPerms
         }
         val tokensObj = response.optJSONObject("tokens")
@@ -192,27 +212,35 @@ class DefaultAuthRepository(
         }
 
         val targetDb = getDb(session.companyId)
-        if (!bName.isNullOrBlank()) {
-            val existingLic = targetDb.licenseDao().getLicense(session.companyId)
-            val licEntity = com.kadaikutty.pos.core.license.LicenseEntity(
-                companyId = session.companyId,
-                businessName = bName,
-                ownerName = oName.orEmpty(),
-                licenseStatus = licenseObj?.optString("status") ?: existingLic?.licenseStatus ?: "ACTIVE_PAID"
+        val existingLic = targetDb.licenseDao().getLicense(session.companyId)
+        if (licenseObj != null || existingLic != null) {
+            // Built on what was stored, with the sign-in response's license on top. Writing only
+            // the name and status left validUntil at 0, which reads as expired: the shop was locked
+            // out right after signing in, and stayed locked if the license refresh then failed.
+            val base = existingLic ?: com.kadaikutty.pos.core.license.LicenseEntity(companyId = session.companyId)
+            val licEntity = base.copy(
+                businessName = bName ?: base.businessName,
+                ownerName = oName ?: base.ownerName,
+                ownerMobile = licenseObj?.optString("ownerMobile")?.ifBlank { null } ?: base.ownerMobile,
+                licenseStatus = licenseObj?.optString("status")?.ifBlank { null } ?: base.licenseStatus,
+                licenseType = licenseObj?.optString("licenseType")?.ifBlank { null } ?: base.licenseType,
+                daysGranted = licenseObj?.optInt("daysGranted", base.daysGranted) ?: base.daysGranted,
+                yearsGranted = licenseObj?.optInt("yearsGranted", base.yearsGranted) ?: base.yearsGranted,
+                activatedAtEpochMs = licenseObj?.optLong("activatedAtEpochMs", base.activatedAtEpochMs) ?: base.activatedAtEpochMs,
+                validUntilEpochMs = licenseObj?.optLong("validUntilEpochMs", base.validUntilEpochMs) ?: base.validUntilEpochMs,
+                lastVerifiedAtEpochMs = if (licenseObj != null) System.currentTimeMillis() else base.lastVerifiedAtEpochMs,
             )
             targetDb.licenseDao().saveLicense(licEntity)
         }
 
         val local = UserEntity(
-            session.userId,
-            normalizePhone(user.optString("phone")),
-            session.displayName,
-            "", "",
-            perms.joinToString(",") { it.name },
-            session.companyId,
-            session.role,
-            System.currentTimeMillis(),
-            System.currentTimeMillis() + 30L * 24 * 60 * 60 * 1000
+            id = session.userId,
+            username = normalizePhone(user.optString("phone")),
+            displayName = session.displayName,
+            permissions = perms.joinToString(",") { it.name },
+            companyId = session.companyId,
+            role = session.role,
+            lastOnlineVerifiedAt = System.currentTimeMillis()
         )
         targetDb.userDao().insertUser(local)
         credentials.save(verifier.create(local.username, password, session.userId, session.displayName, session.companyId))

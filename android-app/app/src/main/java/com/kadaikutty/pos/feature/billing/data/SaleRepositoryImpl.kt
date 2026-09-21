@@ -100,21 +100,26 @@ class SaleRepositoryImpl(
             val movements = items.map { StockMovementEntity(newRecordId(), company, it.productId, -it.quantity, "SALE", id, now) }
             saleDao.insertStockMovements(movements)
             if (draft.creditApplied.minorUnits > 0) {
-                val credit = CustomerCreditEntity(id = "sale-credit:$id:${sale.revision}", companyId = company, customerId = customer!!.id,
+                val credit = CustomerCreditEntity(id = newRecordId(), companyId = company, customerId = customer!!.id,
                     amountMinorUnits = draft.creditApplied.minorUnits, reason = "Bill #$number", dateEpochMs = now,
                     referenceId = id, syncStatus = SyncStatus.LOCAL_ONLY)
                 database.masterDao().insertCustomerCredit(credit)
                 syncManager.enqueueCustomerCredit(credit, "INSERT")
             }
             if (draft.previousDue > 0) {
-                val settlement = CustomerCreditEntity(id = "sale-settlement:$id:${sale.revision}", companyId = company, customerId = customer!!.id,
+                val settlement = CustomerCreditEntity(id = newRecordId(), companyId = company, customerId = customer!!.id,
                     amountMinorUnits = -draft.previousDue, reason = "Previous due settled in Bill $number", dateEpochMs = now,
                     referenceId = id, syncStatus = SyncStatus.LOCAL_ONLY)
                 database.masterDao().insertCustomerCredit(settlement)
                 syncManager.enqueueCustomerCredit(settlement, "INSERT")
             }
-            syncManager.enqueueSale(sale, items)
+            // An edit is an UPDATE so the server checks it against the version this device last
+            // saw; sent as INSERT it skipped that check and overwrote edits from other devices.
+            syncManager.enqueueSale(sale, items, if (old == null) "INSERT" else "UPDATE")
             movements.forEach { syncManager.enqueueStockMovement(it) }
+            // If sync was guarding this bill's stock/credit rows after a conflict, this edit's rows
+            // are now the valid ones.
+            if (old != null) ConflictResolver(database, syncManager).onLocalDocumentEdit(company, "Sale", id)
             database.draftCartDao().removePurchased(company, items.map { it.productId })
             database.draftCartDao().rekeyActive(company, draft.nextCartRequestId)
             database.localOperationDao().put(LocalOperationEntity(company, receiptKey, number))
@@ -135,6 +140,9 @@ class SaleRepositoryImpl(
             saleDao.creditsFor(session.companyId, saleId).forEach { syncManager.enqueueCustomerCredit(it, "DELETE") }
             saleDao.deleteSaleCascade(session.companyId, saleId, sale.billNumber)
             syncManager.enqueueSale(sale, emptyList(), "DELETE")
+            // Stock or credit rows for this bill may still arrive from other devices; the sync
+            // sweep removes them while this marker exists.
+            database.localOperationDao().put(LocalOperationEntity(session.companyId, "${com.kadaikutty.pos.core.sync.ConflictResolver.DOC_TOMBSTONE_PREFIX}Sale:${sale.id}", System.currentTimeMillis().toString()))
             database.auditLogDao().insertAuditLog(AuditLogEntity(newRecordId(), session.companyId,
                 "BILL_CANCEL", sale.billNumber, sale.totalMinorUnits, "Bill cancelled", session.userId, session.displayName, System.currentTimeMillis()))
         }

@@ -21,16 +21,16 @@ export class AwsSessionStore implements SessionStore {
     } catch (error) { throw mapAwsError(error, 'DynamoDB session registration'); }
   }
 
-  async heartbeat(companyId: string, userId: string, sessionId: string): Promise<SessionRecord> {
+  async heartbeat(companyId: string, userId: string, sessionId: string, expiresAtEpochMs: number): Promise<SessionRecord> {
     const now = Date.now();
     let response;
     try {
       response = await this.client.send(new UpdateCommand({
         TableName: this.tableName, Key: { pk: pk(companyId), sk: sk(sessionId) },
-        UpdateExpression: 'SET #data.lastSeenAtEpochMs = :now',
+        UpdateExpression: 'SET #data.lastSeenAtEpochMs = :now, #data.expiresAtEpochMs = :expires, expiresAtEpochSeconds = :expiresSeconds',
         ConditionExpression: '#data.companyId = :companyId AND #data.userId = :userId AND #data.revoked = :false AND #data.expiresAtEpochMs > :now',
         ExpressionAttributeNames: { '#data': 'data' },
-        ExpressionAttributeValues: { ':companyId': companyId, ':userId': userId, ':false': false, ':now': now }, ReturnValues: 'ALL_NEW'
+        ExpressionAttributeValues: { ':companyId': companyId, ':userId': userId, ':false': false, ':now': now, ':expires': expiresAtEpochMs, ':expiresSeconds': Math.floor(expiresAtEpochMs / 1000) }, ReturnValues: 'ALL_NEW'
       }));
     } catch (error) {
       if (isAwsError(error, 'ConditionalCheckFailedException')) throw new AppError(401, 'SESSION_INVALID', 'Session is invalid, expired, or revoked');

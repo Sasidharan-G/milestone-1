@@ -9,13 +9,16 @@ import com.kadaikutty.pos.core.preferences.AppPreferences
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.text.SimpleDateFormat
@@ -42,16 +45,6 @@ class LicenseManager @Inject constructor(
     private val _isClockTampered = MutableStateFlow(false)
     val isClockTampered: StateFlow<Boolean> = _isClockTampered.asStateFlow()
 
-    /**
-     * Highest wall-clock time this install has ever seen, from the device clock or a server
-     * timestamp. isClockTampered above only trips past a 10-minute grace and only locks the app
-     * for non-SUPER_ADMIN users; CloudAccessPolicy takes this value instead and simply refuses to
-     * read time as earlier than it, so a rollback cannot push a cloud-access deadline away.
-     */
-    private val _highestSeenClockMs = MutableStateFlow<Long?>(null)
-    val highestSeenClockMs: StateFlow<Long?> = _highestSeenClockMs.asStateFlow()
-    private var refreshJob: Job? = null
-
     init {
         validateMonotonicClock()
         // Profile updates are not part of the product/customer sync queue. Refresh the canonical
@@ -64,20 +57,27 @@ class LicenseManager @Inject constructor(
         }
         scope.launch {
             var lastCompanyId: String? = null
-            sessionStore.activeSession.collect { session ->
-                refreshJob?.cancel()
-                if (session == null) {
+            // Keyed on who is signed in, not on every session write. The session is rewritten on
+            // each token refresh, and each write used to start another endless 15-minute refresh
+            // loop that was never cancelled, each holding a token that had since expired.
+            sessionStore.activeSession
+                .map { session -> session?.let { it.companyId to it.userId } }
+                .distinctUntilChanged()
+                .collectLatest { identity ->
+                if (identity == null) {
                     _currentLicense.value = null
                     _isLicenseLoaded.value = false
                     lastCompanyId = null
                     appPreferences.clearShopDetails()
                 } else {
-                    if (lastCompanyId != session.companyId) {
-                        lastCompanyId = session.companyId
+                    val (companyId, userId) = identity
+                    if (lastCompanyId != companyId) {
+                        lastCompanyId = companyId
                         appPreferences.clearShopDetails()
                     }
-                    refreshJob = launch {
-                        tenantDatabaseManager.getDatabase(session.companyId).licenseDao().getLicenseFlow(session.companyId).collect { local ->
+                    coroutineScope {
+                    launch {
+                        tenantDatabaseManager.getDatabase(companyId).licenseDao().getLicenseFlow(companyId).collect { local ->
                             _currentLicense.value = local
                             _isLicenseLoaded.value = true
                             if (local != null) {
@@ -92,9 +92,11 @@ class LicenseManager @Inject constructor(
                     }
                     launch {
                         while (true) {
-                            refreshFromBackend(session.companyId, session.userId, session.accessToken)
+                            // The current token each time, not the one from when the loop started.
+                            refreshFromBackend(companyId, userId, sessionStore.activeSession.valueOrNull()?.accessToken)
                             delay(15 * 60 * 1000L)
                         }
+                    }
                     }
                 }
             }
@@ -148,32 +150,22 @@ class LicenseManager @Inject constructor(
                     appPreferences.shopLogoPath.firstOrNull().orEmpty()
                 )
             }
-            recordServerOrActivityTimestamp(raw.optLong("updatedAtEpochMs", now))
-
-            // This poll succeeding IS the "online check-in" — push the rolling 7-day connectivity
-            // deadline forward and mirror Master's granted cloud-access date, all purely local so
-            // CloudAccessPolicy can keep enforcing it even the next time this device is offline.
-            val cloudAccess = response.optJSONObject("cloudAccess")
-            if (cloudAccess != null) {
-                val userDao = targetDb.userDao()
-                val localUser = userDao.getUserById(userId)
-                if (localUser != null) {
-                    userDao.updateUser(localUser.copy(
-                        isCloudTier = cloudAccess.optBoolean("isCloudTier", true),
-                        cloudAccessGrantedUntilEpochMs = cloudAccess.optLong("grantedUntilEpochMs", 0L).takeIf { it > 0L },
-                        mustCheckInByEpochMs = com.kadaikutty.pos.core.security.CloudAccessPolicy.nextCheckInDeadline(now)
-                    ))
-                }
-            }
+            // Only this phone's own clock goes into the rollback check below. Feeding it the server's
+            // time locked any shop whose phone ran more than ten minutes slow as "clock tampered".
+            recordServerOrActivityTimestamp(now)
         }
     }
 
+    /**
+     * Catches the phone's date being moved back to stretch an expired license while offline.
+     * Expiry itself is judged on server-corrected time (TrustedClock), so this only matters after
+     * a restart; a day of slack keeps an ordinary clock correction from locking the shop.
+     */
     private fun validateMonotonicClock() {
         val current = System.currentTimeMillis()
         val highest = prefs.getLong("highest_seen_clock_ms", 0L)
-        _isClockTampered.value = highest > 0 && current < highest - 10 * 60 * 1000L
+        _isClockTampered.value = highest > 0 && current < highest - CLOCK_ROLLBACK_TOLERANCE_MS
         if (!_isClockTampered.value && current > highest) prefs.edit().putLong("highest_seen_clock_ms", current).apply()
-        _highestSeenClockMs.value = prefs.getLong("highest_seen_clock_ms", 0L).takeIf { it > 0L }
     }
 
     fun recordServerOrActivityTimestamp(timestampMs: Long) {
@@ -201,6 +193,9 @@ class LicenseManager @Inject constructor(
         prefs.edit().putString("last_alert_date", today).putInt("alert_count_today", count + 1).apply()
     }
 
+    private companion object {
+        const val CLOCK_ROLLBACK_TOLERANCE_MS = 24 * 60 * 60 * 1000L
+    }
 }
 
 private suspend fun <T> kotlinx.coroutines.flow.Flow<T>.valueOrNull(): T? = firstOrNull()

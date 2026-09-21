@@ -27,6 +27,7 @@ class SessionSecurityManager @Inject constructor(
     private val sessionStore: SessionStore,
     private val appPreferences: AppPreferences,
     private val webSocketManager: com.kadaikutty.pos.core.network.WebSocketManager,
+    private val offlineCredentials: OfflineCredentialStore,
 ) {
     private val scope = CoroutineScope(Dispatchers.IO)
     private val _isSessionTerminated = MutableStateFlow(false)
@@ -43,6 +44,11 @@ class SessionSecurityManager @Inject constructor(
     init {
         scope.launch {
             webSocketManager.sessionRevokedFlow.collect { reason ->
+                // A disabled or deleted account must not keep signing in offline on this device.
+                // Done before notifySessionRevoked, whose clear() would lose the user id.
+                if (webSocketManager.lastRevokeDisabledAccount) {
+                    sessionStore.activeSession.first()?.userId?.let { offlineCredentials.removeByUserId(it) }
+                }
                 notifySessionRevoked(reason)
             }
         }

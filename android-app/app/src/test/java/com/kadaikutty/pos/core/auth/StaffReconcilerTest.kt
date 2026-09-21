@@ -8,9 +8,9 @@ class StaffReconcilerTest {
 
     private fun user(id: String, username: String, displayName: String = "Name", permissions: String = "SALE_VIEW", companyId: String = "company_1") =
         UserEntity(
-            id = id, username = username, displayName = displayName, salt = "s", verifier = "v",
+            id = id, username = username, displayName = displayName,
             permissions = permissions, companyId = companyId, role = "CASHIER",
-            lastOnlineVerifiedAt = 0L, offlineValidUntil = 0L
+            lastOnlineVerifiedAt = 0L
         )
 
     private fun server(userId: String, phone: String, displayName: String = "Name", permissions: String = "SALE_VIEW", status: String = "ACTIVE") =

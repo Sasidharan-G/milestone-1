@@ -30,12 +30,15 @@ export const parseCursor = (raw: string): SyncCursor => {
     if (!Number.isSafeInteger(capturedMaxSequence) || capturedMaxSequence < 0) throw invalidCursor();
     return { mode: 'snapshotResume', capturedMaxSequence, pageToken };
   }
-  const afterSequence = Number(raw);
-  if (!Number.isSafeInteger(afterSequence) || afterSequence < 0) throw invalidCursor();
+  const afterSequence = Number(raw.startsWith(TAIL_PREFIX) ? raw.slice(TAIL_PREFIX.length) : raw);
+  if (!raw.length || !Number.isSafeInteger(afterSequence) || afterSequence < 0) throw invalidCursor();
   return { mode: 'tail', afterSequence };
 };
 
 export const encodeSnapshotCursor = (capturedMaxSequence: number, pageToken: string): string =>
   `${SNAPSHOT_PREFIX}${capturedMaxSequence}:${pageToken}`;
 
-export const encodeTailCursor = (sequence: number): string => String(sequence);
+// A plain "0" already means "start a fresh snapshot", so a tail that resumes from the very first
+// change needs its own spelling; otherwise the client would snapshot again on every pull.
+const TAIL_PREFIX = 'T:';
+export const encodeTailCursor = (sequence: number): string => (sequence === 0 ? `${TAIL_PREFIX}0` : String(sequence));

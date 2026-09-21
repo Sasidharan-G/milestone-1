@@ -20,22 +20,23 @@ data class LicenseEntity(
     val renewalCount: Int = 0,
     val notes: String = ""
 ) {
+    // Judged on server-corrected time: moving the phone's date back does not stretch a license.
     val isExpired: Boolean
         get() {
             if (licenseStatus == "REVOKED" || licenseStatus == "EXPIRED" || licenseStatus == "PENDING_APPROVAL") return true
             if (validUntilEpochMs <= 0L) return true
-            return System.currentTimeMillis() >= validUntilEpochMs
+            return com.kadaikutty.pos.core.common.TrustedClock.now() >= validUntilEpochMs
         }
 
     val remainingHours: Long
         get() {
-            val diff = validUntilEpochMs - System.currentTimeMillis()
+            val diff = validUntilEpochMs - com.kadaikutty.pos.core.common.TrustedClock.now()
             return if (diff > 0) diff / (1000 * 60 * 60) else 0L
         }
 
     val remainingDays: Long
         get() {
-            val diff = validUntilEpochMs - System.currentTimeMillis()
+            val diff = validUntilEpochMs - com.kadaikutty.pos.core.common.TrustedClock.now()
             return if (diff > 0) (diff / (1000 * 60 * 60 * 24)) + 1 else 0L
         }
 

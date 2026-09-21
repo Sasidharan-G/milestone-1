@@ -29,7 +29,7 @@ object RecordApplier {
             "CustomerCredit" -> database.masterDao().deleteCustomerCreditById(companyId, id)
             "SupplierCredit" -> database.masterDao().deleteSupplierCreditById(companyId, id)
             "Sale" -> database.saleDao().deleteSale(companyId, id)
-            "Purchase" -> database.purchaseDao().deletePurchase(companyId, id)
+            "Purchase" -> { database.purchaseDao().deletePurchaseItems(companyId, id); database.purchaseDao().deletePurchase(companyId, id) }
             "StockMovement" -> database.saleDao().deleteStockMovementById(companyId, id)
         }
     }
@@ -39,28 +39,14 @@ object RecordApplier {
         when (type) {
             "Category" -> database.masterDao().insertCategory(CategoryEntity(id, companyId, data.optString("name"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
             "Product" -> {
-                fun cName(s: String): String = s.replace("\uFEFF", "").replace("\u200B", "").trim().replace("\\s+".toRegex(), " ").lowercase()
-                fun cBarcode(s: String?): String? {
-                    if (s.isNullOrBlank()) return null
-                    var b = s.replace("\uFEFF", "").replace("\u200B", "").trim()
-                    if (b.endsWith(".0") || b.endsWith(".00")) b = b.substringBefore(".")
-                    return if (b.isBlank()) null else b
-                }
-                val incomingName = data.optString("name")
-                val incomingBarcode = cBarcode(data.stringOrNull("barcode"))
-                val normIncomingName = cName(incomingName)
-                val existingList = database.masterDao().getAllProducts(companyId)
-                // Name matching exists to merge a product this device created offline with the
-                // one the cloud assigned an id to. It is restricted to rows that have never
-                // synced: a row already carrying a server id is a distinct product, and two
-                // real products sharing a name must not collapse into one.
-                val existingProduct = existingList.find { it.id == id }
-                    ?: (if (incomingBarcode != null) existingList.find { cBarcode(it.barcode) == incomingBarcode } else null)
-                    ?: (if (normIncomingName.isNotBlank()) {
-                        existingList.find { cName(it.name) == normIncomingName && it.syncStatus != SyncStatus.SYNCED }
-                    } else null)
-                val targetId = existingProduct?.id ?: id
-                database.masterDao().insertProduct(ProductEntity(targetId, companyId, incomingName, data.optString("categoryId"), data.optLong("purchasePriceMinorUnits"), data.optLong("salePriceMinorUnits"), data.optString("unitType", "PIECE"), incomingBarcode, data.optDouble("minStockLevel"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
+                // Matched by id only. Matching by name or barcode used to fold a product created on
+                // another device into a local one with a different id, so the two devices ended up
+                // with different product lists and that device's bill lines pointed at nothing.
+                // Two products sharing a barcode are now kept apart and reported instead (see
+                // ConflictResolver.preparePulledUpsert).
+                val barcode = data.stringOrNull("barcode")?.replace("\uFEFF", "")?.replace("\u200B", "")?.trim()
+                    ?.let { if (it.endsWith(".0") || it.endsWith(".00")) it.substringBefore(".") else it }?.ifBlank { null }
+                database.masterDao().insertProduct(ProductEntity(id, companyId, data.optString("name"), data.optString("categoryId"), data.optLong("purchasePriceMinorUnits"), data.optLong("salePriceMinorUnits"), data.optString("unitType", "PIECE"), barcode, data.optDouble("minStockLevel", 0.0), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
             }
             "Customer" -> database.masterDao().insertCustomer(CustomerEntity(id, companyId, data.optString("name"), data.stringOrNull("phone"), data.stringOrNull("address"), data.optLong("creditLimitMinorUnits"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
             "Supplier" -> database.masterDao().insertSupplier(SupplierEntity(id, companyId, data.optString("name"), data.stringOrNull("phone"), data.stringOrNull("address"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
@@ -68,6 +54,9 @@ object RecordApplier {
             "CustomerCredit" -> database.masterDao().insertCustomerCredit(CustomerCreditEntity(id = id, companyId = companyId, customerId = data.optString("customerId"), amountMinorUnits = data.optLong("amountMinorUnits"), reason = data.optString("reason"), dateEpochMs = data.optLong("dateEpochMs"), referenceId = data.stringOrNull("referenceId"), syncStatus = SyncStatus.SYNCED))
             "SupplierCredit" -> database.masterDao().insertSupplierCredit(SupplierCreditEntity(id = id, companyId = companyId, supplierId = data.optString("supplierId"), amountMinorUnits = data.optLong("amountMinorUnits"), terms = data.optString("terms"), dueDateEpochMs = data.optLong("dueDateEpochMs"), dateEpochMs = data.optLong("dateEpochMs"), referenceId = data.stringOrNull("referenceId"), syncStatus = SyncStatus.SYNCED))
             "Sale" -> {
+                // A pulled bill replaces its lines wholesale: an edit that dropped a line must not
+                // leave the old line behind.
+                database.saleDao().deleteSaleItems(companyId, id)
                 database.saleDao().insertSale(SaleEntity(id = id, companyId = companyId, billNumber = data.optString("billNumber"), totalMinorUnits = data.optLong("totalMinorUnits"), createdAtEpochMs = data.optLong("createdAtEpochMs"), syncStatus = SyncStatus.SYNCED, customerId = data.stringOrNull("customerId"), paymentMode = data.optString("paymentMode", "CASH"), paidCashMinorUnits = data.optLong("paidCashMinorUnits"), paidUpiMinorUnits = data.optLong("paidUpiMinorUnits"), creditAppliedMinorUnits = data.optLong("creditAppliedMinorUnits"), discountMinorUnits = data.optLong("discountMinorUnits"), revision = data.optLong("revision")))
                 val items = data.optJSONArray("items")
                 if (items != null) database.saleDao().insertItems((0 until items.length()).map { index ->
@@ -76,6 +65,9 @@ object RecordApplier {
                 })
             }
             "Purchase" -> {
+                // purchase_items has no cascade from purchases, so stale lines of an edited
+                // purchase stayed forever and inflated stock and cost reports.
+                database.purchaseDao().deletePurchaseItems(companyId, id)
                 database.purchaseDao().insertPurchase(PurchaseEntity(id = id, companyId = companyId, supplierId = data.optString("supplierId"), totalMinorUnits = data.optLong("totalMinorUnits"), createdAtEpochMs = data.optLong("createdAtEpochMs"), syncStatus = SyncStatus.SYNCED, invoiceNumber = data.stringOrNull("invoiceNumber"), notes = data.stringOrNull("notes"), paymentMode = data.optString("paymentMode", "CASH"), paidCashMinorUnits = data.optLong("paidCashMinorUnits"), paidUpiMinorUnits = data.optLong("paidUpiMinorUnits"), creditAppliedMinorUnits = data.optLong("creditAppliedMinorUnits"), orderNumber = data.stringOrNull("orderNumber"), revision = data.optLong("revision")))
                 val items = data.optJSONArray("items")
                 if (items != null) database.purchaseDao().insertItems((0 until items.length()).map { index ->

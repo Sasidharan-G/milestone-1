@@ -50,33 +50,12 @@ router.patch('/licenses/:companyId', async (req: AuthenticatedRequest, res) => {
   } catch (error) { return sendRouteError(res, req, error); }
 });
 
-// Separate from PATCH /staff/:userId, which only ever targets CASHIER accounts — this is the
-// only way to change the shop OWNER's own cloud tier/expiry (an ADMIN account is not "staff").
-router.patch('/companies/:companyId/cloud-access', async (req: AuthenticatedRequest, res) => {
-  try {
-    const admin = await providers().dataStore.findAdminByCompany(req.params.companyId);
-    if (!admin) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Shop owner account was not found');
-    if (req.body?.isCloudTier !== undefined && typeof req.body.isCloudTier !== 'boolean') throw new AppError(400, 'STAFF_INPUT_INVALID', 'isCloudTier must be a boolean');
-    if (req.body?.cloudAccessGrantedUntilEpochMs !== undefined && req.body.cloudAccessGrantedUntilEpochMs !== null && typeof req.body.cloudAccessGrantedUntilEpochMs !== 'number') {
-      throw new AppError(400, 'STAFF_INPUT_INVALID', 'cloudAccessGrantedUntilEpochMs must be a number or null');
-    }
-    const updated = await providers().dataStore.updateAccountCloudAccess(req.params.companyId, admin.userId, {
-      ...(req.body?.isCloudTier === undefined ? {} : { isCloudTier: req.body.isCloudTier }),
-      ...(req.body?.cloudAccessGrantedUntilEpochMs === undefined ? {} : { cloudAccessGrantedUntilEpochMs: req.body.cloudAccessGrantedUntilEpochMs })
-    });
-    await audit(req, req.user!, 'OWNER_CLOUD_ACCESS_SET_BY_MASTER', admin.userId, { isCloudTier: updated.isCloudTier, cloudAccessGrantedUntilEpochMs: updated.cloudAccessGrantedUntilEpochMs }, req.params.companyId);
-    emitToUser(req.app.get('io'), admin.userId, 'account_changed', { status: updated.status, permissions: updated.permissions });
-    emitToUser(req.app.get('io'), MASTER_USER_ID, 'master_overview_changed', { companyId: req.params.companyId });
-    return res.json({ success: true, user: updated });
-  } catch (error) { return sendRouteError(res, req, error); }
-});
-
 router.delete('/companies/:companyId', async (req: AuthenticatedRequest, res) => {
   try {
     const companyId = req.params.companyId;
-    const overview = await providers().dataStore.adminOverview();
-    const companyUsers = overview.users.filter(user => user.companyId === companyId);
-    if (!companyUsers.length && !overview.licenses.some(license => license.companyId === companyId)) throw new AppError(404, 'COMPANY_NOT_FOUND', 'Company was not found');
+    // Point lookups: adminOverview() scans the whole table, every tenant's sync records included.
+    const [companyUsers, license] = await Promise.all([providers().dataStore.listCompanyUsers(companyId), providers().dataStore.getLicense(companyId)]);
+    if (!companyUsers.length && !license) throw new AppError(404, 'COMPANY_NOT_FOUND', 'Company was not found');
     const backups = await providers().objectStorage.list(companyId);
     await Promise.all(backups.map(backup => providers().objectStorage.delete(companyId, backup.backupId)));
     for (const user of companyUsers) {
@@ -100,15 +79,9 @@ router.patch('/staff/:userId', async (req: AuthenticatedRequest, res) => {
     if (!user) throw new AppError(404, 'STAFF_NOT_FOUND', 'Staff account was not found');
     const status = String(req.body?.status || user.status);
     if (!['ACTIVE', 'INACTIVE', 'REJECTED'].includes(status)) throw new AppError(400, 'STAFF_STATUS_INVALID', 'Staff status is invalid');
-    if (req.body?.isCloudTier !== undefined && typeof req.body.isCloudTier !== 'boolean') throw new AppError(400, 'STAFF_INPUT_INVALID', 'isCloudTier must be a boolean');
-    if (req.body?.cloudAccessGrantedUntilEpochMs !== undefined && req.body.cloudAccessGrantedUntilEpochMs !== null && typeof req.body.cloudAccessGrantedUntilEpochMs !== 'number') {
-      throw new AppError(400, 'STAFF_INPUT_INVALID', 'cloudAccessGrantedUntilEpochMs must be a number or null');
-    }
     const updated = await providers().dataStore.updateStaff(user.companyId, user.userId, {
       status: status as any,
-      permissions: Array.isArray(req.body?.permissions) ? req.body.permissions.map(String) : user.permissions,
-      ...(req.body?.isCloudTier === undefined ? {} : { isCloudTier: req.body.isCloudTier }),
-      ...(req.body?.cloudAccessGrantedUntilEpochMs === undefined ? {} : { cloudAccessGrantedUntilEpochMs: req.body.cloudAccessGrantedUntilEpochMs })
+      permissions: Array.isArray(req.body?.permissions) ? req.body.permissions.map(String) : user.permissions
     });
     if (status !== 'ACTIVE') {
       await providers().identityProvider.revokeUser(user.userId);
