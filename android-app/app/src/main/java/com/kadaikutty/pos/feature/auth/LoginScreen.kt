@@ -58,6 +58,8 @@ fun LoginScreenContent(
     var masterResetTargetPhone by remember { mutableStateOf("") }
     var masterResetLoading by remember { mutableStateOf(false) }
     var forgotPasswordVisible by remember { mutableStateOf(false) }
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
 
     LaunchedEffect(state.complete) {
         if (state.complete) {
@@ -115,7 +117,7 @@ fun LoginScreenContent(
 
                 OutlinedTextField(
                     value = state.password,
-                    onValueChange = { viewModel.updatePassword(com.kadaikutty.pos.core.common.InputRules.digits(it, com.kadaikutty.pos.core.common.InputRules.PIN_LENGTH)) },
+                    onValueChange = { viewModel.updatePassword(it.filterNot(Char::isWhitespace).take(64)) },
                     label = { Text("Password (6-Digit PIN)", color = Color.White.copy(alpha = 0.8f)) },
                     placeholder = { Text("Enter 6-digit PIN or existing password", color = Color.White.copy(alpha = 0.5f)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
@@ -177,7 +179,12 @@ fun LoginScreenContent(
 
 
                 Button(
-                    onClick = { triggerAnimation { viewModel.login() } },
+                    onClick = {
+                        // The keyboard stayed up over the result (and the offline message) after signing in.
+                        keyboardController?.hide()
+                        focusManager.clearFocus()
+                        triggerAnimation { viewModel.login() }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),

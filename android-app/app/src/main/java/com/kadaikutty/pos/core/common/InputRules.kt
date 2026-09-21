@@ -14,7 +14,7 @@ object InputRules {
     const val OTP_LENGTH = 6
     const val GSTIN_LENGTH = 15
     const val NAME_MAX = 60
-    const val TEXT_MAX = 200
+    const val TEXT_MAX = 500
     const val EMAIL_MAX = 100
     const val BARCODE_MAX = 48
     private const val MONEY_WHOLE_DIGITS = 9

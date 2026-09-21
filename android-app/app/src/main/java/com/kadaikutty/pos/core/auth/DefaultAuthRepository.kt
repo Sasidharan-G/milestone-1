@@ -101,7 +101,7 @@ class DefaultAuthRepository(
         sessionSecurityManager.resetSessionTermination()
         val normalized = normalizePhone(username)
         val credential = credentials.getCredential(normalized).first()
-            ?: return LoginResult.Failure("No internet. Sign in once with internet on this device to use it offline.")
+            ?: return LoginResult.Failure("No internet, and this number has not signed in on this device before. Check the mobile number, or connect to the internet and sign in once.")
         if (!verifier.matches(credential, password)) return LoginResult.Failure("Invalid mobile number or password")
         tenantDatabaseManager?.setActiveCompany(credential.companyId)
         val local = getDb(credential.companyId).userDao().getUserById(credential.userId)

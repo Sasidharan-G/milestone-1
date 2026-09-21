@@ -127,6 +127,10 @@ data class LoginUiState(
             mutableState.update { it.copy(error = "Mobile Number and password are required") }
             return
         }
+        com.kadaikutty.pos.core.common.InputRules.checkPhone(cleanPhone, required = true)?.let { problem ->
+            mutableState.update { it.copy(error = problem) }
+            return
+        }
 
         viewModelScope.launch {
             mutableState.update { it.copy(loading = true, error = null) }

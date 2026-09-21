@@ -358,8 +358,12 @@ fun RegisterScreenContent(
                     }
                 )
 
+                val registerKeyboard = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+                val registerFocus = androidx.compose.ui.platform.LocalFocusManager.current
                 Button(
                     onClick = {
+                        registerKeyboard?.hide()
+                        registerFocus.clearFocus()
                         if (activity != null) {
                             triggerAnimation { viewModel.register(activity) }
                         } else {

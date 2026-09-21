@@ -69,6 +69,7 @@ fun OrbitOtpVerificationView(
     verifyButtonText: String = "Verify & Proceed"
 ) {
     val focusRequester = remember { FocusRequester() }
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
     val isComplete = otpValue.length == otpLength
 
     // Auto-focus keyboard on load
@@ -285,7 +286,10 @@ fun OrbitOtpVerificationView(
                     interactionSource = remember { MutableInteractionSource() },
                     indication = null
                 ) {
+                    // Back closes the keyboard but leaves the hidden field focused, so asking for
+                    // focus again does nothing; the keyboard has to be asked for directly.
                     focusRequester.requestFocus()
+                    keyboardController?.show()
                 },
             contentAlignment = Alignment.Center
         ) {

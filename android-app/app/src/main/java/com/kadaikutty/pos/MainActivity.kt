@@ -68,7 +68,12 @@ class MainActivity : FragmentActivity() {
                     null
                 } catch (e: Exception) { e }
             }
-            if (failure == null) setContent { BillingApp() }
+            // The app draws edge to edge, so the window does not shrink for the keyboard by itself.
+            // Padding the whole app by the keyboard's height keeps the screen above it, and a
+            // focused field inside a scrolling screen is then scrolled into view.
+            if (failure == null) setContent {
+                Box(modifier = Modifier.fillMaxSize().imePadding()) { BillingApp() }
+            }
             else {
                 android.util.Log.e("DatabaseStartup", "Database opening failed; original files preserved", failure)
                 android.app.AlertDialog.Builder(this@MainActivity)
