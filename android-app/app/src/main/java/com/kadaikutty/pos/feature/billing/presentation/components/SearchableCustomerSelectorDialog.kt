@@ -213,7 +213,7 @@ fun SearchableCustomerSelectorDialog(
                     ) {
                         Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(18.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("+ New Customer", maxLines = 1)
+                        Text("New Customer", maxLines = 1)
                     }
                 }
 
