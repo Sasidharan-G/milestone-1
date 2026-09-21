@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.Flow
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertCustomerCredit(credit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity)
     @Query("DELETE FROM sale_items WHERE companyId = :companyId") suspend fun deleteSaleItemsByCompany(companyId: String)
     @Query("DELETE FROM stock_movements WHERE companyId = :companyId") suspend fun deleteStockMovementsByCompany(companyId: String)
+    @Query("SELECT * FROM stock_movements WHERE companyId = :companyId") suspend fun allStockMovements(companyId: String): List<StockMovementEntity>
 
     @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
     fun getSales(companyId: String): Flow<List<SaleEntity>>

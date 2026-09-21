@@ -42,14 +42,14 @@ fun AddCustomerDialog(
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 OutlinedTextField(
                     value = newCustName,
-                    onValueChange = { newCustName = it },
+                    onValueChange = { newCustName = com.kadaikutty.pos.core.common.InputRules.name(it) },
                     label = { Text("Customer Name *") },
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = newCustPhone,
-                    onValueChange = { newCustPhone = it },
+                    onValueChange = { newCustPhone = com.kadaikutty.pos.core.common.InputRules.phone(it) },
                     label = { Text("Phone Number") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     shape = RoundedCornerShape(10.dp),
@@ -57,14 +57,14 @@ fun AddCustomerDialog(
                 )
                 OutlinedTextField(
                     value = newCustAddress,
-                    onValueChange = { newCustAddress = it },
+                    onValueChange = { newCustAddress = com.kadaikutty.pos.core.common.InputRules.text(it) },
                     label = { Text("Address (Optional)") },
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth()
                 )
                 OutlinedTextField(
                     value = newCustOpeningDue,
-                    onValueChange = { newCustOpeningDue = it },
+                    onValueChange = { newCustOpeningDue = com.kadaikutty.pos.core.common.InputRules.money(it) },
                     label = { Text("Previous / Opening Due (₹)") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     shape = RoundedCornerShape(10.dp),
@@ -77,8 +77,13 @@ fun AddCustomerDialog(
                 enabled = !isSubmitting,
                 onClick = {
                     if (isSubmitting) return@Button
-                    if (newCustName.isBlank()) {
-                        android.widget.Toast.makeText(context, "Please enter customer name", android.widget.Toast.LENGTH_SHORT).show()
+                    val problem = com.kadaikutty.pos.core.common.InputRules.firstError(
+                        com.kadaikutty.pos.core.common.InputRules.checkName(newCustName, "Customer name"),
+                        com.kadaikutty.pos.core.common.InputRules.checkPhone(newCustPhone),
+                        com.kadaikutty.pos.core.common.InputRules.checkMoney(newCustOpeningDue, "Opening due", required = false, allowZero = true)
+                    )
+                    if (problem != null) {
+                        android.widget.Toast.makeText(context, problem, android.widget.Toast.LENGTH_SHORT).show()
                     } else {
                         isSubmitting = true
                         val openingDueVal = CheckoutMath.rupeesToMinorUnits(newCustOpeningDue.toDoubleOrNull() ?: 0.0)

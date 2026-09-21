@@ -94,7 +94,7 @@ fun LoginScreenContent(
 
                 OutlinedTextField(
                     value = state.mobileNumber,
-                    onValueChange = { viewModel.updateMobileNumber(it) },
+                    onValueChange = { viewModel.updateMobileNumber(com.kadaikutty.pos.core.common.InputRules.phone(it)) },
                     label = { Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), color = Color.White.copy(alpha = 0.8f)) },
                     placeholder = { Text(stringResource(com.kadaikutty.pos.R.string.enter_10_digit_mobile), color = Color.White.copy(alpha = 0.5f)) },
                     leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
@@ -115,7 +115,7 @@ fun LoginScreenContent(
 
                 OutlinedTextField(
                     value = state.password,
-                    onValueChange = { viewModel.updatePassword(it) },
+                    onValueChange = { viewModel.updatePassword(com.kadaikutty.pos.core.common.InputRules.digits(it, com.kadaikutty.pos.core.common.InputRules.PIN_LENGTH)) },
                     label = { Text("Password (6-Digit PIN)", color = Color.White.copy(alpha = 0.8f)) },
                     placeholder = { Text("Enter 6-digit PIN or existing password", color = Color.White.copy(alpha = 0.5f)) },
                     leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },

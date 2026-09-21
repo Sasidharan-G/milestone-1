@@ -276,7 +276,7 @@ fun BillingApp() {
                                         Text("Please count and enter the physical cash currently in the drawer to close register and tally daily cash.", fontSize = 13.sp)
                                         OutlinedTextField(
                                             value = shiftCashInput,
-                                            onValueChange = { shiftCashInput = it },
+                                            onValueChange = { shiftCashInput = com.kadaikutty.pos.core.common.InputRules.money(it) },
                                             label = { Text("Physical Cash Amount (₹)") },
                                             keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal),
                                             modifier = Modifier.fillMaxWidth(),

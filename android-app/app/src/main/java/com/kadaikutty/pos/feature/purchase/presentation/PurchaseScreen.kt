@@ -113,7 +113,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                     Text("Unit Cost: ${line.unitValue}", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
                     OutlinedTextField(
                         value = inputQty,
-                        onValueChange = { inputQty = it },
+                        onValueChange = { inputQty = com.kadaikutty.pos.core.common.InputRules.quantity(it, isDec) },
                         label = { Text(if (isDec) "Quantity (Kg/L)" else "Quantity (Pieces)") },
                         keyboardOptions = KeyboardOptions(keyboardType = if (isDec) KeyboardType.Decimal else KeyboardType.Number),
                         shape = RoundedCornerShape(12.dp),
@@ -242,7 +242,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
 
                         OutlinedTextField(
                             value = supplierInvoiceNumber,
-                            onValueChange = { supplierInvoiceNumber = it },
+                            onValueChange = { supplierInvoiceNumber = com.kadaikutty.pos.core.common.InputRules.text(it, 40) },
                             label = { Text("Invoice No.", fontSize = 11.sp) },
                             shape = RoundedCornerShape(10.dp),
                             modifier = Modifier.weight(1f),
@@ -339,7 +339,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
 
                         OutlinedTextField(
                             value = quantityText,
-                            onValueChange = { quantityText = it },
+                            onValueChange = { quantityText = com.kadaikutty.pos.core.common.InputRules.quantity(it, selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER") },
                             label = { Text("Qty", fontSize = 10.sp) },
                             keyboardOptions = KeyboardOptions(keyboardType = if (selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER") KeyboardType.Decimal else KeyboardType.Number),
                             shape = RoundedCornerShape(8.dp),
@@ -374,7 +374,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
 
                         OutlinedTextField(
                             value = costText,
-                            onValueChange = { costText = it },
+                            onValueChange = { costText = com.kadaikutty.pos.core.common.InputRules.money(it) },
                             label = { Text("Cost", fontSize = 10.sp) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             shape = RoundedCornerShape(8.dp),
@@ -629,7 +629,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                     } else {
                                         OutlinedTextField(
                                             value = splitCashText,
-                                            onValueChange = { splitCashText = it },
+                                            onValueChange = { splitCashText = com.kadaikutty.pos.core.common.InputRules.money(it) },
                                             label = { Text("Cash Paid (₹)") },
                                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                             shape = RoundedCornerShape(10.dp),
@@ -638,7 +638,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
 
                                         OutlinedTextField(
                                             value = splitUpiText,
-                                            onValueChange = { splitUpiText = it },
+                                            onValueChange = { splitUpiText = com.kadaikutty.pos.core.common.InputRules.money(it) },
                                             label = { Text("UPI / Online Paid (₹)") },
                                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                                             shape = RoundedCornerShape(10.dp),

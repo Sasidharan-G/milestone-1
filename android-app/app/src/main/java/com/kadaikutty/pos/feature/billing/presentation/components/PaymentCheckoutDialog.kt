@@ -139,7 +139,7 @@ fun PaymentCheckoutDialog(
                     
                     OutlinedTextField(
                         value = cashInput, 
-                        onValueChange = { cashInput = it }, 
+                        onValueChange = { cashInput = com.kadaikutty.pos.core.common.InputRules.money(it) }, 
                         label = { Text("Cash Amount Received") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),
@@ -147,7 +147,7 @@ fun PaymentCheckoutDialog(
                     )
                     OutlinedTextField(
                         value = upiInput, 
-                        onValueChange = { upiInput = it }, 
+                        onValueChange = { upiInput = com.kadaikutty.pos.core.common.InputRules.money(it) }, 
                         label = { Text("UPI/GPay Amount Received") },
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                         modifier = Modifier.fillMaxWidth(),

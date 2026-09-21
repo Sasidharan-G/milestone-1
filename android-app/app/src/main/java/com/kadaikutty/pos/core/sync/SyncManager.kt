@@ -364,9 +364,9 @@ class SyncManager(
             enqueuePurchase(purchase, items)
         }
         
-        // Enqueue StockMovements
-        // Ideally we'd have a getStockMovements query, but we can skip bulk enqueue for stock movements
-        // as they are created with sales and purchases. But we could fetch all via MasterDao or similar if needed.
+        // Stock rows too: after a restore they may exist nowhere but here, and without them every
+        // other device would show the wrong stock for the restored bills and purchases.
+        database.saleDao().allStockMovements(companyId).forEach { enqueueStockMovement(it, "INSERT") }
         
         // Trigger the scheduler immediately
         requestSafely()

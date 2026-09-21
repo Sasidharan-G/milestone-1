@@ -1,5 +1,6 @@
 package com.kadaikutty.pos.feature.masters.presentation
 
+import com.kadaikutty.pos.core.common.InputRules
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.kadaikutty.pos.core.ui.CameraBarcodeScannerDialog
@@ -232,7 +233,7 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                             Text("Create Category", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = name,
-                                onValueChange = { name = it },
+                                onValueChange = { name = InputRules.name(it) },
                                 label = { Text("Category Name", fontSize = 13.sp) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(8.dp),
@@ -333,7 +334,7 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
                         Text("Create Category", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = name,
-                            onValueChange = { name = it },
+                            onValueChange = { name = InputRules.name(it) },
                             label = { Text("Category Name", fontSize = 13.sp) },
                             singleLine = true,
                             shape = RoundedCornerShape(8.dp),
@@ -664,7 +665,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             Text("Create Product", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = name,
-                                onValueChange = { name = it },
+                                onValueChange = { name = InputRules.name(it) },
                                 label = { Text("Product Name", fontSize = 13.sp) },
                                 singleLine = true,
                                 shape = RoundedCornerShape(8.dp),
@@ -705,7 +706,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedTextField(
                                     value = purchasePrice,
-                                    onValueChange = { purchasePrice = it },
+                                    onValueChange = { purchasePrice = InputRules.money(it) },
                                     label = { Text("Pur. Price (₹)") },
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -714,7 +715,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 )
                                 OutlinedTextField(
                                     value = salePrice,
-                                    onValueChange = { salePrice = it },
+                                    onValueChange = { salePrice = InputRules.money(it) },
                                     label = { Text("Sale Price (₹)") },
                                     singleLine = true,
                                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -730,7 +731,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             ) {
                                 OutlinedTextField(
                                     value = barcode,
-                                    onValueChange = { barcode = it },
+                                    onValueChange = { barcode = InputRules.barcode(it) },
                                     label = { Text("Barcode / SKU (Optional)") },
                                     shape = RoundedCornerShape(12.dp),
                                     modifier = Modifier.weight(1f),
@@ -753,7 +754,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                             OutlinedTextField(
                                 value = minStockLevel,
-                                onValueChange = { minStockLevel = it },
+                                onValueChange = { minStockLevel = InputRules.quantity(it, allowDecimals = true) },
                                 label = { Text("Low Stock Alert Threshold (Optional)") },
                                 placeholder = { Text("0 = No alert") },
                                 singleLine = true,
@@ -1005,7 +1006,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         Text("Create Product", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = name,
-                            onValueChange = { name = it },
+                            onValueChange = { name = InputRules.name(it) },
                             label = { Text("Product Name", fontSize = 13.sp) },
                             singleLine = true,
                             shape = RoundedCornerShape(8.dp),
@@ -1045,7 +1046,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                         OutlinedTextField(
                             value = purchasePrice,
-                            onValueChange = { purchasePrice = it },
+                            onValueChange = { purchasePrice = InputRules.money(it) },
                             label = { Text("Purchase Price (₹)") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
@@ -1055,7 +1056,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                             OutlinedTextField(
                                 value = salePrice,
-                                onValueChange = { salePrice = it },
+                                onValueChange = { salePrice = InputRules.money(it) },
                                 label = { Text("Sale Price (₹)") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
@@ -1065,7 +1066,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                             OutlinedTextField(
                                 value = barcode,
-                                onValueChange = { barcode = it },
+                                onValueChange = { barcode = InputRules.barcode(it) },
                                 label = { Text("Barcode / EAN (Optional)") },
                                 singleLine = true,
                                 trailingIcon = {
@@ -1079,7 +1080,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
 
                             OutlinedTextField(
                                 value = minStockLevel,
-                                onValueChange = { minStockLevel = it },
+                                onValueChange = { minStockLevel = InputRules.quantity(it, allowDecimals = true) },
                                 label = { Text("Low Stock Alert Threshold (Optional)") },
                                 placeholder = { Text("0 = No alert") },
                                 singleLine = true,
@@ -1313,7 +1314,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             Text("Create Customer", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = name,
-                                onValueChange = { name = it },
+                                onValueChange = { name = InputRules.name(it) },
                                 label = { Text("Customer Name") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
@@ -1321,7 +1322,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             )
                             OutlinedTextField(
                                 value = phone,
-                                onValueChange = { phone = it },
+                                onValueChange = { phone = InputRules.phone(it) },
                                 label = { Text("Phone Number") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -1330,7 +1331,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             )
                             OutlinedTextField(
                                 value = address,
-                                onValueChange = { address = it },
+                                onValueChange = { address = InputRules.text(it) },
                                 label = { Text("Address (Optional)") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
@@ -1338,7 +1339,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                             )
                             OutlinedTextField(
                                 value = initialDebtText,
-                                onValueChange = { initialDebtText = it },
+                                onValueChange = { initialDebtText = InputRules.money(it) },
                                 label = { Text("Opening Debt / Balance (₹)") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1486,7 +1487,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         Text("Create Customer", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = name,
-                            onValueChange = { name = it },
+                            onValueChange = { name = InputRules.name(it) },
                             label = { Text("Customer Name") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
@@ -1494,7 +1495,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         )
                         OutlinedTextField(
                             value = phone,
-                            onValueChange = { phone = it },
+                            onValueChange = { phone = InputRules.phone(it) },
                             label = { Text("Phone Number") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -1503,7 +1504,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         )
                         OutlinedTextField(
                             value = address,
-                            onValueChange = { address = it },
+                            onValueChange = { address = InputRules.text(it) },
                             label = { Text("Address (Optional)") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
@@ -1511,7 +1512,7 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
                         )
                         OutlinedTextField(
                             value = initialDebtText,
-                            onValueChange = { initialDebtText = it },
+                            onValueChange = { initialDebtText = InputRules.money(it) },
                             label = { Text("Opening Debt / Balance (₹)") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -1727,7 +1728,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             Text("Create Supplier", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = name,
-                                onValueChange = { name = it },
+                                onValueChange = { name = InputRules.name(it) },
                                 label = { Text("Supplier Name") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
@@ -1735,7 +1736,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             )
                             OutlinedTextField(
                                 value = phone,
-                                onValueChange = { phone = it },
+                                onValueChange = { phone = InputRules.phone(it) },
                                 label = { Text("Phone Number") },
                                 singleLine = true,
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -1744,7 +1745,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                             )
                             OutlinedTextField(
                                 value = address,
-                                onValueChange = { address = it },
+                                onValueChange = { address = InputRules.text(it) },
                                 label = { Text("Address") },
                                 singleLine = true,
                                 shape = RoundedCornerShape(12.dp),
@@ -1892,7 +1893,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                         Text("Create Supplier", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = name,
-                            onValueChange = { name = it },
+                            onValueChange = { name = InputRules.name(it) },
                             label = { Text("Supplier Name") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
@@ -1900,7 +1901,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                         )
                         OutlinedTextField(
                             value = phone,
-                            onValueChange = { phone = it },
+                            onValueChange = { phone = InputRules.phone(it) },
                             label = { Text("Phone Number") },
                             singleLine = true,
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -1909,7 +1910,7 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                         )
                         OutlinedTextField(
                             value = address,
-                            onValueChange = { address = it },
+                            onValueChange = { address = InputRules.text(it) },
                             label = { Text("Address") },
                             singleLine = true,
                             shape = RoundedCornerShape(12.dp),
@@ -2114,14 +2115,14 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                             Text("Create Expense", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             OutlinedTextField(
                                 value = description,
-                                onValueChange = { description = it },
+                                onValueChange = { description = InputRules.text(it) },
                                 label = { Text("Description") },
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
                             OutlinedTextField(
                                 value = amountText,
-                                onValueChange = { amountText = it },
+                                onValueChange = { amountText = InputRules.money(it) },
                                 label = { Text("Amount (e.g. 150.00)") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 shape = RoundedCornerShape(12.dp),
@@ -2222,14 +2223,14 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                         Text("Create Expense", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         OutlinedTextField(
                             value = description,
-                            onValueChange = { description = it },
+                            onValueChange = { description = InputRules.text(it) },
                             label = { Text("Description") },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.fillMaxWidth()
                         )
                         OutlinedTextField(
                             value = amountText,
-                            onValueChange = { amountText = it },
+                            onValueChange = { amountText = InputRules.money(it) },
                             label = { Text("Amount (e.g. 150.00)") },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                             shape = RoundedCornerShape(12.dp),
@@ -2464,7 +2465,7 @@ fun CustomerCreditDetailDialog(
                             Text("Extend Credit Entry", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             OutlinedTextField(
                                 value = amountText,
-                                onValueChange = { amountText = it },
+                                onValueChange = { amountText = InputRules.money(it) },
                                 label = { Text("Amount") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth(),
@@ -2472,7 +2473,7 @@ fun CustomerCreditDetailDialog(
                             )
                             OutlinedTextField(
                                 value = reasonText,
-                                onValueChange = { reasonText = it },
+                                onValueChange = { reasonText = InputRules.text(it) },
                                 label = { Text("Reason / Description") },
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = !isActionSubmitting
@@ -2516,7 +2517,7 @@ fun CustomerCreditDetailDialog(
                             Text("Receive Payment (Settle Credit)", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             OutlinedTextField(
                                 value = amountText,
-                                onValueChange = { amountText = it },
+                                onValueChange = { amountText = InputRules.money(it) },
                                 label = { Text("Payment Amount") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth(),
@@ -2524,7 +2525,7 @@ fun CustomerCreditDetailDialog(
                             )
                             OutlinedTextField(
                                 value = reasonText,
-                                onValueChange = { reasonText = it },
+                                onValueChange = { reasonText = InputRules.text(it) },
                                 label = { Text("Notes (e.g. Receipt No, Cash/UPI)") },
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = !isActionSubmitting
@@ -2569,7 +2570,7 @@ fun CustomerCreditDetailDialog(
                             Text("Adjust Credit Limit", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             OutlinedTextField(
                                 value = limitText,
-                                onValueChange = { limitText = it },
+                                onValueChange = { limitText = InputRules.money(it) },
                                 label = { Text("Max Credit Limit") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth(),
@@ -2792,7 +2793,7 @@ fun SupplierCreditDetailDialog(
                             Text("Record Received Credit", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             OutlinedTextField(
                                 value = amountText,
-                                onValueChange = { amountText = it },
+                                onValueChange = { amountText = InputRules.money(it) },
                                 label = { Text("Credit Amount") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth(),
@@ -2800,14 +2801,14 @@ fun SupplierCreditDetailDialog(
                             )
                             OutlinedTextField(
                                 value = termsText,
-                                onValueChange = { termsText = it },
+                                onValueChange = { termsText = InputRules.text(it, 60) },
                                 label = { Text("Terms (e.g. Net 30, Cash on Del)") },
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = !isActionSubmitting
                             )
                             OutlinedTextField(
                                 value = repaymentDaysText,
-                                onValueChange = { repaymentDaysText = it },
+                                onValueChange = { repaymentDaysText = InputRules.digits(it, 4) },
                                 label = { Text("Repayment Due Days") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth(),
@@ -2855,7 +2856,7 @@ fun SupplierCreditDetailDialog(
                             Text("Deduct / Repay Supplier Credit", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                             OutlinedTextField(
                                 value = amountText,
-                                onValueChange = { amountText = it },
+                                onValueChange = { amountText = InputRules.money(it) },
                                 label = { Text("Payment Amount") },
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                                 modifier = Modifier.fillMaxWidth(),
@@ -2863,7 +2864,7 @@ fun SupplierCreditDetailDialog(
                             )
                             OutlinedTextField(
                                 value = termsText,
-                                onValueChange = { termsText = it },
+                                onValueChange = { termsText = InputRules.text(it, 60) },
                                 label = { Text("Payment Reference / Notes") },
                                 modifier = Modifier.fillMaxWidth(),
                                 enabled = !isActionSubmitting
@@ -3288,7 +3289,7 @@ fun CategoryEditDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { name = InputRules.name(it) },
                     label = { Text("Category Name") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp)
@@ -3372,7 +3373,7 @@ fun ProductEditDialog(
             ) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { name = InputRules.name(it) },
                     label = { Text("Product Name") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -3412,7 +3413,7 @@ fun ProductEditDialog(
                 
                 OutlinedTextField(
                     value = purchasePrice,
-                    onValueChange = { purchasePrice = it },
+                    onValueChange = { purchasePrice = InputRules.money(it) },
                     label = { Text("Purchase Price") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -3422,7 +3423,7 @@ fun ProductEditDialog(
                 
                 OutlinedTextField(
                     value = salePrice,
-                    onValueChange = { salePrice = it },
+                    onValueChange = { salePrice = InputRules.money(it) },
                     label = { Text("Sale Price") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -3432,7 +3433,7 @@ fun ProductEditDialog(
 
                 OutlinedTextField(
                     value = barcode,
-                    onValueChange = { barcode = it },
+                    onValueChange = { barcode = InputRules.barcode(it) },
                     label = { Text("Barcode / EAN (Optional)") },
                     trailingIcon = {
                         IconButton(
@@ -3449,7 +3450,7 @@ fun ProductEditDialog(
                 
                 OutlinedTextField(
                     value = minStockLevel,
-                    onValueChange = { minStockLevel = it },
+                    onValueChange = { minStockLevel = InputRules.quantity(it, allowDecimals = true) },
                     label = { Text("Low Stock Alert Threshold (Optional)") },
                     placeholder = { Text("0 = No alert") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
@@ -3564,7 +3565,7 @@ fun CustomerEditDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { name = InputRules.name(it) },
                     label = { Text("Customer Name") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -3572,7 +3573,7 @@ fun CustomerEditDialog(
                 )
                 OutlinedTextField(
                     value = phone,
-                    onValueChange = { phone = it },
+                    onValueChange = { phone = InputRules.phone(it) },
                     label = { Text("Phone Number") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth(),
@@ -3581,7 +3582,7 @@ fun CustomerEditDialog(
                 )
                 OutlinedTextField(
                     value = address,
-                    onValueChange = { address = it },
+                    onValueChange = { address = InputRules.text(it) },
                     label = { Text("Address") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -3656,7 +3657,7 @@ fun SupplierEditDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = name,
-                    onValueChange = { name = it },
+                    onValueChange = { name = InputRules.name(it) },
                     label = { Text("Supplier Name") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -3664,7 +3665,7 @@ fun SupplierEditDialog(
                 )
                 OutlinedTextField(
                     value = phone,
-                    onValueChange = { phone = it },
+                    onValueChange = { phone = InputRules.phone(it) },
                     label = { Text("Phone Number") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
                     modifier = Modifier.fillMaxWidth(),
@@ -3673,7 +3674,7 @@ fun SupplierEditDialog(
                 )
                 OutlinedTextField(
                     value = address,
-                    onValueChange = { address = it },
+                    onValueChange = { address = InputRules.text(it) },
                     label = { Text("Address") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -3747,7 +3748,7 @@ fun ExpenseEditDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedTextField(
                     value = amount,
-                    onValueChange = { amount = it },
+                    onValueChange = { amount = InputRules.money(it) },
                     label = { Text("Amount") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -3756,7 +3757,7 @@ fun ExpenseEditDialog(
                 )
                 OutlinedTextField(
                     value = description,
-                    onValueChange = { description = it },
+                    onValueChange = { description = InputRules.text(it) },
                     label = { Text("Description") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
@@ -3879,7 +3880,7 @@ fun StockAdjustmentDialog(
             Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = newStockText,
-                    onValueChange = { newStockText = it },
+                    onValueChange = { newStockText = InputRules.quantity(it, allowDecimals = true) },
                     label = { Text("New Physical Stock Count") },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
@@ -3902,7 +3903,7 @@ fun StockAdjustmentDialog(
 
                 OutlinedTextField(
                     value = customReason,
-                    onValueChange = { customReason = it },
+                    onValueChange = { customReason = InputRules.text(it) },
                     label = { Text("Note / Comment (Optional)") },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),

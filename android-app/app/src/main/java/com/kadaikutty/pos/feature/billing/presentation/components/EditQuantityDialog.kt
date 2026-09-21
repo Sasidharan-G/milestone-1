@@ -33,7 +33,7 @@ fun EditQuantityDialog(
                 Text("Unit Price: ${line.unitPrice}", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
                 OutlinedTextField(
                     value = inputQty,
-                    onValueChange = { inputQty = it },
+                    onValueChange = { inputQty = com.kadaikutty.pos.core.common.InputRules.quantity(it, line.unitType == "KG" || line.unitType == "LITER") },
                     label = { Text(if (line.unitType == "KG" || line.unitType == "LITER") "Quantity (Kg/L)" else "Quantity (Pieces)") },
                     keyboardOptions = KeyboardOptions(keyboardType = if (line.unitType == "KG" || line.unitType == "LITER") KeyboardType.Decimal else KeyboardType.Number),
                     shape = RoundedCornerShape(12.dp),

@@ -10,6 +10,7 @@ import com.kadaikutty.pos.core.sync.SyncStatus
 import com.kadaikutty.pos.core.sync.SyncManager
 import com.kadaikutty.pos.core.common.CheckoutMath
 import com.kadaikutty.pos.core.common.newRecordId
+import com.kadaikutty.pos.core.common.InputRules
 import com.kadaikutty.pos.feature.masters.data.CategoryEntity
 import com.kadaikutty.pos.feature.masters.data.ProductEntity
 import com.kadaikutty.pos.feature.masters.data.CustomerEntity
@@ -943,6 +944,10 @@ class CustomerViewModel @Inject constructor(
             return
         }
         val cleanPhone = phone?.trim()?.takeIf { it.isNotBlank() }
+        InputRules.firstError(InputRules.checkName(cleanName), InputRules.checkPhone(cleanPhone.orEmpty()))?.let {
+            onError(IllegalArgumentException(it))
+            return
+        }
         viewModelScope.launch {
             try {
                 SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Customer")
@@ -1001,6 +1006,10 @@ class CustomerViewModel @Inject constructor(
             return
         }
         val cleanPhone = newPhone?.trim()?.takeIf { it.isNotBlank() }
+        InputRules.firstError(InputRules.checkName(cleanName), InputRules.checkPhone(cleanPhone.orEmpty()))?.let {
+            onError(IllegalArgumentException(it))
+            return
+        }
         val cleanAddress = newAddress?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {
@@ -1172,6 +1181,10 @@ class SupplierViewModel @Inject constructor(
             return
         }
         val cleanPhone = phone?.trim()?.takeIf { it.isNotBlank() }
+        InputRules.firstError(InputRules.checkName(cleanName), InputRules.checkPhone(cleanPhone.orEmpty()))?.let {
+            onError(IllegalArgumentException(it))
+            return
+        }
         viewModelScope.launch {
             try {
                 SyncWritePolicy.requireCreate(sessionStore.activeSession.first(), "Supplier")
@@ -1214,6 +1227,10 @@ class SupplierViewModel @Inject constructor(
             return
         }
         val cleanPhone = newPhone?.trim()?.takeIf { it.isNotBlank() }
+        InputRules.firstError(InputRules.checkName(cleanName), InputRules.checkPhone(cleanPhone.orEmpty()))?.let {
+            onError(IllegalArgumentException(it))
+            return
+        }
         val cleanAddress = newAddress?.trim()?.takeIf { it.isNotBlank() }
         viewModelScope.launch {
             try {

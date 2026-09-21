@@ -383,7 +383,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                         // Quantity Input Box
                         OutlinedTextField(
                             value = quantityText,
-                            onValueChange = { quantityText = it },
+                            onValueChange = { quantityText = com.kadaikutty.pos.core.common.InputRules.quantity(it, selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER") },
                             label = { Text("Qty", style = MaterialTheme.typography.labelSmall) },
                             keyboardOptions = KeyboardOptions(keyboardType = if (selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER") KeyboardType.Decimal else KeyboardType.Number),
                             shape = MaterialTheme.shapes.small,
@@ -418,7 +418,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                         // Price Input Box
                         OutlinedTextField(
                             value = priceText,
-                            onValueChange = { priceText = it },
+                            onValueChange = { priceText = com.kadaikutty.pos.core.common.InputRules.money(it) },
                             label = { Text("Price", style = MaterialTheme.typography.labelSmall) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             shape = MaterialTheme.shapes.small,
@@ -605,7 +605,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         OutlinedTextField(
                             value = discountInput,
-                            onValueChange = { viewModel.setDiscountInput(it) },
+                            onValueChange = { viewModel.setDiscountInput(com.kadaikutty.pos.core.common.InputRules.money(it)) },
                             label = { Text("Discount(₹)", style = MaterialTheme.typography.bodySmall) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             modifier = Modifier.weight(1f).padding(end = 12.dp),

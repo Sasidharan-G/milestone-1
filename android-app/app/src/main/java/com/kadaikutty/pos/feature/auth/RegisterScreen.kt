@@ -71,8 +71,13 @@ class RegisterViewModel @Inject constructor(
             return
         }
         val cleanPhone = current.mobileNumber.trim().replace(" ", "").replace("-", "")
-        if (cleanPhone.length < 10 || !cleanPhone.all { it.isDigit() || it == '+' }) {
-            _state.update { it.copy(error = "Please provide a valid 10-digit mobile number") }
+        val problem = com.kadaikutty.pos.core.common.InputRules.firstError(
+            com.kadaikutty.pos.core.common.InputRules.checkPhone(cleanPhone, required = true),
+            com.kadaikutty.pos.core.common.InputRules.checkName(current.businessName, "Shop name"),
+            com.kadaikutty.pos.core.common.InputRules.checkName(current.ownerName, "Owner name")
+        )
+        if (problem != null) {
+            _state.update { it.copy(error = problem) }
             return
         }
         if (current.passwordString.length != 6 || !current.passwordString.all { it.isDigit() }) {
@@ -115,8 +120,13 @@ class RegisterViewModel @Inject constructor(
             return
         }
         val cleanPhone = current.mobileNumber.trim().replace(" ", "").replace("-", "")
-        if (cleanPhone.length < 10 || !cleanPhone.all { it.isDigit() || it == '+' }) {
-            _state.update { it.copy(error = "Please provide a valid 10-digit mobile number") }
+        val problem = com.kadaikutty.pos.core.common.InputRules.firstError(
+            com.kadaikutty.pos.core.common.InputRules.checkPhone(cleanPhone, required = true),
+            com.kadaikutty.pos.core.common.InputRules.checkName(current.businessName, "Shop name"),
+            com.kadaikutty.pos.core.common.InputRules.checkName(current.ownerName, "Owner name")
+        )
+        if (problem != null) {
+            _state.update { it.copy(error = problem) }
             return
         }
         if (current.passwordString.length != 6 || !current.passwordString.all { it.isDigit() }) {
@@ -264,7 +274,7 @@ fun RegisterScreenContent(
 
                 OutlinedTextField(
                     value = state.mobileNumber,
-                    onValueChange = { viewModel.updateMobileNumber(it) },
+                    onValueChange = { viewModel.updateMobileNumber(com.kadaikutty.pos.core.common.InputRules.phone(it)) },
                     label = { Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
@@ -276,7 +286,7 @@ fun RegisterScreenContent(
 
                 OutlinedTextField(
                     value = state.businessName,
-                    onValueChange = { viewModel.updateBusinessName(it) },
+                    onValueChange = { viewModel.updateBusinessName(com.kadaikutty.pos.core.common.InputRules.name(it)) },
                     label = { Text("Shop Name", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Default.Home, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     shape = glassShape,
@@ -287,7 +297,7 @@ fun RegisterScreenContent(
 
                 OutlinedTextField(
                     value = state.ownerName,
-                    onValueChange = { viewModel.updateOwnerName(it) },
+                    onValueChange = { viewModel.updateOwnerName(com.kadaikutty.pos.core.common.InputRules.name(it)) },
                     label = { Text("Owner Name", color = Color.White.copy(alpha = 0.8f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis) },
                     leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
                     shape = glassShape,

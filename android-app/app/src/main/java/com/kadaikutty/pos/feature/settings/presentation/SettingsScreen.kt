@@ -1739,7 +1739,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputShopName,
-                            onValueChange = { inputShopName = it; hasPendingShopDetailEdits = true },
+                            onValueChange = { inputShopName = com.kadaikutty.pos.core.common.InputRules.name(it); hasPendingShopDetailEdits = true },
                             label = { Text("Shop Name") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1748,7 +1748,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputOwnerName,
-                            onValueChange = { inputOwnerName = it; hasPendingShopDetailEdits = true },
+                            onValueChange = { inputOwnerName = com.kadaikutty.pos.core.common.InputRules.name(it); hasPendingShopDetailEdits = true },
                             label = { Text("Owner Name") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1757,7 +1757,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputGstNumber,
-                            onValueChange = { inputGstNumber = it; hasPendingShopDetailEdits = true },
+                            onValueChange = { inputGstNumber = com.kadaikutty.pos.core.common.InputRules.gstin(it); hasPendingShopDetailEdits = true },
                             label = { Text("GST Number") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1766,7 +1766,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputShopAddress,
-                            onValueChange = { inputShopAddress = it; hasPendingShopDetailEdits = true },
+                            onValueChange = { inputShopAddress = com.kadaikutty.pos.core.common.InputRules.text(it); hasPendingShopDetailEdits = true },
                             label = { Text("Shop Address") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = false,
@@ -1776,7 +1776,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputShopPhone,
-                            onValueChange = { inputShopPhone = it; hasPendingShopDetailEdits = true },
+                            onValueChange = { inputShopPhone = com.kadaikutty.pos.core.common.InputRules.phone(it); hasPendingShopDetailEdits = true },
                             label = { Text("Shop Phone Number") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1786,7 +1786,7 @@ fun SettingsScreen(
 
                         OutlinedTextField(
                             value = inputShopEmail,
-                            onValueChange = { inputShopEmail = it; hasPendingShopDetailEdits = true },
+                            onValueChange = { inputShopEmail = com.kadaikutty.pos.core.common.InputRules.email(it); hasPendingShopDetailEdits = true },
                             label = { Text("Shop Email ID") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true,
@@ -1905,10 +1905,15 @@ fun SettingsScreen(
                         Button(
                             onClick = {
                                 val gstTrimmed = inputGstNumber.trim()
-                                if (gstTrimmed.isNotEmpty() && gstTrimmed.length != 15) {
-                                    android.widget.Toast.makeText(context, "Validation Error: GST Number must be exactly 15 characters!", android.widget.Toast.LENGTH_LONG).show()
-                                } else if (!isEmailValid) {
-                                    android.widget.Toast.makeText(context, "Validation Error: Please enter a valid Email ID!", android.widget.Toast.LENGTH_LONG).show()
+                                val problem = com.kadaikutty.pos.core.common.InputRules.firstError(
+                                    com.kadaikutty.pos.core.common.InputRules.checkName(inputShopName, "Shop name"),
+                                    inputOwnerName.takeIf { it.isNotBlank() }?.let { com.kadaikutty.pos.core.common.InputRules.checkName(it, "Owner name") },
+                                    com.kadaikutty.pos.core.common.InputRules.checkGstin(gstTrimmed),
+                                    com.kadaikutty.pos.core.common.InputRules.checkPhone(inputShopPhone),
+                                    com.kadaikutty.pos.core.common.InputRules.checkEmail(inputShopEmail)
+                                )
+                                if (problem != null) {
+                                    android.widget.Toast.makeText(context, problem, android.widget.Toast.LENGTH_LONG).show()
                                 } else {
                                     viewModel.saveShopDetails(inputShopName, inputOwnerName, gstTrimmed, inputShopAddress, inputShopPhone, inputShopEmail, inputShopLogoPath) { saved, error ->
                                         if (saved) {
@@ -2135,7 +2140,7 @@ fun AddUserDialog(
                 // Cashier Name
                 OutlinedTextField(
                     value = displayName,
-                    onValueChange = { displayName = it },
+                    onValueChange = { displayName = com.kadaikutty.pos.core.common.InputRules.name(it) },
                     label = { Text("Staff / Cashier Name *") },
                     placeholder = { Text("e.g. Ramesh Kumar") },
                     leadingIcon = { Icon(Icons.Default.AccountCircle, contentDescription = null) },
@@ -2148,7 +2153,7 @@ fun AddUserDialog(
                 // Phone / Username
                 OutlinedTextField(
                     value = phone,
-                    onValueChange = { phone = it },
+                    onValueChange = { phone = com.kadaikutty.pos.core.common.InputRules.phone(it) },
                     label = { Text("Mobile Number (Login ID) *") },
                     placeholder = { Text("10 digit mobile number") },
                     leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null) },
@@ -2264,8 +2269,10 @@ fun AddUserDialog(
                     val cleanDigits = phone.filter { it.isDigit() }
                     if (displayName.isBlank() || cleanDigits.isBlank() || password.isBlank()) {
                         errorMsg = "Please fill in all mandatory fields"
-                    } else if (cleanDigits.length < 10) {
-                        errorMsg = "Please enter a valid 10-digit mobile number"
+                    } else if (com.kadaikutty.pos.core.common.InputRules.checkName(displayName, "Staff name") != null) {
+                        errorMsg = com.kadaikutty.pos.core.common.InputRules.checkName(displayName, "Staff name")!!
+                    } else if (com.kadaikutty.pos.core.common.InputRules.checkPhone(cleanDigits, required = true) != null) {
+                        errorMsg = com.kadaikutty.pos.core.common.InputRules.checkPhone(cleanDigits, required = true)!!
                     } else if (password.length != 6 || !password.all { it.isDigit() }) {
                         errorMsg = "Password / PIN must be exactly 6 numeric digits"
                     } else {
@@ -2467,7 +2474,7 @@ fun EditUserDialog(
                 // Name
                 OutlinedTextField(
                     value = displayName,
-                    onValueChange = { displayName = it },
+                    onValueChange = { displayName = com.kadaikutty.pos.core.common.InputRules.name(it) },
                     label = { Text("Staff Full Name") },
                     shape = RoundedCornerShape(12.dp),
                     singleLine = true,

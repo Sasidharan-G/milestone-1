@@ -123,7 +123,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                     Text("Are you sure you want to delete this bill? All sold items will be automatically returned back into inventory stock.")
                     OutlinedTextField(
                         value = deleteReason,
-                        onValueChange = { deleteReason = it },
+                        onValueChange = { deleteReason = com.kadaikutty.pos.core.common.InputRules.text(it) },
                         label = { Text("Reason for cancellation (optional)") },
                         placeholder = { Text("e.g. Customer return, billing error") },
                         singleLine = true,

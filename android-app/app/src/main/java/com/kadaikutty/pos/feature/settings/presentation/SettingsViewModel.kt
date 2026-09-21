@@ -618,6 +618,28 @@ class SettingsViewModel @Inject constructor(
 
     // Best-effort: a failure here must never block the restore itself. Worst case, "Undo Last
     // Restore" is unavailable afterward, which is strictly better than the old "no undo at all".
+    /**
+     * A restore puts back records that sync may never have seen: ones made offline and never sent,
+     * and the ones a replayed Auto Backup change history writes straight into the tables. So every
+     * record is queued once; the server acknowledges the ones it already has and settles real
+     * differences by edit time, like any other edit.
+     *
+     * The pull position and data epoch are forgotten too. A backup taken before the cloud copy was
+     * cleared carries the old epoch, and the next pull would otherwise wipe the data just restored.
+     * Without either, the pull adopts the current epoch and reads the cloud again from the start.
+     */
+    private suspend fun afterRestore() {
+        // The restore itself has already succeeded; failing here must not report it as failed.
+        // Anything left unqueued is still sent the next time that record is edited.
+        runCatching {
+            val companyId = sessionStore.activeSession.first()?.companyId?.takeIf { it.isNotBlank() } ?: return
+            val dao = tenantDatabaseManager.getDatabase(companyId).localOperationDao()
+            dao.delete(companyId, com.kadaikutty.pos.core.sync.PullWorker.EPOCH_KEY)
+            dao.delete(companyId, com.kadaikutty.pos.core.sync.PullWorker.CURSOR_KEY)
+            syncManager.enqueueAllDataForSync()
+        }
+    }
+
     private suspend fun writePreRestoreSafetySnapshot() {
         runCatching {
             when (val result = backupManager.createBackup()) {
@@ -674,6 +696,7 @@ class SettingsViewModel @Inject constructor(
                     writePreRestoreSafetySnapshot()
                     val success = backupManager.restoreBackup(bytes!!)
                     if (success) {
+                        afterRestore()
                         _restoreStatus.value = "Database restored successfully! App will restart."
                         _requireRestart.value = true
                         withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
@@ -787,6 +810,7 @@ class SettingsViewModel @Inject constructor(
                     writePreRestoreSafetySnapshot()
                     val success = backupManager.restoreBackup(bytes)
                     if (success) {
+                        afterRestore()
                         _restoreStatus.value = "Database restored from cloud successfully! App will restart."
                         _requireRestart.value = true
                         withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
@@ -856,6 +880,7 @@ class SettingsViewModel @Inject constructor(
                     writePreRestoreSafetySnapshot()
                     val result = liveBackupWriter.restoreFrom(companyId, folderUri?.toString())
                     if (result.isSuccess) {
+                        afterRestore()
                         _restoreStatus.value = "Database restored! App will restart."
                         _requireRestart.value = true
                         withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
@@ -887,6 +912,7 @@ class SettingsViewModel @Inject constructor(
                     val bytes = preRestoreSafetyFile.readBytes()
                     val success = backupManager.restoreBackup(bytes)
                     if (success) {
+                        afterRestore()
                         _restoreStatus.value = "Undo complete! App will restart."
                         _requireRestart.value = true
                         withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
