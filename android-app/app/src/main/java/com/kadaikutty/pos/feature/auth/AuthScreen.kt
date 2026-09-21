@@ -158,8 +158,9 @@ fun AuthScreen(
 
 @Composable
 fun TopErrorToast(message: String, onDismiss: () -> Unit) {
+    // Long enough to read a two-line message; the X still closes it sooner.
     LaunchedEffect(message) {
-        kotlinx.coroutines.delay(2000)
+        kotlinx.coroutines.delay(5000)
         onDismiss()
     }
 
