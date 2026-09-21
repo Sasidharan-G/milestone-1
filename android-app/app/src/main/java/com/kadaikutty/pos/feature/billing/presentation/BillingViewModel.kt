@@ -32,6 +32,7 @@ import com.kadaikutty.pos.core.sync.SyncStatus
 import com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity
 import com.kadaikutty.pos.core.common.newRecordId
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.flowOf
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
@@ -248,16 +249,24 @@ class BillingViewModel @Inject constructor(
             masterDao.customers(companyId, "")
         }
 
-    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
-    val pagedSales: kotlinx.coroutines.flow.Flow<PagingData<SaleEntity>> = sessionStore.activeSession
-        .flatMapLatest { session ->
+    private val _historyFilter = MutableStateFlow(com.kadaikutty.pos.core.ui.HistoryFilter())
+    val historyFilter: StateFlow<com.kadaikutty.pos.core.ui.HistoryFilter> = _historyFilter
+    fun setHistoryFilter(filter: com.kadaikutty.pos.core.ui.HistoryFilter) { _historyFilter.value = filter }
+
+    // Sales History, narrowed in the database. Typing waits a moment so each key press does not
+    // start a new query.
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class, kotlinx.coroutines.FlowPreview::class)
+    val pagedSales: kotlinx.coroutines.flow.Flow<PagingData<SaleEntity>> = combine(sessionStore.activeSession, _historyFilter.debounce(250)) { session, filter -> session to filter }
+        .flatMapLatest { (session, filter) ->
             val companyId = session?.companyId ?: ""
             if (companyId.isBlank()) {
                 kotlinx.coroutines.flow.emptyFlow()
             } else {
+                val (from, to) = filter.bounds()
+                val query = filter.query.trim()
                 Pager(
                     config = PagingConfig(pageSize = 20, enablePlaceholders = false),
-                    pagingSourceFactory = { saleDao.getSalesPaged(companyId) }
+                    pagingSourceFactory = { saleDao.searchSalesPaged(companyId, query, from, to) }
                 ).flow
             }
         }.cachedIn(viewModelScope)

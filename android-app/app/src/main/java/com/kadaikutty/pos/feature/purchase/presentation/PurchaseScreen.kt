@@ -792,7 +792,22 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
 
         val purchaseHistoryColumn: @Composable (Modifier) -> Unit = { modifier ->
             Column(modifier = modifier) {
-                Text("Purchase History", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
+                Text("Purchase History", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 8.dp))
+                val historyFilter by viewModel.historyFilter.collectAsState()
+                com.kadaikutty.pos.core.ui.HistoryFilterBar(
+                    filter = historyFilter,
+                    onFilterChange = viewModel::setHistoryFilter,
+                    searchHint = "Invoice no, supplier, phone, product, amount",
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                if (purchases.isEmpty()) {
+                    Text(
+                        if (historyFilter.isActive) "No purchases match this search or date range" else "No purchases yet",
+                        fontSize = 14.sp,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(vertical = 24.dp).align(Alignment.CenterHorizontally)
+                    )
+                }
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(purchases) { purchase ->

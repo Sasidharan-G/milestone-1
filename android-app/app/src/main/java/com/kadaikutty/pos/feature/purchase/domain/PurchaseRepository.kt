@@ -11,6 +11,7 @@ interface PurchaseRepository {
     suspend fun saveBatch(drafts: List<PurchaseDraft>): AppResult<List<String>>
     
     fun getPurchases(companyId: String): Flow<List<PurchaseEntity>>
+    fun searchPurchases(companyId: String, query: String, fromEpochMs: Long, toEpochMs: Long): Flow<List<PurchaseEntity>>
     
     fun getStockBalances(companyId: String): Flow<List<ProductStock>>
     

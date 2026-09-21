@@ -829,7 +829,22 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
 
         val salesHistoryColumn: @Composable (Modifier) -> Unit = { modifier ->
             Column(modifier = modifier) {
-                Text("Sales History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 12.dp))
+                Text("Sales History", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(bottom = 8.dp))
+                val historyFilter by viewModel.historyFilter.collectAsState()
+                com.kadaikutty.pos.core.ui.HistoryFilterBar(
+                    filter = historyFilter,
+                    onFilterChange = viewModel::setHistoryFilter,
+                    searchHint = "Bill no, customer, phone, product, amount",
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                if (pagedSales.itemCount == 0 && pagedSales.loadState.refresh is androidx.paging.LoadState.NotLoading) {
+                    Text(
+                        if (historyFilter.isActive) "No bills match this search or date range" else "No bills yet",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(vertical = 24.dp).align(Alignment.CenterHorizontally)
+                    )
+                }
 
                 LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(count = pagedSales.itemCount, key = pagedSales.itemKey { it.id }, contentType = pagedSales.itemContentType { "Sale" }) { index ->

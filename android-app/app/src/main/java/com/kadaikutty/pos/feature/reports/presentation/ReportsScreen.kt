@@ -694,17 +694,13 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                         val report = reportData!!
                         val isBillsDetail = selectedType == ReportType.SALES
 
-                        val filteredRows = if (selectedType == ReportType.SALES && salesSearchQuery.isNotBlank()) {
+                        // Every report can be searched: a row stays when any of its cells contains
+                        // the text (bill number, customer, product, supplier, amount, date...).
+                        val filteredRows = if (salesSearchQuery.isNotBlank()) {
                             val q = salesSearchQuery.trim().lowercase()
                             report.rows.filter { row ->
                                 val isTotalRow = row.any { it.startsWith("TOTAL") } || row.any { it == "---" }
-                                if (isTotalRow) true
-                                else {
-                                    val billNum = row.getOrNull(1)?.lowercase() ?: ""
-                                    val customer = row.getOrNull(3)?.lowercase() ?: ""
-                                    val amount = row.getOrNull(4)?.lowercase() ?: ""
-                                    billNum.contains(q) || customer.contains(q) || amount.contains(q)
-                                }
+                                isTotalRow || row.any { cell -> cell.lowercase().contains(q) }
                             }
                         } else {
                             report.rows
@@ -782,7 +778,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
 
                             if (!isGridView) {
                                 Column(modifier = Modifier.fillMaxSize()) {
-                                if (selectedType == ReportType.SALES) {
+                                run {
                                     OutlinedTextField(
                                         value = salesSearchQuery,
                                         onValueChange = { salesSearchQuery = it },

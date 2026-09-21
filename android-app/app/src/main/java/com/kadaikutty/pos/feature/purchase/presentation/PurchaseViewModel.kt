@@ -22,6 +22,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.debounce
 import com.kadaikutty.pos.core.auth.SessionStore
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -54,10 +55,18 @@ class PurchaseViewModel @Inject constructor(
             masterDao.suppliers(companyId, "")
         }
 
-    private val purchases = sessionStore.activeSession
-        .flatMapLatest { session ->
+    private val _historyFilter = MutableStateFlow(com.kadaikutty.pos.core.ui.HistoryFilter())
+    val historyFilter: StateFlow<com.kadaikutty.pos.core.ui.HistoryFilter> = _historyFilter.asStateFlow()
+    fun setHistoryFilter(filter: com.kadaikutty.pos.core.ui.HistoryFilter) { _historyFilter.value = filter }
+
+    // Purchase History, narrowed in the database. Typing waits a moment so each key press does
+    // not run a new query.
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
+    private val purchases = combine(sessionStore.activeSession, _historyFilter.debounce(250)) { session, filter -> session to filter }
+        .flatMapLatest { (session, filter) ->
             val companyId = session?.companyId ?: ""
-            purchaseRepository.getPurchases(companyId)
+            val (from, to) = filter.bounds()
+            purchaseRepository.searchPurchases(companyId, filter.query.trim(), from, to)
         }
 
     private val stocks = sessionStore.activeSession

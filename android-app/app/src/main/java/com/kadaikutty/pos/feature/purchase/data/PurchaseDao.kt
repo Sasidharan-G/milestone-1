@@ -50,6 +50,23 @@ interface PurchaseDao {
     @Query("SELECT * FROM purchases WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
     fun getPurchases(companyId: String): Flow<List<PurchaseEntity>>
 
+    /**
+     * Purchase History with its search and date filter. [query] matches the invoice or order
+     * number, notes, supplier name or phone, a product purchased, the payment mode, or the
+     * whole-rupee amount. [fromEpochMs] is inclusive and [toEpochMs] exclusive.
+     */
+    @Query(
+        "SELECT p.* FROM purchases p LEFT JOIN suppliers s ON s.id = p.supplierId AND s.companyId = p.companyId " +
+        "WHERE p.companyId = :companyId AND p.createdAtEpochMs >= :fromEpochMs AND p.createdAtEpochMs < :toEpochMs " +
+        "AND (:query = '' OR p.invoiceNumber LIKE '%' || :query || '%' OR p.orderNumber LIKE '%' || :query || '%' " +
+        "OR p.notes LIKE '%' || :query || '%' OR s.name LIKE '%' || :query || '%' OR s.phone LIKE '%' || :query || '%' " +
+        "OR p.paymentMode LIKE '%' || :query || '%' OR CAST(p.totalMinorUnits / 100 AS TEXT) LIKE :query || '%' " +
+        "OR EXISTS (SELECT 1 FROM purchase_items i JOIN products pr ON pr.id = i.productId AND pr.companyId = i.companyId " +
+        "WHERE i.companyId = p.companyId AND i.purchaseId = p.id AND pr.name LIKE '%' || :query || '%')) " +
+        "ORDER BY p.createdAtEpochMs DESC"
+    )
+    fun searchPurchases(companyId: String, query: String, fromEpochMs: Long, toEpochMs: Long): Flow<List<PurchaseEntity>>
+
     @Query("SELECT SUM(totalMinorUnits) FROM purchases WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs")
     fun getPurchasesTotalSince(companyId: String, sinceEpochMs: Long): Flow<Long?>
 

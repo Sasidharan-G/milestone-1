@@ -2055,7 +2055,25 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
 
 @Composable
 fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
-    val expenses by viewModel.expenses.collectAsState()
+    val allExpenses by viewModel.expenses.collectAsState()
+    var expenseFilter by remember { mutableStateOf(com.kadaikutty.pos.core.ui.HistoryFilter()) }
+    // Search by description or amount, and narrow to a date range.
+    val expenses = remember(allExpenses, expenseFilter) {
+        val (from, to) = expenseFilter.bounds()
+        val query = expenseFilter.query.trim()
+        allExpenses.filter { expense ->
+            expense.createdAtEpochMs in from until to && (query.isEmpty() ||
+                expense.description.contains(query, ignoreCase = true) ||
+                (expense.amountMinorUnits / 100).toString().startsWith(query))
+        }
+    }
+    val expenseFilterBar: @Composable () -> Unit = {
+        com.kadaikutty.pos.core.ui.HistoryFilterBar(
+            filter = expenseFilter,
+            onFilterChange = { expenseFilter = it },
+            searchHint = "Description or amount"
+        )
+    }
     var description by remember { mutableStateOf("") }
     var amountText by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
@@ -2167,6 +2185,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                     Text("Recorded Expenses", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
                 }
 
+                item { expenseFilterBar() }
                 if (expenses.isEmpty()) {
                     item {
                         Box(
@@ -2174,7 +2193,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                text = "No expenses recorded yet.",
+                                text = if (expenseFilter.isActive) "No expenses match this search or date range." else "No expenses recorded yet.",
                                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 fontSize = 14.sp,
                                 textAlign = androidx.compose.ui.text.style.TextAlign.Center
@@ -2277,6 +2296,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         contentPadding = PaddingValues(bottom = 24.dp)
                     ) {
+                        item { expenseFilterBar() }
                         if (expenses.isEmpty()) {
                             item {
                                 Box(
@@ -2284,7 +2304,7 @@ fun ExpenseTabScreen(viewModel: ExpenseViewModel) {
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = "No expenses recorded yet.",
+                                        text = if (expenseFilter.isActive) "No expenses match this search or date range." else "No expenses recorded yet.",
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                         fontSize = 14.sp,
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center

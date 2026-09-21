@@ -112,6 +112,9 @@ class PurchaseRepositoryImpl(
     } catch (e: CancellationException) { throw e
     } catch (e: Exception) { AppResult.Failure(AppError.Unexpected(e.message ?: "Unable to save purchase")) }
 
+    override fun searchPurchases(companyId: String, query: String, fromEpochMs: Long, toEpochMs: Long): Flow<List<PurchaseEntity>> =
+        purchaseDao.searchPurchases(companyId, query, fromEpochMs, toEpochMs)
+
     override fun getPurchases(companyId: String): Flow<List<PurchaseEntity>> {
         return purchaseDao.getPurchases(companyId)
     }

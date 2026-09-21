@@ -36,6 +36,23 @@ import kotlinx.coroutines.flow.Flow
     
     @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
     fun getSalesPaged(companyId: String): PagingSource<Int, SaleEntity>
+
+    /**
+     * Sales History with its search and date filter. [query] matches the bill number, customer
+     * name or phone, a product on the bill, the payment mode, or the whole-rupee amount; empty
+     * matches everything. [fromEpochMs] is inclusive and [toEpochMs] exclusive.
+     */
+    @Query(
+        "SELECT s.* FROM sales s LEFT JOIN customers c ON c.id = s.customerId AND c.companyId = s.companyId " +
+        "WHERE s.companyId = :companyId AND s.createdAtEpochMs >= :fromEpochMs AND s.createdAtEpochMs < :toEpochMs " +
+        "AND (:query = '' OR s.billNumber LIKE '%' || :query || '%' OR c.name LIKE '%' || :query || '%' " +
+        "OR c.phone LIKE '%' || :query || '%' OR s.paymentMode LIKE '%' || :query || '%' " +
+        "OR CAST(s.totalMinorUnits / 100 AS TEXT) LIKE :query || '%' " +
+        "OR (s.customerId IS NULL AND 'walk-in' LIKE '%' || :query || '%') " +
+        "OR EXISTS (SELECT 1 FROM sale_items i WHERE i.companyId = s.companyId AND i.saleId = s.id AND i.productName LIKE '%' || :query || '%')) " +
+        "ORDER BY s.createdAtEpochMs DESC"
+    )
+    fun searchSalesPaged(companyId: String, query: String, fromEpochMs: Long, toEpochMs: Long): PagingSource<Int, SaleEntity>
     
     @Query("SELECT COUNT(*) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs")
     fun getSalesCountSince(companyId: String, sinceEpochMs: Long): Flow<Int>
