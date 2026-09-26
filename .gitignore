@@ -38,3 +38,6 @@ apk-releases/
 artifacts/
 scratch/
 products_100_bulk_import.csv
+
+# EB environment properties (MSG91 keys) - never commit
+aws-infrastructure/eb-environment.env
