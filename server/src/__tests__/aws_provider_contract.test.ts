@@ -229,11 +229,27 @@ test('AWS S3 provider signs tenant-scoped uploads and verifies completion metada
   const storage = new AwsObjectStorage(s3 as any, dynamo as any, config, signer as any);
   const intent = await storage.createUploadIntent({ companyId: 'company-a', fileName: 'backup.zip', sizeBytes: content.length, checksumSha256: checksum, schemaVersion: 22 });
   assert.match(intent.objectKey, /^tenants\/company-a\/backups\//);
-  assert.equal(intent.requiredHeaders['x-amz-checksum-sha256'], checksumBase64);
+  assert.deepEqual(intent.requiredHeaders, { 'Content-Type': 'application/octet-stream', 'x-amz-checksum-sha256': checksumBase64 });
   assert.equal((await storage.complete('company-a', intent.backupId)).status, 'READY');
   const download = await storage.createDownloadIntent('company-a', intent.backupId);
   assert.match(download.downloadUrl, /GetObjectCommand$/);
   await assert.rejects(() => storage.createDownloadIntent('company-b', intent.backupId), /not found/i);
+});
+
+test('AWS S3 upload URL from the real presigner signs the checksum as a header and hoists only the metadata into the query', async () => {
+  // A fake signer cannot catch this. By default the real presigner moves every x-amz-* value into
+  // the query string; S3 then answers 403 if the client also sends the metadata as headers, and
+  // silently drops a checksum that arrives in the query (complete() would find none).
+  const { S3Client } = await import('@aws-sdk/client-s3');
+  const s3 = new S3Client({ region: 'ap-south-1', credentials: { accessKeyId: 'AKIAEXAMPLE', secretAccessKey: 'secret' } });
+  const storage = new AwsObjectStorage(s3, new FakeDocumentClient() as any, config);
+  const checksum = crypto.createHash('sha256').update('backup').digest('hex');
+  const intent = await storage.createUploadIntent({ companyId: 'company-a', fileName: 'backup.zip', sizeBytes: 6, checksumSha256: checksum, schemaVersion: 22 });
+  const query = new URL(intent.uploadUrl).searchParams;
+  assert.equal(query.get('x-amz-meta-companyid'), 'company-a');
+  assert.equal(query.has('x-amz-checksum-sha256'), false);
+  assert.match(query.get('X-Amz-SignedHeaders') || '', /x-amz-checksum-sha256/);
+  assert.deepEqual(Object.keys(intent.requiredHeaders), ['Content-Type', 'x-amz-checksum-sha256']);
 });
 
 test('AWS session store isolates registered device sessions by tenant and user', async () => {

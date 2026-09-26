@@ -13,6 +13,7 @@ import backupRoutes from './routes/backupRoutes';
 import licenseRoutes from './routes/licenseRoutes';
 import sessionRoutes from './routes/sessionRoutes';
 import adminRoutes from './routes/adminRoutes';
+import publicPages from './routes/publicPages';
 import otpRoutes from './routes/otpRoutes';
 import { providers } from './providers/providerRegistry';
 import { errorHandler, notFoundHandler, requestContext } from './middleware/requestContext';
@@ -85,6 +86,9 @@ app.use('/api/v1/license', licenseRoutes);
 app.use('/api/v1/sessions', sessionRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/otp', otpRoutes);
+
+// Web pages Google Play requires in the store listing (privacy policy, how to delete an account).
+app.use(publicPages);
 
 app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', mode: providers().mode, timestamp: new Date().toISOString() });

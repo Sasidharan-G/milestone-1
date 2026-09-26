@@ -88,6 +88,13 @@ class InMemoryRateLimiter {
 // 1. OTP Send Limiter: Max 5 sends per 10 minutes, 20 seconds cooldown between sends
 const otpSendLimiter = new InMemoryRateLimiter(10 * 60 * 1000, 5, 20 * 1000);
 
+// SMS-pumping guard. The per-phone limit above stops one number being spammed, but /otp/send needs
+// no sign-in, so anyone who knows the address can send a code to every number in turn and empty the
+// SMS wallet. A registering shop needs one code, so a single address (or the whole server) asking
+// for far more than that in an hour is not a shop. Both caps are generous for real use.
+const otpSendIpLimiter = new InMemoryRateLimiter(60 * 60 * 1000, Number(process.env.OTP_MAX_PER_IP_HOUR) || 20, 0);
+const otpSendGlobalLimiter = new InMemoryRateLimiter(60 * 60 * 1000, Number(process.env.OTP_MAX_PER_HOUR) || 1000, 0);
+
 // 2. OTP Verify Limiter: Max 10 verification attempts per 10 minutes to prevent brute-forcing
 const otpVerifyLimiter = new InMemoryRateLimiter(10 * 60 * 1000, 10, 0);
 
@@ -115,6 +122,10 @@ export const limitOtpSend = (req: Request, res: Response, next: NextFunction) =>
 
   const result = otpSendLimiter.check(key);
   if (!result.allowed) return tooMany(res, req, result.reason || 'Too many OTP requests. Please wait before retrying.', result.retryAfterSeconds);
+  const fromIp = otpSendIpLimiter.check(`otp_send_from_${ip}`);
+  if (!fromIp.allowed) return tooMany(res, req, 'Too many verification codes requested from this network. Please try again later.', fromIp.retryAfterSeconds);
+  const overall = otpSendGlobalLimiter.check('otp_send_global');
+  if (!overall.allowed) return tooMany(res, req, 'Verification codes are temporarily unavailable. Please try again later.', overall.retryAfterSeconds);
   next();
 };
 

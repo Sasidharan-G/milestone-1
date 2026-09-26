@@ -2,6 +2,7 @@ import { Response, Router } from 'express';
 import crypto, { randomUUID } from 'node:crypto';
 import { AppError } from '../core/errors';
 import { audit } from '../core/audit';
+import { eraseCompany } from '../core/companyDeletion';
 import { presentLicense } from '../core/license';
 import { emitToCompany, emitToUser, revokeSessionSockets } from '../core/realtime';
 import { normalizePhone, verifyResetToken } from '../controllers/otpController';
@@ -314,6 +315,35 @@ router.delete('/staff/:userId', requireAuth, requireActiveLicense, requireShopAd
   } catch (error) { return sendRouteError(res, req, error); }
 });
 
+
+/**
+ * The owner deletes their own account and all of the shop's data. Google Play requires this to be
+ * possible from inside the app. It is the same erase Master Control performs, so it removes the
+ * cloud copy for every device and staff member of the shop; what is on each phone is wiped by the
+ * app once it is told the shop is gone.
+ *
+ * Guards, because it cannot be undone: only the shop administrator, the PIN is asked again (a
+ * stolen unlocked phone must not be able to erase a shop), and the caller must send
+ * `confirmation: "DELETE"`. The license is deliberately not required: an owner whose subscription
+ * lapsed must still be able to leave.
+ */
+router.delete('/account', limitLogin, requireAuth, requireShopAdmin, async (req: AuthenticatedRequest, res) => {
+  try {
+    const { password, confirmation } = req.body || {};
+    if (confirmation !== 'DELETE') throw new AppError(400, 'ACCOUNT_DELETE_CONFIRMATION_REQUIRED', 'Type DELETE to confirm');
+    if (!validPassword(password)) throw new AppError(400, 'ACCOUNT_DELETE_PIN_REQUIRED', 'Enter your 6-digit PIN to delete the account');
+    const owner = await providers().dataStore.findUserById(req.user!.userId);
+    if (!owner) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account was not found');
+    try { await providers().identityProvider.authenticate(owner.phone, password); }
+    catch (error) {
+      // 403, not 401: the app treats a 401 on a signed-in call as an expired token and retries.
+      if (error instanceof AppError && error.status === 401) throw new AppError(403, 'ACCOUNT_DELETE_PIN_INVALID', 'The PIN is incorrect');
+      throw error;
+    }
+    await eraseCompany(req, owner.companyId, req.user!, 'OWNER');
+    return res.json({ success: true });
+  } catch (error) { return sendRouteError(res, req, error); }
+});
 
 router.get('/audit', requireAuth, requireActiveLicense, requireShopAdmin, async (req: AuthenticatedRequest, res) => {
   try {

@@ -35,18 +35,20 @@ export class AwsObjectStorage implements ObjectStorage {
         ChecksumSHA256: checksumBase64,
         Metadata: { companyid: input.companyId, backupid: backupId, checksumsha256: input.checksumSha256, schemaversion: String(input.schemaVersion) }
       });
-      const uploadUrl = await this.signer(this.s3, command, { expiresIn: this.config.presignedUrlSeconds });
+      // By default the presigner moves every x-amz-* value into the URL's query string. The
+      // x-amz-meta-* values are fine there, but S3 only records and verifies the upload checksum
+      // when it arrives as a signed header (from the query it is silently ignored, and complete()
+      // then finds no ChecksumSHA256), so that one stays a header the client must send.
+      const checksumHeader = new Set(['x-amz-checksum-sha256']);
+      const uploadUrl = await this.signer(this.s3, command, {
+        expiresIn: this.config.presignedUrlSeconds, unhoistableHeaders: checksumHeader, signableHeaders: checksumHeader
+      });
       return {
         ...backup,
         uploadUrl,
-        requiredHeaders: {
-          'Content-Type': 'application/octet-stream',
-          'x-amz-checksum-sha256': checksumBase64,
-          'x-amz-meta-companyid': input.companyId,
-          'x-amz-meta-backupid': backupId,
-          'x-amz-meta-checksumsha256': input.checksumSha256,
-          'x-amz-meta-schemaversion': String(input.schemaVersion)
-        }
+        // Sending the x-amz-meta-* values again as headers would make S3 answer 403 "headers
+        // present in the request which were not signed", so they are deliberately not listed.
+        requiredHeaders: { 'Content-Type': 'application/octet-stream', 'x-amz-checksum-sha256': checksumBase64 }
       };
     } catch (error) { throw mapAwsError(error, 'S3 backup upload intent'); }
   }

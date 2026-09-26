@@ -6,6 +6,7 @@ import { emitToCompany, emitToUser, revokeSessionSockets } from '../core/realtim
 import { AuthenticatedRequest, MASTER_USER_ID, PLATFORM_COMPANY_ID, requireAuth, requireSuperAdmin } from '../middleware/authMiddleware';
 import { providers } from '../providers/providerRegistry';
 import { sendRouteError } from './http';
+import { eraseCompany } from '../core/companyDeletion';
 
 /** Super Master Control. Every route requires a platform (SUPER_ADMIN) token and its device session. */
 const router = Router();
@@ -52,21 +53,7 @@ router.patch('/licenses/:companyId', async (req: AuthenticatedRequest, res) => {
 
 router.delete('/companies/:companyId', async (req: AuthenticatedRequest, res) => {
   try {
-    const companyId = req.params.companyId;
-    // Point lookups: adminOverview() scans the whole table, every tenant's sync records included.
-    const [companyUsers, license] = await Promise.all([providers().dataStore.listCompanyUsers(companyId), providers().dataStore.getLicense(companyId)]);
-    if (!companyUsers.length && !license) throw new AppError(404, 'COMPANY_NOT_FOUND', 'Company was not found');
-    const backups = await providers().objectStorage.list(companyId);
-    await Promise.all(backups.map(backup => providers().objectStorage.delete(companyId, backup.backupId)));
-    for (const user of companyUsers) {
-      const revoked = await providers().sessionStore.revokeAllSessions(companyId, user.userId);
-      for (const session of revoked) emitToUser(req.app.get('io'), user.userId, 'session_revoked', { sessionId: session.sessionId, reason: 'ACCOUNT_DELETED' });
-      revokeSessionSockets(req.app.get('io'), user.userId, revoked, 'ACCOUNT_DELETED');
-      await providers().identityProvider.deleteUser(user.userId);
-    }
-    await providers().dataStore.deleteCompany(companyId);
-    await audit(req, req.user!, 'COMPANY_DELETED', companyId, { users: companyUsers.map(user => user.userId), backups: backups.length });
-    emitToUser(req.app.get('io'), MASTER_USER_ID, 'master_overview_changed', { companyId });
+    await eraseCompany(req, req.params.companyId, req.user!, 'MASTER');
     return res.status(204).send();
   } catch (error) { return sendRouteError(res, req, error); }
 });
