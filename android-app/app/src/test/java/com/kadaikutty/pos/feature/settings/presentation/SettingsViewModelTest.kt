@@ -69,6 +69,8 @@ class SettingsViewModelTest {
     private lateinit var tenantDatabaseManager: TenantDatabaseManager
     private lateinit var liveBackupWriter: LiveBackupWriter
     private lateinit var shareManager: ShareManager
+    private lateinit var offlineCredentialStore: com.kadaikutty.pos.core.auth.OfflineCredentialStore
+    private lateinit var webSocketManager: com.kadaikutty.pos.core.network.WebSocketManager
 
     private val testSession = Session(
         userId = "user_1",
@@ -95,6 +97,8 @@ class SettingsViewModelTest {
         tenantDatabaseManager = mock(TenantDatabaseManager::class.java)
         liveBackupWriter = mock(LiveBackupWriter::class.java)
         shareManager = mock(ShareManager::class.java)
+        offlineCredentialStore = mock(com.kadaikutty.pos.core.auth.OfflineCredentialStore::class.java)
+        webSocketManager = mock(com.kadaikutty.pos.core.network.WebSocketManager::class.java)
 
         `when`(sessionStore.activeSession).thenReturn(flowOf(if (loggedIn) testSession else null))
         `when`(licenseManager.currentLicense).thenReturn(MutableStateFlow<LicenseEntity?>(null))
@@ -115,7 +119,7 @@ class SettingsViewModelTest {
             context, appPreferences, printerManager, backupManager, syncScheduler, syncManager,
             database, sessionStore, licenseManager, sessionSecurityManager, backendApi,
             tenantDatabaseManager, liveBackupWriter,
-            mock(com.kadaikutty.pos.core.auth.OfflineCredentialStore::class.java), shareManager,
+            offlineCredentialStore, shareManager, webSocketManager,
             mock(com.kadaikutty.pos.core.network.ConnectivityMonitor::class.java).also { `when`(it.isOnline).thenReturn(MutableStateFlow(true)) },
         )
     }
@@ -271,5 +275,48 @@ class SettingsViewModelTest {
         assertTrue(viewModel.restoreStatus.value.orEmpty().contains("Refusing to clear cloud data without a recent backup"))
         // The guard must fire before any destructive step, not just report failure afterward.
         verify(syncScheduler, never()).cancelAllWork()
+    }
+
+    // Account deletion: cloud first, then this phone. A refused request must leave everything alone.
+
+    private fun withEmptyDeviceDatabase() {
+        val sqlite = mock(androidx.sqlite.db.SupportSQLiteDatabase::class.java)
+        val helper = mock(androidx.sqlite.db.SupportSQLiteOpenHelper::class.java)
+        `when`(helper.writableDatabase).thenReturn(sqlite)
+        `when`(database.openHelper).thenReturn(helper)
+    }
+
+    @Test
+    fun `deleteAccount with a wrong PIN reports it and leaves the phone signed in`() = runBlocking {
+        val viewModel = buildViewModel(loggedIn = true)
+        withEmptyDeviceDatabase()
+        `when`(backendApi.deleteAccount("token_abc", "000000"))
+            // thenAnswer, not thenThrow: Kotlin's suspend functions declare no checked exceptions for Mockito to allow.
+            .thenAnswer { throw com.kadaikutty.pos.core.network.BackendApiException("ACCOUNT_DELETE_PIN_INVALID", "The PIN is incorrect", false, 403) }
+
+        val result = CompletableDeferred<String?>()
+        viewModel.deleteAccount("000000") { result.complete(it) }
+
+        assertEquals("The PIN is incorrect.", result.await())
+        verify(sessionStore, never()).clear()
+        verify(offlineCredentialStore, never()).removeByCompanyId(anyString())
+        assertFalse(viewModel.isDeletingAccount.value)
+    }
+
+    @Test
+    fun `deleteAccount success signs out and forgets the shop on this phone`() = runBlocking {
+        val viewModel = buildViewModel(loggedIn = true)
+        withEmptyDeviceDatabase()
+        `when`(backendApi.deleteAccount("token_abc", "123456")).thenReturn(JSONObject().put("success", true))
+
+        val result = CompletableDeferred<String?>()
+        viewModel.deleteAccount("123456") { result.complete(it) }
+
+        assertEquals(null, result.await())
+        verify(webSocketManager).disconnect()
+        verify(syncScheduler).cancelAllWork()
+        verify(offlineCredentialStore).removeByCompanyId("company_1")
+        verify(offlineCredentialStore).removeByUserId("user_1")
+        verify(sessionStore).clear()
     }
 }

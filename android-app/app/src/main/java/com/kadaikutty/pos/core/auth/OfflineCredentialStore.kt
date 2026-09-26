@@ -69,6 +69,18 @@ class OfflineCredentialStore(private val store: DataStore<Preferences>) {
         }
     }
 
+    /** Forgets every offline sign-in of one shop on this device: the owner and any staff. Used when the shop is deleted. */
+    suspend fun removeByCompanyId(targetCompanyId: String) {
+        store.edit { p ->
+            val map = readMap(p)
+            map.keys().asSequence().toList()
+                .filter { map.optJSONObject(it)?.optString("companyId") == targetCompanyId }
+                .forEach { map.remove(it) }
+            p[credentialsMapKey] = map.toString()
+            if (p[legacyCompanyId] == targetCompanyId) legacyKeys.forEach { p.remove(it) }
+        }
+    }
+
     /** Same as [remove], for callers that only know the account id. */
     suspend fun removeByUserId(targetUserId: String) {
         store.edit { p ->

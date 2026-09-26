@@ -203,6 +203,13 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    // Short screens (a 640dp-high phone, a large font): the fixed input rows, the items and the
+                    // total do not all fit, and the "Pay & Save Purchase" button was pushed off the card. There the
+                    // inputs scroll with the items and only the total and the button stay pinned; taller screens
+                    // keep the inputs pinned above the list.
+                    val compactHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 700
+                    val inputsSection: @Composable () -> Unit = {
+                        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Draft Purchase Order", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
 
                     // 1. Select Supplier & Invoice No.
@@ -340,7 +347,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                         OutlinedTextField(
                             value = quantityText,
                             onValueChange = { quantityText = com.kadaikutty.pos.core.common.InputRules.quantity(it, selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER") },
-                            label = { Text("Qty", fontSize = 10.sp) },
+                            label = { Text("Qty", fontSize = 10.sp, maxLines = 1, softWrap = false) },
                             keyboardOptions = KeyboardOptions(keyboardType = if (selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER") KeyboardType.Decimal else KeyboardType.Number),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(0.7f),
@@ -375,7 +382,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                         OutlinedTextField(
                             value = costText,
                             onValueChange = { costText = com.kadaikutty.pos.core.common.InputRules.money(it) },
-                            label = { Text("Cost", fontSize = 10.sp) },
+                            label = { Text("Cost", fontSize = 10.sp, maxLines = 1, softWrap = false) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier.weight(0.9f),
@@ -422,9 +429,10 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
 
                     HorizontalDivider()
 
-                    // Draft Items list with interactive Stepper [-] [ Qty ] [+]
                     Text("Purchase Items", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                    LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        }
+                    }
+                    val itemRows: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
                         items(lines) { line ->
                             val prod = products.find { it.id == line.productId }
                             val prodName = prod?.name ?: "Unknown Product"
@@ -528,6 +536,17 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                     }
                                 }
                             }
+                        }
+                    }
+                    if (compactHeight) {
+                        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                            item(key = "inputs") { inputsSection() }
+                            itemRows()
+                        }
+                    } else {
+                        inputsSection()
+                        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            itemRows()
                         }
                     }
 

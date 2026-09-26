@@ -25,15 +25,23 @@ object SecurityShield {
     private const val PREFS_NAME = "com.kadaikutty.pos.secure_prefs"
     private const val ENCRYPTED_PASS_KEY = "encrypted_db_pass"
     private const val IV_KEY = "encryption_iv"
+    private const val FALLBACK_PASS_KEY = "fallback_db_pass"
     private const val FAILED_ATTEMPTS_KEY = "failed_access_attempts"
     private const val MAX_FAILED_ATTEMPTS = 5
 
     /**
-     * Checks if the device is rooted or jailbroken.
+     * Checks if the device is rooted, on unambiguous evidence only: an su binary, Magisk, or a
+     * root-manager app. RootBeer's blanket isRooted also trips on "test-keys" firmware, writable
+     * system paths and "dangerous" build properties, which many ordinary phones (custom or
+     * carrier firmware, several budget brands) show. Those false positives locked honest shops
+     * out of their own billing app.
      */
     fun isDeviceRooted(context: Context): Boolean {
         val rootBeer = RootBeer(context)
-        return rootBeer.isRooted || checkRootFiles()
+        val strongSignal = runCatching {
+            rootBeer.checkForSuBinary() || rootBeer.checkForMagiskBinary() || rootBeer.detectRootManagementApps()
+        }.getOrDefault(false)
+        return strongSignal || checkRootFiles()
     }
 
     private fun checkRootFiles(): Boolean {
@@ -102,14 +110,17 @@ object SecurityShield {
             // Enforced only when a real certificate hash is supplied via release.properties or
             // CI (SIGNING_CERT_SHA256). Blank means not configured: accept any signed build
             // rather than run a comparison that always passes and looks like verification.
-            val expected = BuildConfig.SIGNING_CERT_SHA256.replace(" ", "")
-            if (expected.isBlank()) return true
+            // Comma-separated, because Google Play re-signs every app with its own app-signing key:
+            // an install from Play carries that certificate, not the upload keystore's. List both
+            // (this build's key and the Play app-signing key) or Play installs fail this check.
+            val allowed = BuildConfig.SIGNING_CERT_SHA256.split(',').map { it.replace(" ", "") }.filter { it.isNotBlank() }
+            if (allowed.isEmpty()) return true
 
             val digest = MessageDigest.getInstance("SHA-256")
-            val signatureBytes = digest.digest(signatures[0].toByteArray())
-            val hexString = signatureBytes.joinToString(":") { String.format("%02X", it) }
-            
-            hexString.equals(expected, ignoreCase = true)
+            signatures.any { signature ->
+                val hexString = digest.digest(signature.toByteArray()).joinToString(":") { String.format("%02X", it) }
+                allowed.any { it.equals(hexString, ignoreCase = true) }
+            }
         } catch (e: Exception) {
             false
         }
@@ -217,6 +228,11 @@ object SecurityShield {
             }
         }
 
+        // A phone whose Keystore refused to wrap the key earlier keeps it here (see below).
+        prefs.getString(FALLBACK_PASS_KEY, null)?.let { stored ->
+            try { return Base64.decode(stored, Base64.DEFAULT) } catch (_: Exception) { }
+        }
+
         // If old database exists but key cannot decrypt it, quarantine it safely
         quarantineDatabase(context)
 
@@ -225,12 +241,18 @@ object SecurityShield {
         SecureRandom().nextBytes(secureKey)
         try {
             val (encryptedPass, iv) = encryptKey(secureKey)
+            // commit(), not apply(): the database is created with this key straight away, and a
+            // key that never reached disk before the process died would make it unreadable.
             prefs.edit()
                 .putString(ENCRYPTED_PASS_KEY, Base64.encodeToString(encryptedPass, Base64.DEFAULT))
                 .putString(IV_KEY, Base64.encodeToString(iv, Base64.DEFAULT))
-                .apply()
+                .commit()
         } catch (e: Exception) {
-            // Fallback in case KeyStore fails
+            // Some phones have a faulty Keystore. Returning an unsaved key here meant the next
+            // launch generated a different one, could not open the database and quarantined the
+            // shop's data. Keep the key in the app's private storage instead: weaker than a
+            // hardware-wrapped key, but the data stays reachable.
+            prefs.edit().putString(FALLBACK_PASS_KEY, Base64.encodeToString(secureKey, Base64.DEFAULT)).commit()
         }
         return secureKey
     }

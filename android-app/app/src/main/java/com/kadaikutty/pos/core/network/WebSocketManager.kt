@@ -47,8 +47,36 @@ class WebSocketManager @Inject constructor() {
     private val _masterOverviewChangedFlow = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val masterOverviewChangedFlow = _masterOverviewChangedFlow.asSharedFlow()
 
+    // While the app is in the background the channel stays closed: nobody is looking at the screen,
+    // and an open long-poll wakes the radio about every 25 s and costs one API request each time. What
+    // was missed is recovered by the background sync and by the pull when the app returns.
+    @Volatile private var foreground = true
+    private var parkedConnect: Triple<String, String, String?>? = null
+
+    @Synchronized
+    fun onAppBackgrounded() {
+        foreground = false
+        val auth = socketAuth
+        val company = connectedCompanyId
+        if (auth != null && company != null) parkedConnect = Triple(company, auth["token"].orEmpty(), auth["sessionId"])
+        closeTenantSocket()
+    }
+
+    @Synchronized
+    fun onAppForegrounded() {
+        foreground = true
+        val parked = parkedConnect
+        parkedConnect = null
+        if (parked != null) connect(parked.first, parked.second, parked.third)
+    }
+
     @Synchronized
     fun connect(companyId: String, accessToken: String, sessionId: String? = null) {
+        if (!foreground) {
+            // Remembered with the newest token, opened when the app comes back.
+            parkedConnect = Triple(companyId, accessToken, sessionId)
+            return
+        }
         if (socket?.connected() == true && connectedCompanyId == companyId) {
             socketAuth?.put("token", accessToken)
             return
@@ -64,6 +92,8 @@ class WebSocketManager @Inject constructor() {
                 forceNew = true
                 reconnection = true
                 auth = authMap
+                callFactory = SOCKET_HTTP
+                webSocketFactory = SOCKET_HTTP
             }
             val newSocket = IO.socket(BuildConfig.BACKEND_BASE_URL.trimEnd('/'), options)
             newSocket.on(Socket.EVENT_CONNECT) {
@@ -121,6 +151,11 @@ class WebSocketManager @Inject constructor() {
 
     @Synchronized
     fun disconnect() {
+        closeTenantSocket()
+        parkedConnect = null
+    }
+
+    private fun closeTenantSocket() {
         socket?.off()
         socket?.disconnect()
         socket = null
@@ -146,6 +181,8 @@ class WebSocketManager @Inject constructor() {
                 forceNew = true
                 reconnection = true
                 auth = mapOf("token" to accessToken, "sessionId" to sessionId)
+                callFactory = SOCKET_HTTP
+                webSocketFactory = SOCKET_HTTP
             }
             val newSocket = IO.socket(BuildConfig.BACKEND_BASE_URL.trimEnd('/'), options)
             newSocket.on(Socket.EVENT_CONNECT) { Log.d(TAG, "Master socket connected") }
@@ -169,5 +206,13 @@ class WebSocketManager @Inject constructor() {
         masterSocket = null
     }
 
-    private companion object { const val TAG = "WebSocketManager" }
+    private companion object {
+        const val TAG = "WebSocketManager"
+
+        // Same DNS fallback as the REST client; a socket has no read timeout of its own because
+        // engine.io pings to detect a dead connection.
+        val SOCKET_HTTP: okhttp3.OkHttpClient by lazy {
+            okhttp3.OkHttpClient.Builder().dns(ResilientDns).readTimeout(0, java.util.concurrent.TimeUnit.MILLISECONDS).build()
+        }
+    }
 }

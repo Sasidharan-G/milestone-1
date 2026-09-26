@@ -32,12 +32,17 @@ class BackendApiClient @Inject constructor(
 ) {
     private val jsonType = "application/json; charset=utf-8".toMediaType()
     private val client = OkHttpClient.Builder()
+        .dns(ResilientDns)
         .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .callTimeout(45, TimeUnit.SECONDS)
         .retryOnConnectionFailure(false)
         .build()
+
+    /** Every call goes through here so a connection failure always reaches callers as a readable [BackendApiException]. */
+    private fun execute(request: Request): okhttp3.Response =
+        try { client.newCall(request).execute() } catch (e: IOException) { throw friendlyNetworkError(e) }
 
     suspend fun pushSync(token: String, companyId: String, operations: JSONArray, sessionId: String? = null, epoch: Long = 0L): JSONObject =
         request("POST", "sync/push", token, JSONObject().put("companyId", companyId).put("epoch", epoch).put("operations", operations), allowConflict = true, sessionId = sessionId)
@@ -71,6 +76,10 @@ class BackendApiClient @Inject constructor(
         putFileBinary(token, intent.getString("uploadUrl"), intent.optJSONObject("requiredHeaders"), file)
         return request("POST", "backups/${intent.getString("backupId")}/complete", token, JSONObject())
     }
+
+    /** Permanently deletes the signed-in owner's shop and all its cloud data. The PIN is asked again on purpose. */
+    suspend fun deleteAccount(token: String, pin: String): JSONObject =
+        request("DELETE", "account", token, JSONObject().put("confirmation", "DELETE").put("password", pin))
 
     suspend fun listBackups(token: String): JSONArray =
         request("GET", "backups", token).getJSONArray("backups")
@@ -250,7 +259,7 @@ class BackendApiClient @Inject constructor(
             return builder.build()
         }
 
-        var response = client.newCall(buildRequest(currentToken, currentSessionId)).execute()
+        var response = execute(buildRequest(currentToken, currentSessionId))
         var bodyStr = response.body?.string().orEmpty()
         var parsed = runCatching { JSONObject(bodyStr.ifBlank { "{}" }) }.getOrElse { JSONObject() }
 
@@ -274,7 +283,7 @@ class BackendApiClient @Inject constructor(
             val recovered = autoRecoverSession(forceRefresh = true)
             if (recovered != null) {
                 val (freshToken, freshSessionId) = recovered
-                val retryResp = client.newCall(buildRequest(freshToken, freshSessionId)).execute()
+                val retryResp = execute(buildRequest(freshToken, freshSessionId))
                 val retryBody = retryResp.body?.string().orEmpty()
                 response = retryResp
                 parsed = runCatching { JSONObject(retryBody.ifBlank { "{}" }) }.getOrElse { JSONObject() }
@@ -308,7 +317,7 @@ class BackendApiClient @Inject constructor(
         }
         requiredHeaders?.keys()?.forEach { name -> builder.header(name, requiredHeaders.getString(name)) }
         val request = builder.put(content.toRequestBody("application/octet-stream".toMediaType())).build()
-        client.newCall(request).execute().use { response ->
+        execute(request).use { response ->
             if (!response.isSuccessful) throw parseBinaryError(response.code, response.body?.string())
         }
     }
@@ -335,7 +344,7 @@ class BackendApiClient @Inject constructor(
             }
         }
         val request = builder.put(requestBody).build()
-        client.newCall(request).execute().use { response ->
+        execute(request).use { response ->
             if (!response.isSuccessful) throw parseBinaryError(response.code, response.body?.string())
         }
     }
@@ -347,7 +356,7 @@ class BackendApiClient @Inject constructor(
             sessionStore.activeSession.first()?.sessionToken?.takeIf { it.isNotBlank() }?.let { builder.header("X-Session-Id", it) }
         }
         val request = builder.get().build()
-        client.newCall(request).execute().use { response ->
+        execute(request).use { response ->
             if (!response.isSuccessful) throw parseBinaryError(response.code, response.body?.string())
             response.body?.bytes() ?: throw IOException("Backup download was empty")
         }

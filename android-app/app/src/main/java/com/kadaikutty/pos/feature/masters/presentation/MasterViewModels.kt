@@ -455,12 +455,12 @@ class ProductViewModel @Inject constructor(
             try {
                 context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                     outputStream.bufferedWriter(java.nio.charset.StandardCharsets.UTF_8).use { writer ->
-                        writer.write("Product Name,Barcode,Category,Unit,Purchase Price,Selling Price,Min Stock\n")
-                        writer.write("Aashirvaad Superior MP Atta 5kg,8901725131456,Grocery,KG,220.00,265.00,10\n")
-                        writer.write("Fortune Sunlite Sunflower Oil 1L,8906007280145,Oil & Ghee,LITER,110.00,135.00,15\n")
-                        writer.write("Tata Salt Iodized 1kg,8904043901005,Grocery,PACK,20.00,28.00,25\n")
-                        writer.write("Surf Excel Easy Wash Detergent 1kg,8901030384813,Household,PACK,125.00,150.00,10\n")
-                        writer.write("Britannia Good Day Butter Cookies 100g,8901063012431,Snacks,PIECE,18.00,25.00,30\n")
+                        writer.write("Product Name,Barcode,Category,Unit,Purchase Price,Selling Price,Min Stock,Opening Stock\n")
+                        writer.write("Aashirvaad Superior MP Atta 5kg,8901725131456,Grocery,KG,220.00,265.00,10,40\n")
+                        writer.write("Fortune Sunlite Sunflower Oil 1L,8906007280145,Oil & Ghee,LITER,110.00,135.00,15,60\n")
+                        writer.write("Tata Salt Iodized 1kg,8904043901005,Grocery,PACK,20.00,28.00,25,100\n")
+                        writer.write("Surf Excel Easy Wash Detergent 1kg,8901030384813,Household,PACK,125.00,150.00,10,35\n")
+                        writer.write("Britannia Good Day Butter Cookies 100g,8901063012431,Snacks,PIECE,18.00,25.00,30,120\n")
                     }
                 }
                 onComplete(true, null)
@@ -530,9 +530,26 @@ class ProductViewModel @Inject constructor(
                 var importedCount = 0
                 var updatedCount = 0
                 var skippedCount = 0
+                // Opening stock: what is on the shelf now. Without it every imported product has stock 0,
+                // which is at or below any minimum level, so every one of them shows as low stock.
+                val canSetStock = session.role in listOf("ADMIN", "SUPER_ADMIN")
+                val stockBatch = mutableListOf<com.kadaikutty.pos.feature.billing.data.StockMovementEntity>()
+                val openingApplied = mutableSetOf<String>()
+                var stockSetCount = 0
+                var stockKeptCount = 0
+                var unstockedWithMinCount = 0
+                var openingGivenButNotAllowed = false
 
                 val productBatch = mutableListOf<ProductEntity>()
                 val newCategoriesBatch = mutableListOf<CategoryEntity>()
+
+                suspend fun flushStock() {
+                    if (stockBatch.isEmpty()) return
+                    val movements = stockBatch.toList()
+                    stockBatch.clear()
+                    database.purchaseDao().insertStockMovements(movements)
+                    movements.forEach { syncManager.enqueueStockMovement(it) }
+                }
 
                 val fileBytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: byteArrayOf()
                 val isXlsx = fileBytes.size >= 4 && fileBytes[0] == 0x50.toByte() && fileBytes[1] == 0x4B.toByte()
@@ -561,6 +578,7 @@ class ProductViewModel @Inject constructor(
                 var colPurchase = -1
                 var colSale = -1
                 var colMinStock = -1
+                var colOpening = -1
                 var hasHeader = false
 
                 for (tokens in rawRows) {
@@ -584,6 +602,7 @@ class ProductViewModel @Inject constructor(
                                 val h = cleanName(tokens[i])
                                 when {
                                     (h.contains("min") || h.contains("alert") || h.contains("threshold") || h.contains("குறைந்த")) -> colMinStock = i
+                                    (h.contains("open") || h.contains("qty") || h.contains("quantity") || h.contains("current") || h.contains("on hand") || h.contains("balance") || h == "stock" || h.contains("இருப்பு")) -> colOpening = i
                                     (h.contains("barcode") || h.contains("பார்கோடு") || h.contains("ean") || h.contains("code")) -> colBarcode = i
                                     (h.contains("cat") || h.contains("பிரிவு")) -> colCategory = i
                                     (h.contains("unit") || h.contains("அலகு")) -> colUnit = i
@@ -604,6 +623,7 @@ class ProductViewModel @Inject constructor(
                         val rawPurchase: Double
                         val rawSale: Double
                         val rawMinStock: Double
+                        val rawOpening: Double
 
                         if (hasHeader && colName >= 0) {
                             rawName = tokens.getOrNull(colName)?.replace("\uFEFF", "")?.replace("\u200B", "")?.trim() ?: ""
@@ -613,6 +633,7 @@ class ProductViewModel @Inject constructor(
                             rawPurchase = if (colPurchase >= 0) tokens.getOrNull(colPurchase)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
                             rawSale = if (colSale >= 0) tokens.getOrNull(colSale)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
                             rawMinStock = if (colMinStock >= 0) tokens.getOrNull(colMinStock)?.trim()?.toDoubleOrNull() ?: 0.0 else 0.0
+                            rawOpening = if (colOpening >= 0) tokens.getOrNull(colOpening)?.trim()?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
                         } else if (tokens.size >= 8 && tokens[0].trim().toLongOrNull() != null) {
                             // Layout with index column: #, Name, Category, Purchase, Sale, Unit, Barcode, MinStock
                             rawName = tokens.getOrNull(1)?.replace("\uFEFF", "")?.replace("\u200B", "")?.trim() ?: ""
@@ -622,6 +643,7 @@ class ProductViewModel @Inject constructor(
                             rawUnit = tokens.getOrNull(5)?.trim()?.uppercase()?.ifBlank { "PIECE" } ?: "PIECE"
                             rawBarcode = cleanBarcode(tokens.getOrNull(6))
                             rawMinStock = tokens.getOrNull(7)?.trim()?.toDoubleOrNull() ?: 0.0
+                            rawOpening = tokens.getOrNull(8)?.trim()?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                         } else {
                             // Default template layout: Name, Barcode, Category, Unit, Purchase, Sale, MinStock
                             rawName = tokens[0].replace("\uFEFF", "").replace("\u200B", "").trim()
@@ -631,6 +653,7 @@ class ProductViewModel @Inject constructor(
                             rawPurchase = tokens.getOrNull(4)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                             rawSale = tokens.getOrNull(5)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                             rawMinStock = tokens.getOrNull(6)?.trim()?.toDoubleOrNull() ?: 0.0
+                            rawOpening = tokens.getOrNull(7)?.trim()?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                         }
 
                         if (rawName.isBlank()) {
@@ -681,6 +704,19 @@ class ProductViewModel @Inject constructor(
                             if (normBarcode != null) existingBarcodeMap[normBarcode] = updatedProduct
                             if (normName.isNotBlank()) existingNameMap[normName] = updatedProduct
                             updatedCount++
+                            val opening = com.kadaikutty.pos.feature.stock.domain.openingStockToStorageUnits(rawOpening, rawUnit)
+                            if (opening > 0L) {
+                                if (!canSetStock) openingGivenButNotAllowed = true
+                                // Only fills a product that has never had stock. A shop that re-imports an old
+                                // file must not overwrite the quantities its sales and purchases have built up.
+                                else if (updatedProduct.id in openingApplied) { /* same product twice in the file */ }
+                                else if (database.saleDao().movementCount(companyId, updatedProduct.id) > 0) stockKeptCount++
+                                else {
+                                    stockBatch.add(com.kadaikutty.pos.feature.billing.data.StockMovementEntity(newRecordId(), companyId, updatedProduct.id, opening, "ADJUSTMENT", "Opening stock (import)", System.currentTimeMillis()))
+                                    openingApplied.add(updatedProduct.id)
+                                    stockSetCount++
+                                }
+                            }
                         } else {
                             val newProduct = ProductEntity(
                                 id = newRecordId(),
@@ -700,6 +736,15 @@ class ProductViewModel @Inject constructor(
                             if (normBarcode != null) existingBarcodeMap[normBarcode] = newProduct
                             if (normName.isNotBlank()) existingNameMap[normName] = newProduct
                             importedCount++
+                            val opening = com.kadaikutty.pos.feature.stock.domain.openingStockToStorageUnits(rawOpening, rawUnit)
+                            if (opening > 0L && canSetStock) {
+                                stockBatch.add(com.kadaikutty.pos.feature.billing.data.StockMovementEntity(newRecordId(), companyId, newProduct.id, opening, "ADJUSTMENT", "Opening stock (import)", System.currentTimeMillis()))
+                                openingApplied.add(newProduct.id)
+                                stockSetCount++
+                            } else {
+                                if (opening > 0L) openingGivenButNotAllowed = true
+                                if (rawMinStock > 0) unstockedWithMinCount++
+                            }
                         }
 
                         // Flush in batches of 500 to keep memory small and DB fast
@@ -708,6 +753,7 @@ class ProductViewModel @Inject constructor(
                             dao.insertProducts(syncBatch)
                             syncManager.enqueueProducts(syncBatch, "INSERT")
                             productBatch.clear()
+                            flushStock()
                             onProgress(totalRead, totalRead)
                         }
                     } catch (rowErr: Exception) {
@@ -722,6 +768,7 @@ class ProductViewModel @Inject constructor(
                     syncManager.enqueueProducts(syncBatch, "INSERT")
                     productBatch.clear()
                 }
+                flushStock()
 
                 onComplete(
                     ProductImportSummary(
@@ -729,7 +776,11 @@ class ProductViewModel @Inject constructor(
                         importedCount = importedCount,
                         updatedCount = updatedCount,
                         skippedCount = skippedCount,
-                        errorMessage = null
+                        errorMessage = null,
+                        stockSetCount = stockSetCount,
+                        stockKeptCount = stockKeptCount,
+                        unstockedWithMinCount = unstockedWithMinCount,
+                        openingGivenButNotAllowed = openingGivenButNotAllowed
                     )
                 )
             } catch (e: Exception) {
@@ -906,7 +957,15 @@ data class ProductImportSummary(
     val importedCount: Int,
     val updatedCount: Int,
     val skippedCount: Int,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    /** Products that received their opening stock from this file. */
+    val stockSetCount: Int = 0,
+    /** Existing products that already had stock history, so their quantity was left alone. */
+    val stockKeptCount: Int = 0,
+    /** New products with a minimum level but no opening stock: they show as low stock until stocked. */
+    val unstockedWithMinCount: Int = 0,
+    /** The file had opening stock but the signed-in user may not set stock (administrators only). */
+    val openingGivenButNotAllowed: Boolean = false
 )
 
 @HiltViewModel

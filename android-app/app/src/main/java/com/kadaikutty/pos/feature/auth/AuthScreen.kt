@@ -14,6 +14,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.*
 import androidx.compose.ui.res.painterResource
@@ -41,10 +42,15 @@ fun AuthScreen(
     val loginState by loginViewModel.state.collectAsState()
     val registerState by registerViewModel.state.collectAsState()
 
-    // Global Animation State
-    var pendingAction by remember { mutableStateOf<(() -> Unit)?>(null) }
+    // Global Animation State. The action starts at once and the animation plays over the wait;
+    // it used to start only after the animation finished, which added a fixed 3 seconds to every
+    // sign-in and registration before the request was even sent.
+    var showLoadingOverlay by remember { mutableStateOf(false) }
     val triggerAnimation = { action: () -> Unit ->
-        pendingAction = action
+        if (!showLoadingOverlay) {
+            showLoadingOverlay = true
+            action()
+        }
     }
 
     Box(
@@ -66,6 +72,8 @@ fun AuthScreen(
         // Glassmorphism Card
         Card(
             modifier = Modifier
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .fillMaxWidth()
                 .widthIn(max = 420.dp)
                 .padding(16.dp)
@@ -120,14 +128,8 @@ fun AuthScreen(
         }
     }
 
-    if (pendingAction != null) {
-        VehicleLoadingOverlay(
-            onComplete = {
-                val actionToRun = pendingAction
-                pendingAction = null
-                actionToRun?.invoke()
-            }
-        )
+    if (showLoadingOverlay) {
+        VehicleLoadingOverlay(onComplete = { showLoadingOverlay = false })
     }
 
     // Top Error Toast Overlay
@@ -237,19 +239,19 @@ fun VehicleLoadingOverlay(onComplete: () -> Unit = {}) {
             )
         }
 
-        // Phase 1: Slide to center (800ms)
+        // Phase 1: Slide to center (600ms)
         offsetX.animateTo(
             targetValue = 0f,
-            animationSpec = androidx.compose.animation.core.tween(durationMillis = 800, easing = androidx.compose.animation.core.LinearOutSlowInEasing)
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 600, easing = androidx.compose.animation.core.LinearOutSlowInEasing)
         )
         
-        // Phase 2: Stay in center (1400ms)
-        kotlinx.coroutines.delay(1400)
+        // Phase 2: Stay in center (400ms)
+        kotlinx.coroutines.delay(400)
         
-        // Phase 3: Slide out to right (800ms)
+        // Phase 3: Slide out to right (600ms)
         offsetX.animateTo(
             targetValue = screenWidth.value + 100f,
-            animationSpec = androidx.compose.animation.core.tween(durationMillis = 800, easing = androidx.compose.animation.core.FastOutLinearInEasing)
+            animationSpec = androidx.compose.animation.core.tween(durationMillis = 600, easing = androidx.compose.animation.core.FastOutLinearInEasing)
         )
         
         onComplete()
@@ -258,7 +260,9 @@ fun VehicleLoadingOverlay(onComplete: () -> Unit = {}) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = 0.7f)),
+            .background(Color.Black.copy(alpha = 0.7f))
+            // Swallows taps so the form underneath cannot be pressed twice while the request runs.
+            .pointerInput(Unit) {},
         contentAlignment = Alignment.Center
     ) {
         // Speed lines behind vehicle

@@ -63,7 +63,8 @@ fun SettingsScreen(
     viewModel: SettingsViewModel,
     onBack: () -> Unit = {},
     onOpenMasterControl: () -> Unit = {},
-    onOpenSyncDiagnostics: () -> Unit = {}
+    onOpenSyncDiagnostics: () -> Unit = {},
+    onAccountDeleted: () -> Unit = {}
 ) {
     var activeCategory by remember { mutableStateOf<SettingsCategory?>(null) }
     BackHandler(enabled = activeCategory != null) {
@@ -1367,6 +1368,89 @@ fun SettingsScreen(
                             Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(18.dp))
                             Spacer(Modifier.width(8.dp))
                             Text("Reset / Clear Database", fontWeight = FontWeight.Bold)
+                        }
+
+                        // Google Play requires an in-app way to delete the account and its data.
+                        // Only the shop owner (the one who manages users) has it; the server checks too.
+                        if (hasUserManagePermission) {
+                            var showDeleteAccountDialog by remember { mutableStateOf(false) }
+                            Button(
+                                onClick = { showDeleteAccountDialog = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error, contentColor = Color.White)
+                            ) {
+                                Icon(Icons.Default.DeleteForever, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Delete Account", fontWeight = FontWeight.Bold)
+                            }
+                            if (showDeleteAccountDialog) {
+                                var confirmWord by remember { mutableStateOf("") }
+                                var pin by remember { mutableStateOf("") }
+                                var deleteError by remember { mutableStateOf<String?>(null) }
+                                val deleting by viewModel.isDeletingAccount.collectAsState()
+                                val isOnline by viewModel.isOnline.collectAsState()
+                                AlertDialog(
+                                    onDismissRequest = { if (!deleting) showDeleteAccountDialog = false },
+                                    title = { Text("Delete your account?", fontWeight = FontWeight.Bold) },
+                                    text = {
+                                        // Scrolls, and the outcome sits above the fields: on a small phone this dialog is taller
+                                        // than the screen, and an error line at the bottom was clipped away, so a wrong PIN
+                                        // showed nothing at all.
+                                        Column(
+                                            modifier = Modifier.verticalScroll(rememberScrollState()),
+                                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                                        ) {
+                                            deleteError?.let { Text(it, fontSize = 14.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+                                            if (deleting) Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                                                Text("Deleting...", fontSize = 13.sp)
+                                            }
+                                            Text("This permanently deletes your shop, every staff account and all products, customers, bills and cloud backups, from the cloud and from this phone. Other phones signed in to this shop are signed out. It cannot be undone.")
+                                            Text("Backup files you saved to your phone's storage are not touched. Export one first if you want to keep your records.", fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
+                                            OutlinedTextField(
+                                                value = confirmWord,
+                                                onValueChange = { confirmWord = it.take(6).uppercase() },
+                                                label = { Text("Type DELETE") },
+                                                singleLine = true,
+                                                enabled = !deleting,
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                            OutlinedTextField(
+                                                value = pin,
+                                                onValueChange = { pin = com.kadaikutty.pos.core.common.InputRules.digits(it, com.kadaikutty.pos.core.common.InputRules.PIN_LENGTH) },
+                                                label = { Text("Your 6-digit PIN") },
+                                                singleLine = true,
+                                                enabled = !deleting,
+                                                visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+                                                modifier = Modifier.fillMaxWidth()
+                                            )
+                                            if (!isOnline) Text("Connect to the internet to delete the account.", fontSize = 13.sp, color = MaterialTheme.colorScheme.error)
+                                        }
+                                    },
+                                    confirmButton = {
+                                        TextButton(
+                                            enabled = confirmWord == "DELETE" && pin.length == com.kadaikutty.pos.core.common.InputRules.PIN_LENGTH && isOnline && !deleting,
+                                            onClick = {
+                                                deleteError = null
+                                                viewModel.deleteAccount(pin) { error ->
+                                                    if (error == null) {
+                                                        showDeleteAccountDialog = false
+                                                        android.widget.Toast.makeText(context, "Your account has been deleted.", android.widget.Toast.LENGTH_LONG).show()
+                                                        onAccountDeleted()
+                                                    } else {
+                                                        deleteError = error
+                                                    }
+                                                }
+                                            }
+                                        ) { Text("Delete Forever", color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Bold) }
+                                    },
+                                    dismissButton = {
+                                        TextButton(enabled = !deleting, onClick = { showDeleteAccountDialog = false }) { Text("Cancel") }
+                                    }
+                                )
+                            }
                         }
 
                         if (showRestoreChooserDialog) {

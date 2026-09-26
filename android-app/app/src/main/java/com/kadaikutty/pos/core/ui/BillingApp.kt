@@ -116,13 +116,14 @@ fun BillingApp() {
     // simply mid-renewal never sees two different lock screens fighting for the same problem.
 
     if (isLoggedIn == null || isLicenseLoading) {
+        // Same maroon as the launch splash, so the white status bar icons stay readable while loading.
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(MaterialTheme.colorScheme.background),
+                .background(Color(0xFF5C151A)),
             contentAlignment = Alignment.Center,
         ) {
-            CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
+            CircularProgressIndicator(color = Color.White)
         }
         return
     }
@@ -409,6 +410,9 @@ fun BillingApp() {
                         },
                         onOpenSyncDiagnostics = {
                             navController.navigate(AppRoute.SyncDiagnostics.path)
+                        },
+                        onAccountDeleted = {
+                            navController.navigate(AppRoute.Login.path) { popUpTo(0) { inclusive = true } }
                         }
                     )
                 }
@@ -482,19 +486,26 @@ fun BillingApp() {
                 )
             }
 
+            // Phones freeze background apps; without this offline bills would wait for the next time the app is opened.
+            if (isLoggedIn == true && !showRenewalDailyDialog) BackgroundAccessPrompt()
+
             val syncNotificationState by settingsViewModel.syncNotificationState.collectAsState()
             SyncNotificationOverlay(
                 state = syncNotificationState,
                 onRetry = { settingsViewModel.retrySync() },
                 onDismiss = { settingsViewModel.dismissSyncNotification() },
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = 16.dp)
+                modifier = if (syncNotificationState is com.kadaikutty.pos.core.sync.SyncNotificationState.Failed) {
+                    Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp)
+                } else {
+                    // Small "Synced" pill stays top-start so it never covers the sync / lock / settings icons at top-end.
+                    Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 4.dp)
+                }
             )
 
             // Offline is a normal state, not an error: billing keeps working and syncs later, so
-            // this is a thin strip, never a blocking screen. Hidden on the login screen, which
-            // explains a failed sign-in itself.
+            // this is a small badge, never a blocking screen. Anchored top-start so it never
+            // covers the cloud-sync / settings buttons which live top-end. Hidden on the login
+            // screen, which explains a failed sign-in itself.
             if (isLoggedIn == true) {
                 ConnectionStatusBanner(
                     isOnline = isOnline,
@@ -504,7 +515,7 @@ fun BillingApp() {
                             navController.navigate(AppRoute.Login.path) { popUpTo(0) { inclusive = true } }
                         }
                     },
-                    modifier = Modifier.align(Alignment.TopCenter)
+                    modifier = Modifier.align(Alignment.TopStart)
                 )
             }
         } // Close Box
@@ -609,6 +620,7 @@ fun HomeScreen(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .navigationBarsPadding() // keep clear of the 3-button / gesture system bar
                     .padding(16.dp), // Floating margin
                 contentAlignment = Alignment.Center
             ) {
@@ -636,15 +648,19 @@ fun HomeScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier.clickable { onNavigateTo(AppRoute.Masters) }.padding(8.dp)
                             ) {
-                                Icon(Icons.Default.Menu, contentDescription = "Masters", tint = Color.White.copy(alpha = 0.8f))
+                                Icon(Icons.Default.Inventory2, contentDescription = "Masters", tint = Color.White.copy(alpha = 0.8f))
                                 Text("Masters", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
                             }
                         } else {
                             Spacer(modifier = Modifier.width(48.dp))
                         }
 
-                        // Center Spacer for FAB
-                        Spacer(modifier = Modifier.width(64.dp))
+                        // Center Spacer for FAB (its "Purchase" label sits underneath the raised button)
+                        Box(modifier = Modifier.width(64.dp).fillMaxHeight(), contentAlignment = Alignment.BottomCenter) {
+                            if (showPurchases) {
+                                Text("Purchase", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp, modifier = Modifier.padding(bottom = 8.dp))
+                            }
+                        }
 
                         // Right: Reports
                         if (showReports) {
@@ -652,7 +668,7 @@ fun HomeScreen(
                                 horizontalAlignment = Alignment.CenterHorizontally,
                                 modifier = Modifier.clickable { onNavigateTo(AppRoute.Reports) }.padding(8.dp)
                             ) {
-                                Icon(Icons.AutoMirrored.Filled.List, contentDescription = "Reports", tint = Color.White.copy(alpha = 0.8f))
+                                Icon(Icons.Default.BarChart, contentDescription = "Reports", tint = Color.White.copy(alpha = 0.8f))
                                 Text("Reports", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
                             }
                         } else {
@@ -676,7 +692,7 @@ fun HomeScreen(
                         contentColor = Color.White,
                         elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 10.dp)
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Inward Stock", modifier = Modifier.size(32.dp))
+                        Icon(Icons.Default.LocalShipping, contentDescription = "Purchase", modifier = Modifier.size(30.dp))
                     }
                 }
             }
@@ -686,7 +702,10 @@ fun HomeScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .background(MaterialTheme.colorScheme.background)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                // Applied after the scroll, so it is room at the END of the content: the last card and the
+                // start-bill button can be scrolled clear of the floating bottom bar instead of sitting under it.
+                .padding(bottom = paddingValues.calculateBottomPadding() + 24.dp),
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             val topInset = paddingValues.calculateTopPadding()
@@ -734,6 +753,9 @@ fun HomeScreen(
             }
 
             Box(modifier = Modifier.fillMaxWidth()) {
+                // Behind the status bar the white scoop would sit under the phone's white
+                // signal/wifi/battery icons and hide them; a maroon strip keeps them readable.
+                Box(modifier = Modifier.fillMaxWidth().height(topInset).background(Color(0xFF5C151A)))
                 // 1. Maroon background with S-curve + bottom rounded corners
                 Column(
                     modifier = Modifier
@@ -801,7 +823,7 @@ fun HomeScreen(
                                 title = "Inward Stock",
                                 value = Money(dashboardState.todayPurchasesMinorUnits).toString(),
                                 subtitle = "Purchased Today",
-                                icon = Icons.Default.Add,
+                                icon = Icons.Default.LocalShipping,
                                 accentColor = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.fillMaxWidth().height(150.dp),
                                 onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
@@ -987,7 +1009,7 @@ fun HomeScreen(
                                     border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
                                 ) {
                                     Icon(
-                                        Icons.Default.ShoppingCart,
+                                        Icons.Default.PointOfSale,
                                         contentDescription = null,
                                         tint = Color.White,
                                         modifier = Modifier.padding(10.dp).size(26.dp)
@@ -1131,7 +1153,9 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            // The floating bottom bar isn't part of this scroll area, so leave room for it (plus the raised
+            // Purchase button) or the last invoice ends up hidden behind it.
+            Spacer(modifier = Modifier.height(paddingValues.calculateBottomPadding() + 32.dp))
         } // close the inner Column
         } // close the outer scrolling Column
     }

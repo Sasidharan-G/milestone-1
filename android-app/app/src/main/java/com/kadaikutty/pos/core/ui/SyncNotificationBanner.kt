@@ -33,16 +33,16 @@ fun SyncNotificationOverlay(
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    // Auto-dismiss Success after 3.5 seconds
     LaunchedEffect(state) {
         if (state is SyncNotificationState.Success) {
-            delay(3500)
+            delay(2000)
             onDismiss()
         }
     }
 
+    // In-progress is not shown: the dashboard cloud icon already spins while syncing.
     AnimatedVisibility(
-        visible = state !is SyncNotificationState.Idle,
+        visible = state is SyncNotificationState.Success || state is SyncNotificationState.Failed,
         enter = fadeIn() + slideInVertically { -it },
         exit = fadeOut() + slideOutVertically { -it },
         modifier = modifier
@@ -90,36 +90,25 @@ fun SyncNotificationOverlay(
                     shadowElevation = 6.dp,
                     modifier = Modifier
                         .wrapContentWidth()
-                        .padding(horizontal = 16.dp)
+                        .padding(horizontal = 12.dp)
                 ) {
                     Row(
-                        modifier = Modifier.padding(start = 14.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        horizontalArrangement = Arrangement.spacedBy(5.dp)
                     ) {
                         Icon(
                             imageVector = Icons.Default.CheckCircle,
                             contentDescription = "Success",
                             tint = Color(0xFF34D399),
-                            modifier = Modifier.size(18.dp)
+                            modifier = Modifier.size(14.dp)
                         )
                         Text(
-                            text = state.message,
+                            text = "Synced",
                             color = Color.White,
-                            fontSize = 13.sp,
+                            fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold
                         )
-                        IconButton(
-                            onClick = onDismiss,
-                            modifier = Modifier.size(24.dp)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Dismiss",
-                                tint = Color.White.copy(alpha = 0.7f),
-                                modifier = Modifier.size(14.dp)
-                            )
-                        }
                     }
                 }
             }

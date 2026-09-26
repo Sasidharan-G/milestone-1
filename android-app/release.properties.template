@@ -20,12 +20,14 @@ KADAIKUTTY_KEY_ALIAS=kadaikutty_key
 KADAIKUTTY_STORE_PASSWORD=your_store_password
 KADAIKUTTY_KEY_PASSWORD=your_key_password
 
-# 5. Release signing certificate SHA-256, colon-separated uppercase hex.
-# SecurityShield.verifyBinaryIntegrity compares the installed APK's signature against this and
-# refuses to start if they differ, so a repackaged build cannot run. It applies to release builds
+# 5. Release signing certificate SHA-256(s), colon-separated uppercase hex, COMMA-SEPARATED when more than one.
+# SecurityShield.verifyBinaryIntegrity compares the installed APK's signature against this list and
+# refuses to start if it matches none, so a repackaged build cannot run. It applies to release builds
 # only - a debug build is signed with the debug key and is never checked.
-# Leave it blank to disable the check. Read the value out of your keystore with:
-#   keytool -list -v -keystore app/kadaikutty-release.jks -alias kadaikutty_release
-# and copy the "SHA256:" line. It changes if you ever sign with a different key, including when
-# enrolling in Play App Signing (then use the certificate Play reports, not your upload key).
-SIGNING_CERT_SHA256=AA:BB:CC:DD:...
+# Leave it blank to disable the check. Read your own key's value with:
+#   keytool -list -v -keystore kadaikutty.jks -alias kadaikutty_key
+# and copy the "SHA256:" line.
+# Google Play re-signs the app with its own key, and the APKs you hand out directly keep using yours,
+# so with Play App Signing list BOTH: your key first, then the "App signing key certificate" SHA-256
+# from Play Console > App signing. See docs/PLAY_STORE_SUBMISSION.md section 2.
+SIGNING_CERT_SHA256=AA:BB:CC:DD:...,11:22:33:44:...

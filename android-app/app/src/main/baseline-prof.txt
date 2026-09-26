@@ -1,0 +1,22 @@
+# Hand-written baseline profile: no Play Store here to build one from real usage, so the classes on
+# the launch path are listed by package. Android compiles these ahead of time instead of
+# interpreting them, which is most of what makes a sideloaded app's first launches feel slow.
+HSPLcom/kadaikutty/pos/MainActivity;->**(**)**
+HSPLcom/kadaikutty/pos/BillingApplication;->**(**)**
+HSPLcom/kadaikutty/pos/core/ui/**;->**(**)**
+HSPLcom/kadaikutty/pos/core/ui/theme/**;->**(**)**
+HSPLcom/kadaikutty/pos/core/auth/**;->**(**)**
+HSPLcom/kadaikutty/pos/core/database/**;->**(**)**
+HSPLcom/kadaikutty/pos/core/security/**;->**(**)**
+HSPLcom/kadaikutty/pos/core/network/**;->**(**)**
+HSPLcom/kadaikutty/pos/core/preferences/**;->**(**)**
+HSPLcom/kadaikutty/pos/core/license/**;->**(**)**
+HSPLcom/kadaikutty/pos/feature/auth/**;->**(**)**
+HSPLcom/kadaikutty/pos/feature/home/**;->**(**)**
+HSPLcom/kadaikutty/pos/feature/billing/**;->**(**)**
+Lcom/kadaikutty/pos/MainActivity;
+Lcom/kadaikutty/pos/BillingApplication;
+Lcom/kadaikutty/pos/core/ui/**;
+Lcom/kadaikutty/pos/feature/auth/**;
+Lcom/kadaikutty/pos/feature/home/**;
+Lcom/kadaikutty/pos/feature/billing/**;

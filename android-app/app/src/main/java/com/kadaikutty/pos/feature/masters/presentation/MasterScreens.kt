@@ -548,6 +548,21 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         if (s.skippedCount > 0) {
                             Text("Skipped / Empty Lines: ${s.skippedCount}", color = Color(0xFFF59E0B))
                         }
+                        if (s.stockSetCount > 0) {
+                            Text("Opening Stock Set: ${s.stockSetCount} items", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                        }
+                        if (s.stockKeptCount > 0) {
+                            Text("${s.stockKeptCount} existing items already had stock, so their quantity was left unchanged.", color = Color(0xFF3B82F6), fontSize = 13.sp)
+                        }
+                        if (s.openingGivenButNotAllowed) {
+                            Text("Opening stock was ignored: only an administrator can set stock.", color = Color(0xFFF59E0B), fontSize = 13.sp)
+                        }
+                        if (s.unstockedWithMinCount > 0) {
+                            Text(
+                                "${s.unstockedWithMinCount} new items have a Min Stock but no Opening Stock, so they will show as low stock until you add stock (Purchase, or Adjust Stock). Add an Opening Stock column to the file to avoid this.",
+                                color = Color(0xFFF59E0B), fontSize = 13.sp
+                            )
+                        }
                     }
                 }
             },

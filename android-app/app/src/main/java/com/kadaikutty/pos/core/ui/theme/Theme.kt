@@ -78,7 +78,9 @@ fun BillingTheme(
             if (window != null) {
                 val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, view)
                 val isLight = colors == LightColors
-                insetsController.isAppearanceLightStatusBars = isLight
+                // Every screen has a maroon (or dark) header under the status bar, in the light theme
+                // too, so its clock and icons must be white. Dark icons there were unreadable.
+                insetsController.isAppearanceLightStatusBars = false
                 insetsController.isAppearanceLightNavigationBars = isLight
             }
         }

@@ -7,8 +7,10 @@ import com.kadaikutty.pos.core.network.BackendApiClient
 import com.kadaikutty.pos.core.security.Permission
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -53,32 +55,13 @@ class DefaultAuthRepository(
         val previousCompany = tenantDatabaseManager?.getActiveCompany()
         return try {
             sessionSecurityManager.resetSessionTermination()
-            val session = persistOnlineSession(backend.login(normalizePhone(username), password.concatToString()), password)
-            if (session.permissions.contains(Permission.ACCOUNT_INACTIVE)) {
-                sessions.clear()
-                credentials.remove(normalizePhone(username))
-                return LoginResult.Failure(DEACTIVATED_MESSAGE)
-            }
-            tenantDatabaseManager?.setActiveCompany(session.companyId)
-            val targetDb = getDb(session.companyId)
-
-            // Every authenticated call requires the device session issued here
-            try {
-                val remoteSessionId = sessionSecurityManager.registerSession()
-                val sessionWithToken = session.copy(sessionToken = remoteSessionId)
-                sessions.save(sessionWithToken)
-                runCatching { com.kadaikutty.pos.core.sync.LegacyTenantMigration.runOnce(targetDb, session.companyId) }
-                syncScheduler?.requestPull()
-                LoginResult.Success(sessionWithToken)
-            } catch (e: Exception) {
-                sessions.clear()
-                // The active company was switched above; put it back so a failed sign-in never
-                // leaves the app pointed at this tenant's database.
-                previousCompany?.let { tenantDatabaseManager?.setActiveCompany(it) }
-                // The server did accept the password, so this is a connection problem and the
-                // offline credential saved above may be used.
-                LoginResult.Failure("Signed in, but could not establish a device session. Check your connection and try again.", canTryOffline = true)
-            }
+            val response = backend.login(normalizePhone(username), password.concatToString())
+            // The server accepted the password. What follows is one sign-in: the shop's records, the
+            // offline credential and the device session belong together, so it must not be abandoned
+            // half-way. The sign-in screen used to leave (and cancel this scope) the moment the session
+            // appeared in the store, which cut this short before the credential was saved: the device
+            // signed in fine and could then never sign in offline.
+            withContext(NonCancellable) { completeSignIn(response, username, password, previousCompany) }
         } catch (e: Exception) {
             if (isServerRejection(e)) {
                 // The server was reached and said no: wrong password, or the account was disabled
@@ -89,6 +72,36 @@ class DefaultAuthRepository(
             } else {
                 LoginResult.Failure(e.message ?: "Unable to sign in", canTryOffline = true)
             }
+        }
+    }
+
+    private suspend fun completeSignIn(response: JSONObject, username: String, password: CharArray, previousCompany: String?): LoginResult {
+        val session = persistOnlineSession(response, password)
+        if (session.permissions.contains(Permission.ACCOUNT_INACTIVE)) {
+            credentials.remove(normalizePhone(username))
+            return LoginResult.Failure(DEACTIVATED_MESSAGE)
+        }
+        tenantDatabaseManager?.setActiveCompany(session.companyId)
+        val targetDb = getDb(session.companyId)
+
+        // Every authenticated call requires the device session issued here.
+        return try {
+            val remoteSessionId = sessionSecurityManager.registerSession(session.accessToken.orEmpty())
+            val sessionWithToken = session.copy(sessionToken = remoteSessionId)
+            // The one write that makes the sign-in visible. Whatever watches the session store (license
+            // loading, sync, the socket) can therefore never see it without its device session, and
+            // never registers a second one that revokes the first.
+            sessions.save(sessionWithToken)
+            runCatching { com.kadaikutty.pos.core.sync.LegacyTenantMigration.runOnce(targetDb, session.companyId) }
+            syncScheduler?.requestPull()
+            LoginResult.Success(sessionWithToken)
+        } catch (e: Exception) {
+            // The active company was switched above; put it back so a failed sign-in never
+            // leaves the app pointed at this tenant's database.
+            previousCompany?.let { tenantDatabaseManager?.setActiveCompany(it) }
+            // The server did accept the password, so this is a connection problem and the
+            // offline credential saved above may be used.
+            LoginResult.Failure("Signed in, but could not establish a device session. Check your connection and try again.", canTryOffline = true)
         }
     }
 
@@ -199,7 +212,7 @@ class DefaultAuthRepository(
             companyId = user.getString("companyId"),
             role = role
         )
-        sessions.save(session)
+        // Not saved here: the session becomes visible only once the device session is registered (see completeSignIn).
 
         val licenseObj = response.optJSONObject("license")
         val bName = licenseObj?.optString("businessName")?.ifBlank { null } ?: user.optString("businessName").ifBlank { null }

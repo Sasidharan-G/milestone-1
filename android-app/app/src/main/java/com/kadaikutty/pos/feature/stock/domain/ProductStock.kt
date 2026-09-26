@@ -16,3 +16,15 @@ data class ProductStock(
  */
 fun isLowStock(currentStock: Long, minStockLevel: Double, unitType: String?): Boolean =
     minStockLevel > 0.0 && currentStock.toDouble() <= minStockLevel * (if (unitType == "KG" || unitType == "LITER") 1000.0 else 1.0)
+
+/**
+ * Opening stock in a bulk import is typed in whole units (kg, litres, pieces), like the minimum
+ * level. KG and LITER stock is kept in thousandths, so 25 kg is stored as 25000. Returns 0 for
+ * anything that is not a usable positive quantity, which means "no opening stock given".
+ */
+fun openingStockToStorageUnits(typed: Double, unitType: String?): Long {
+    if (!typed.isFinite() || typed <= 0.0) return 0L
+    val scaled = typed * (if (unitType == "KG" || unitType == "LITER") 1000.0 else 1.0)
+    val rounded = Math.round(scaled)
+    return if (rounded in 1..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) rounded else 0L
+}

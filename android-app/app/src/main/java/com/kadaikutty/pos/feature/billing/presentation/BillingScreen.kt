@@ -223,6 +223,13 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
                 Column(modifier = Modifier.padding(12.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // On a short screen (a 640dp-high budget phone, a large font) the fixed input rows, the cart
+                    // and the totals do not all fit, and the Hold / Split / Pay All buttons were pushed off the
+                    // card - a bill could not be finished. There the inputs scroll together with the cart lines
+                    // and only the totals and the buttons stay pinned. Taller screens keep the inputs pinned.
+                    val compactHeight = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp < 700
+                    val inputsSection: @Composable () -> Unit = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     // 1. Select Customer (Opens Fast Searchable Selector Dialog)
                     val selectedCustomerName = when (selectedCustomerId) {
                         null -> "Walk-in Customer"
@@ -419,7 +426,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                         OutlinedTextField(
                             value = priceText,
                             onValueChange = { priceText = com.kadaikutty.pos.core.common.InputRules.money(it) },
-                            label = { Text("Price", style = MaterialTheme.typography.labelSmall) },
+                            label = { Text("Price", style = MaterialTheme.typography.labelSmall, maxLines = 1, softWrap = false) },
                             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                             shape = MaterialTheme.shapes.small,
                             modifier = Modifier.weight(1.1f),
@@ -475,8 +482,9 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
 
                     HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 
-                    // Draft Items list (Takes remaining space!)
-                    LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        }
+                    }
+                    val cartLines: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
                         items(lines, key = { it.productId }) { line ->
                             Card(
                                 modifier = Modifier
@@ -489,15 +497,14 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                 shape = MaterialTheme.shapes.medium,
                                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                             ) {
-                                Row(
-                                    modifier = Modifier
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                        .fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    // Product Name & Price
-                                    Column(modifier = Modifier.weight(2.2f)) {
+                                // On a narrow phone (320dp) name, stepper and total do not fit side by side and the
+                                // stepper's "+" ran over the amount; there the stepper gets its own line.
+                                val narrowLine = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp < 380
+                                val isDecimal = line.unitType == "KG" || line.unitType == "LITER"
+                                val step = if (isDecimal) 250L else 1L
+
+                                val nameBlock: @Composable (Modifier) -> Unit = { mod ->
+                                    Column(modifier = mod) {
                                         Text(
                                             text = line.productName,
                                             fontWeight = FontWeight.Bold,
@@ -511,15 +518,12 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                                         )
                                     }
-
-                                    // Quantity Stepper: [-] [ Qty ] [+]
-                                    val isDecimal = line.unitType == "KG" || line.unitType == "LITER"
-                                    val step = if (isDecimal) 250L else 1L
-
+                                }
+                                val stepperBlock: @Composable (Modifier, Arrangement.Horizontal) -> Unit = { mod, arrangement ->
                                     Row(
-                                        modifier = Modifier.weight(2.6f),
+                                        modifier = mod,
                                         verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.Center
+                                        horizontalArrangement = arrangement
                                     ) {
                                         FilledTonalIconButton(
                                             onClick = {
@@ -569,10 +573,10 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                             Text("+", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                                         }
                                     }
-
-                                    // Line Total & Delete
+                                }
+                                val totalBlock: @Composable (Modifier) -> Unit = { mod ->
                                     Row(
-                                        modifier = Modifier.weight(1.8f),
+                                        modifier = mod,
                                         horizontalArrangement = Arrangement.End,
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
@@ -595,7 +599,47 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                         }
                                     }
                                 }
+
+                                if (narrowLine) {
+                                    Column(
+                                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp).fillMaxWidth(),
+                                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            nameBlock(Modifier.weight(1f).padding(end = 8.dp))
+                                            totalBlock(Modifier)
+                                        }
+                                        stepperBlock(Modifier.fillMaxWidth(), Arrangement.Start)
+                                    }
+                                } else {
+                                    Row(
+                                        modifier = Modifier
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                            .fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        nameBlock(Modifier.weight(2.2f))
+                                        stepperBlock(Modifier.weight(2.6f), Arrangement.Center)
+                                        totalBlock(Modifier.weight(1.8f))
+                                    }
+                                }
                             }
+                        }
+                    }
+                    if (compactHeight) {
+                        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            item(key = "inputs") { inputsSection() }
+                            cartLines()
+                        }
+                    } else {
+                        inputsSection()
+                        LazyColumn(modifier = Modifier.weight(1f).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            cartLines()
                         }
                     }
 

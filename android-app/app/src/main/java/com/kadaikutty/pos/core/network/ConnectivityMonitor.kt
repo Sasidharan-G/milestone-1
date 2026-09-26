@@ -50,6 +50,7 @@ class ConnectivityMonitor @Inject constructor(
     val isOnline: StateFlow<Boolean> = _isOnline.asStateFlow()
 
     private val healthClient = OkHttpClient.Builder()
+        .dns(ResilientDns)
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
         .callTimeout(8, TimeUnit.SECONDS)

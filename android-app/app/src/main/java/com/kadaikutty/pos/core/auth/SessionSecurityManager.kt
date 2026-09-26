@@ -40,6 +40,8 @@ class SessionSecurityManager @Inject constructor(
     val masterTerminationReason: StateFlow<String?> = _masterTerminationReason.asStateFlow()
     private var heartbeatJob: Job? = null
     private var masterHeartbeatJob: Job? = null
+    // True while a device session is live, so returning to the foreground knows to resume beating.
+    @Volatile private var heartbeatWanted = false
 
     init {
         scope.launch {
@@ -57,6 +59,7 @@ class SessionSecurityManager @Inject constructor(
     fun notifySessionRevoked(reason: String = "Your account was logged in on another device. Active session ended.") {
         heartbeatJob?.cancel()
         heartbeatJob = null
+        heartbeatWanted = false
         _terminationReason.value = reason
         _isSessionTerminated.value = true
         scope.launch {
@@ -65,20 +68,18 @@ class SessionSecurityManager @Inject constructor(
     }
 
     /**
-     * Called right after a successful tenant login. Throws if the session cannot be established.
-     *
-     * It takes nothing: the identity comes from the stored session and the device id from
-     * preferences. It used to declare username, companyId, role and sessionToken, none of which
-     * it read - and the caller was passing a user id as "username".
+     * Registers this device for a sign-in that is still being completed and returns the device
+     * session id. It takes the access token directly because the session is written to the store
+     * only afterwards, in one piece (see DefaultAuthRepository.loginOnline): reading the token from
+     * a half-written session let background calls register a second device session, which revoked
+     * the first. Throws if the session cannot be established.
      */
-    suspend fun registerSession(): String {
+    suspend fun registerSession(accessToken: String): String {
         resetSessionTermination()
-        val active = sessionStore.activeSession.first()
-        val accessToken = active?.accessToken ?: error("Online session token is missing")
-        val response = backendApi.registerSession(accessToken, appPreferences.getOrCreateInstallationDeviceId())
+        require(accessToken.isNotBlank()) { "Online session token is missing" }
+        val response = backendApi.registerSession(accessToken, appPreferences.getOrCreateInstallationDeviceId(), appPreferences.getDeviceModelName())
         val remoteSessionId = response.optJSONObject("session")?.optString("sessionId").orEmpty()
         require(remoteSessionId.isNotBlank()) { "Backend session registration failed" }
-        sessionStore.updateSessionToken(remoteSessionId)
         startHeartbeat()
         return remoteSessionId
     }
@@ -89,11 +90,28 @@ class SessionSecurityManager @Inject constructor(
         startHeartbeat()
     }
 
-    private fun startHeartbeat() {
+    /**
+     * Stops beating while the app is in the background (a beat is a request plus a database write, and
+     * the session only needs to stay fresh while the shop is actually using the app) and beats at once
+     * on return, which also notices a sign-out that happened meanwhile.
+     */
+    fun onAppBackgrounded() {
+        heartbeatJob?.cancel()
+        heartbeatJob = null
+    }
+
+    fun onAppForegrounded() {
+        if (heartbeatWanted && heartbeatJob == null) startHeartbeat(immediate = true)
+    }
+
+    private fun startHeartbeat(immediate: Boolean = false) {
+        heartbeatWanted = true
         heartbeatJob?.cancel()
         heartbeatJob = scope.launch {
+            var first = immediate
             while (true) {
-                delay(60_000)
+                if (!first) delay(60_000)
+                first = false
                 val session = sessionStore.activeSession.first() ?: return@launch
                 val accessToken = session.accessToken
                 val sessionId = session.sessionToken
@@ -121,6 +139,7 @@ class SessionSecurityManager @Inject constructor(
     suspend fun clearSession() {
         heartbeatJob?.cancel()
         heartbeatJob = null
+        heartbeatWanted = false
         val active = sessionStore.activeSession.first() ?: return
         val access = active.accessToken ?: return
         val sessionId = active.sessionToken ?: return

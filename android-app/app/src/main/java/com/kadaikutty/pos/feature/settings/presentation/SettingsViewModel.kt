@@ -47,6 +47,7 @@ class SettingsViewModel @Inject constructor(
     private val liveBackupWriter: LiveBackupWriter,
     private val offlineCredentialStore: com.kadaikutty.pos.core.auth.OfflineCredentialStore,
     private val shareManager: ShareManager,
+    private val webSocketManager: com.kadaikutty.pos.core.network.WebSocketManager,
     connectivityMonitor: com.kadaikutty.pos.core.network.ConnectivityMonitor,
 ) : ViewModel() {
 
@@ -161,6 +162,60 @@ class SettingsViewModel @Inject constructor(
         sessionSecurityManager.resetSessionTermination()
         viewModelScope.launch {
             sessionStore.clear()
+        }
+    }
+
+    private val _isDeletingAccount = MutableStateFlow(false)
+    val isDeletingAccount: StateFlow<Boolean> = _isDeletingAccount.asStateFlow()
+
+    /**
+     * Deletes the owner's account and the whole shop: first in the cloud (which also signs every
+     * other device out), then everything on this phone. Cloud first, so a failure - no internet,
+     * wrong PIN - leaves this phone exactly as it was. [onResult] gets null on success, otherwise
+     * a message to show. Google Play requires this to be possible from inside the app.
+     */
+    fun deleteAccount(pin: String, onResult: (String?) -> Unit) {
+        if (_isDeletingAccount.value) return
+        _isDeletingAccount.value = true
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            var failure: String? = null
+            try {
+                val session = sessionStore.activeSession.first() ?: throw IllegalStateException("You are signed out. Sign in again.")
+                var token = session.accessToken?.trim()?.takeIf { it.isNotBlank() }
+                if (token == null) token = backendApi.autoRecoverSession(forceRefresh = false)?.first
+                if (token.isNullOrBlank()) throw IllegalStateException("Connect to the internet and sign in again to delete the account.")
+
+                // The server signs this device out as part of the deletion; without closing the
+                // socket first that "signed in elsewhere" notice would greet the login screen.
+                webSocketManager.disconnect()
+                backendApi.deleteAccount(token, pin)
+
+                // The cloud side is gone and every device is signed out. Nothing may sync now, and
+                // whatever is on this phone has to go too, sign-in included.
+                syncScheduler.cancelAllWork()
+                com.kadaikutty.pos.core.sync.SyncLock.mutex.withLock {
+                    val tenantDb = tenantDatabaseManager.getDatabase(session.companyId)
+                    for (target in listOfNotNull(tenantDb, if (tenantDb != database) database else null)) {
+                        com.kadaikutty.pos.core.sync.ShopDataWiper.wipe(target, includeAccount = true)
+                    }
+                }
+                runCatching { offlineCredentialStore.removeByCompanyId(session.companyId) }
+                runCatching { offlineCredentialStore.removeByUserId(session.userId) }
+                runCatching { appPreferences.clearShopDetails() }
+                sessionStore.clear()
+                sessionSecurityManager.resetSessionTermination()
+            } catch (e: com.kadaikutty.pos.core.network.BackendApiException) {
+                failure = when (e.code) {
+                    "ACCOUNT_DELETE_PIN_INVALID" -> "The PIN is incorrect."
+                    "STAFF_ADMIN_REQUIRED" -> "Only the shop owner can delete the account."
+                    else -> e.message
+                }
+            } catch (e: Exception) {
+                failure = e.message ?: "Could not delete the account."
+            } finally {
+                _isDeletingAccount.value = false
+            }
+            withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(failure) }
         }
     }
 

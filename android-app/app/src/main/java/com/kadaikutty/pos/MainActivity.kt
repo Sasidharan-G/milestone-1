@@ -2,6 +2,7 @@ package com.kadaikutty.pos
 
 import android.os.Bundle
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
@@ -27,11 +28,6 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Runtime Security Check
-        if (runSecurityChecks()) {
-            return
-        }
 
         // Enable edge-to-edge layout; system bars appearance will be driven dynamically by theme
         androidx.core.view.WindowCompat.setDecorFitsSystemWindows(window, false)
@@ -61,18 +57,42 @@ class MainActivity : FragmentActivity() {
             }
         }
         lifecycleScope.launch {
-            val failure = withContext(Dispatchers.IO) {
-                try {
-                    val db = dagger.hilt.android.EntryPointAccessors.fromApplication(applicationContext, DatabaseStartup::class.java).database()
-                    db.openHelper.writableDatabase.query("SELECT 1").use { it.moveToFirst() }
-                    null
-                } catch (e: Exception) { e }
+            // The security checks (root, signature) and opening the encrypted database are both slow
+            // on budget phones and independent of each other, so they run side by side off the main
+            // thread. Nothing of the app is shown until the checks pass, so a blocked phone still
+            // sees only this splash and the alert.
+            val (securityProblem, failure) = withContext(Dispatchers.IO) {
+                kotlinx.coroutines.coroutineScope {
+                    val check = async { securityFailure() }
+                    val database = async<Throwable?> {
+                        try {
+                            val db = dagger.hilt.android.EntryPointAccessors.fromApplication(applicationContext, DatabaseStartup::class.java).database()
+                            db.openHelper.writableDatabase.query("SELECT 1").use { it.moveToFirst() }
+                            null
+                        } catch (e: Exception) { e }
+                    }
+                    check.await() to database.await()
+                }
+            }
+            if (securityProblem != null) {
+                showSecurityFailureAndExit(securityProblem.first, securityProblem.second)
+                return@launch
             }
             // The app draws edge to edge, so the window does not shrink for the keyboard by itself.
             // Padding the whole app by the keyboard's height keeps the screen above it, and a
             // focused field inside a scrolling screen is then scrolled into view.
+            // Phones set to "Largest" font (common with older shop owners) scale every sp by up to
+            // 1.3x and push buttons and totals off small screens; cap the scale so layouts hold.
             if (failure == null) setContent {
-                Box(modifier = Modifier.fillMaxSize().imePadding()) { BillingApp() }
+                val density = androidx.compose.ui.platform.LocalDensity.current
+                androidx.compose.runtime.CompositionLocalProvider(
+                    androidx.compose.ui.platform.LocalDensity provides androidx.compose.ui.unit.Density(
+                        density = density.density,
+                        fontScale = density.fontScale.coerceAtMost(1.15f)
+                    )
+                ) {
+                    Box(modifier = Modifier.fillMaxSize().imePadding()) { BillingApp() }
+                }
             }
             else {
                 android.util.Log.e("DatabaseStartup", "Database opening failed; original files preserved", failure)
@@ -85,27 +105,25 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    private fun runSecurityChecks(): Boolean {
+    /** Title and message of the reason this phone must not run the app, or null when it may. Runs off the main thread. */
+    private fun securityFailure(): Pair<String, String>? {
         // Allow emulators / debug builds during development phase
         if (!BuildConfig.DEBUG) {
             if (SecurityShield.isDeviceRooted(this)) {
-                showSecurityFailureAndExit("Security Alert", "This application cannot execute on rooted devices.")
-                return true
+                return "Security Alert" to "This application cannot execute on rooted devices."
             }
             if (SecurityShield.isDebuggerAttached()) {
-                showSecurityFailureAndExit("Security Alert", "Active debugging tools detected. Session terminated.")
-                return true
+                return "Security Alert" to "Active debugging tools detected. Session terminated."
             }
         }
 
         // Note: VPN/Proxy check is relaxed to allow legitimate shop network configurations (e.g. Cloudflare WARP, Google One VPN, AdGuard)
 
         if (!SecurityShield.verifyBinaryIntegrity(this)) {
-            showSecurityFailureAndExit("Integrity Failure", "App binary verification failed. Reinstall from official source.")
-            return true
+            return "Integrity Failure" to "App binary verification failed. Reinstall from official source."
         }
 
-        return false
+        return null
     }
 
     private fun showSecurityFailureAndExit(title: String, message: String) {

@@ -16,12 +16,17 @@ object ShopDataWiper {
         "expenses", "sync_queue", "sync_dead_letter", "local_operations", "audit_logs", "shifts"
     )
 
-    fun wipe(database: BillingDatabase) {
+    // What "delete my account" removes on top of the shop's business records: the sign-in
+    // accounts, the license row, conflict history and any parked carts.
+    private val ACCOUNT_TABLES = listOf("users", "company_licenses", "sync_conflicts", "draft_cart_items")
+
+    /** [includeAccount] also removes the users and license rows, for account deletion. */
+    fun wipe(database: BillingDatabase, includeAccount: Boolean = false) {
         val sqlite = database.openHelper.writableDatabase
         sqlite.execSQL("PRAGMA foreign_keys = OFF")
         sqlite.beginTransaction()
         try {
-            for (table in TABLES) {
+            for (table in if (includeAccount) TABLES + ACCOUNT_TABLES else TABLES) {
                 runCatching { sqlite.execSQL("DELETE FROM `$table`") }
             }
             runCatching { sqlite.execSQL("DELETE FROM `sqlite_sequence`") }

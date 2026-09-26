@@ -5,6 +5,7 @@ import com.kadaikutty.pos.core.license.LicenseDao
 import com.kadaikutty.pos.core.license.LicenseEntity
 import com.kadaikutty.pos.core.network.BackendApiClient
 import com.kadaikutty.pos.core.security.Permission
+import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.json.JSONArray
 import org.json.JSONObject
@@ -14,7 +15,9 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.ArgumentCaptor
 import org.mockito.ArgumentMatchers.anyString
+import org.mockito.Mockito.inOrder
 import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
 import org.mockito.Mockito.verify
 import org.mockito.Mockito.`when`
 
@@ -33,18 +36,20 @@ class LoginSessionPersistenceTest {
     private class Harness(existingLicense: LicenseEntity?) {
         val licenses: LicenseDao = mock(LicenseDao::class.java)
         val backend: BackendApiClient = mock(BackendApiClient::class.java)
+        val sessions: SessionStore = mock(SessionStore::class.java)
+        val credentials: OfflineCredentialStore = mock(OfflineCredentialStore::class.java)
+        val security: SessionSecurityManager = mock(SessionSecurityManager::class.java)
         val repository: DefaultAuthRepository
 
         init {
             val database = mock(BillingDatabase::class.java)
             `when`(database.licenseDao()).thenReturn(licenses)
             `when`(database.userDao()).thenReturn(mock(UserDao::class.java))
-            val security = mock(SessionSecurityManager::class.java)
             runBlocking {
                 `when`(licenses.getLicense("c1")).thenReturn(existingLicense)
-                `when`(security.registerSession()).thenReturn("session-1")
+                `when`(security.registerSession(anyString())).thenReturn("session-1")
             }
-            repository = DefaultAuthRepository(mock(SessionStore::class.java), mock(OfflineCredentialStore::class.java), OfflineCredentialVerifier(), database, backend, security)
+            repository = DefaultAuthRepository(sessions, credentials, OfflineCredentialVerifier(), database, backend, security)
         }
 
         fun login(response: JSONObject): LoginResult = runBlocking {
@@ -91,5 +96,48 @@ class LoginSessionPersistenceTest {
         assertEquals(validUntil, saved.validUntilEpochMs)
         assertEquals("Shop", saved.businessName)
         assertFalse(saved.isExpired)
+    }
+
+    private val signedIn get() = JSONObject().put("user", user("ADMIN", emptyList())).put("tokens", JSONObject().put("accessToken", "a"))
+
+    // Mockito matchers return null, which Kotlin refuses for a non-null parameter; hand back a dummy instead.
+    private fun anyCredential(): OfflineCredential =
+        org.mockito.ArgumentMatchers.any(OfflineCredential::class.java) ?: OfflineCredential("", "", "", ByteArray(0), ByteArray(0), "")
+    private fun anySession(): Session =
+        org.mockito.ArgumentMatchers.any(Session::class.java) ?: Session(userId = "", displayName = "", permissions = emptySet(), companyId = "", role = "")
+
+    @Test
+    fun `the session becomes visible only after the offline credential and the device session exist`() = runBlocking {
+        val harness = Harness(null)
+        assertTrue(harness.login(signedIn) is LoginResult.Success)
+        val order = inOrder(harness.credentials, harness.security, harness.sessions)
+        order.verify(harness.credentials).save(anyCredential())
+        order.verify(harness.security).registerSession(anyString())
+        val saved = ArgumentCaptor.forClass(Session::class.java)
+        order.verify(harness.sessions).save(saved.capture() ?: Session(userId = "", displayName = "", permissions = emptySet(), companyId = "", role = ""))
+        assertEquals("session-1", saved.value.sessionToken)
+    }
+
+    @Test
+    fun `sign-in still completes when its caller is cancelled right after the server said yes`() = runBlocking {
+        // The sign-in screen leaves (and cancels its scope) as soon as a session appears in the store.
+        // Cancelling here, before anything is written, must not cost the device its offline credential.
+        val harness = Harness(null)
+        lateinit var caller: kotlinx.coroutines.Deferred<LoginResult>
+        `when`(harness.backend.login(anyString(), anyString())).thenAnswer { caller.cancel(); signedIn }
+        caller = async { harness.repository.loginOnline("9876543210", "123456".toCharArray()) }
+        runCatching { caller.await() }
+        verify(harness.credentials).save(anyCredential())
+        verify(harness.sessions).save(anySession())
+    }
+
+    @Test
+    fun `a failed device session leaves no session behind but keeps the offline credential`() = runBlocking {
+        val harness = Harness(null)
+        `when`(harness.security.registerSession(anyString())).thenAnswer { throw java.io.IOException("offline") }
+        val result = harness.login(signedIn)
+        assertTrue(result is LoginResult.Failure && result.canTryOffline)
+        verify(harness.sessions, never()).save(anySession())
+        verify(harness.credentials).save(anyCredential())
     }
 }

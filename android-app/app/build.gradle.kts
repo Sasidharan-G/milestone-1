@@ -20,9 +20,11 @@ android {
     fun releaseValue(name: String): String? = System.getenv(name) ?: releaseProps.getProperty(name)
     defaultConfig {
         applicationId = "com.kadaikutty.pos"
-        minSdk = 26
+        // 24 = Android 7.0. Budget phones still shipping in shops run 7 and 8; below the minSdk
+        // the installer only says "problem parsing the package".
+        minSdk = 24
         targetSdk = 35
-        versionCode = 1
+        versionCode = 30 // Google Play needs this to go up on every upload
         versionName = "0.1.0"
         testInstrumentationRunner = "com.kadaikutty.pos.HiltTestRunner"
         buildConfigField("String", "SENTRY_DSN", "\"${releaseValue("SENTRY_DSN") ?: ""}\"")
@@ -84,6 +86,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
+        // java.time and friends exist natively only from Android 8; this backports them to 7.
+        isCoreLibraryDesugaringEnabled = true
     }
 
     buildFeatures {
@@ -149,10 +153,12 @@ ksp {
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(platform(libs.compose.bom))
     androidTestImplementation(platform(libs.compose.bom))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
