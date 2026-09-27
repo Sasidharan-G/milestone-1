@@ -241,6 +241,7 @@ class ProductViewModel @Inject constructor(
         unitType: String,
         barcode: String?,
         minStockLevel: Double,
+        openingStock: Double = 0.0,
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit
     ) {
@@ -309,6 +310,18 @@ class ProductViewModel @Inject constructor(
                 )
                 dao.insertProduct(product)
                 syncManager.enqueueProduct(product, "INSERT")
+                // Opening stock is only offered to an administrator in the UI, but a brand new product
+                // never has a stock history, so this can never step on a movement sync already created.
+                val openingUnits = com.kadaikutty.pos.feature.stock.domain.openingStockToStorageUnits(openingStock, unitType)
+                if (openingUnits > 0L && session.role in listOf("ADMIN", "SUPER_ADMIN")) {
+                    val movement = com.kadaikutty.pos.feature.billing.data.StockMovementEntity(
+                        id = newRecordId(), companyId = session.companyId, productId = product.id,
+                        quantityDelta = openingUnits, type = "ADJUSTMENT", referenceId = "Opening stock",
+                        createdAtEpochMs = System.currentTimeMillis()
+                    )
+                    database.purchaseDao().insertStockMovements(listOf(movement))
+                    syncManager.enqueueStockMovement(movement)
+                }
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -539,6 +552,12 @@ class ProductViewModel @Inject constructor(
                 var stockKeptCount = 0
                 var unstockedWithMinCount = 0
                 var openingGivenButNotAllowed = false
+                var zeroPriceCount = 0
+                // Capped: a 5,000-row file with a bad column mapping would otherwise build a list as
+                // long as the file itself for no benefit past the first handful of examples.
+                val rowErrors = mutableListOf<String>()
+                val MAX_ROW_ERRORS = 20
+                var rowNumber = 0 // 1-based; counts the header line too, so a data row reads the same as in a spreadsheet
 
                 val productBatch = mutableListOf<ProductEntity>()
                 val newCategoriesBatch = mutableListOf<CategoryEntity>()
@@ -582,6 +601,7 @@ class ProductViewModel @Inject constructor(
                 var hasHeader = false
 
                 for (tokens in rawRows) {
+                    rowNumber++
                     if (tokens.isEmpty()) continue
 
                     if (isFirstLine) {
@@ -629,7 +649,7 @@ class ProductViewModel @Inject constructor(
                             rawName = tokens.getOrNull(colName)?.replace("\uFEFF", "")?.replace("\u200B", "")?.trim() ?: ""
                             rawBarcode = if (colBarcode >= 0) tokens.getOrNull(colBarcode)?.let { cleanBarcode(it) } else null
                             rawCategory = if (colCategory >= 0) tokens.getOrNull(colCategory)?.trim()?.ifBlank { "General" } ?: "General" else "General"
-                            rawUnit = if (colUnit >= 0) tokens.getOrNull(colUnit)?.trim()?.uppercase()?.ifBlank { "PIECE" } ?: "PIECE" else "PIECE"
+                            rawUnit = com.kadaikutty.pos.feature.stock.domain.normalizeUnitType(if (colUnit >= 0) tokens.getOrNull(colUnit) else null)
                             rawPurchase = if (colPurchase >= 0) tokens.getOrNull(colPurchase)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
                             rawSale = if (colSale >= 0) tokens.getOrNull(colSale)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
                             rawMinStock = if (colMinStock >= 0) tokens.getOrNull(colMinStock)?.trim()?.toDoubleOrNull() ?: 0.0 else 0.0
@@ -640,7 +660,7 @@ class ProductViewModel @Inject constructor(
                             rawCategory = tokens.getOrNull(2)?.trim()?.ifBlank { "General" } ?: "General"
                             rawPurchase = tokens.getOrNull(3)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                             rawSale = tokens.getOrNull(4)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
-                            rawUnit = tokens.getOrNull(5)?.trim()?.uppercase()?.ifBlank { "PIECE" } ?: "PIECE"
+                            rawUnit = com.kadaikutty.pos.feature.stock.domain.normalizeUnitType(tokens.getOrNull(5))
                             rawBarcode = cleanBarcode(tokens.getOrNull(6))
                             rawMinStock = tokens.getOrNull(7)?.trim()?.toDoubleOrNull() ?: 0.0
                             rawOpening = tokens.getOrNull(8)?.trim()?.replace(",", "")?.toDoubleOrNull() ?: 0.0
@@ -649,7 +669,7 @@ class ProductViewModel @Inject constructor(
                             rawName = tokens[0].replace("\uFEFF", "").replace("\u200B", "").trim()
                             rawBarcode = cleanBarcode(tokens.getOrNull(1))
                             rawCategory = tokens.getOrNull(2)?.trim()?.ifBlank { "General" } ?: "General"
-                            rawUnit = tokens.getOrNull(3)?.trim()?.uppercase()?.ifBlank { "PIECE" } ?: "PIECE"
+                            rawUnit = com.kadaikutty.pos.feature.stock.domain.normalizeUnitType(tokens.getOrNull(3))
                             rawPurchase = tokens.getOrNull(4)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                             rawSale = tokens.getOrNull(5)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                             rawMinStock = tokens.getOrNull(6)?.trim()?.toDoubleOrNull() ?: 0.0
@@ -658,6 +678,7 @@ class ProductViewModel @Inject constructor(
 
                         if (rawName.isBlank()) {
                             skippedCount++
+                            if (rowErrors.size < MAX_ROW_ERRORS) rowErrors.add("Row $rowNumber: no product name")
                             continue
                         }
 
@@ -704,6 +725,7 @@ class ProductViewModel @Inject constructor(
                             if (normBarcode != null) existingBarcodeMap[normBarcode] = updatedProduct
                             if (normName.isNotBlank()) existingNameMap[normName] = updatedProduct
                             updatedCount++
+                            if (salePricePaise <= 0 && updatedProduct.salePriceMinorUnits <= 0) zeroPriceCount++
                             val opening = com.kadaikutty.pos.feature.stock.domain.openingStockToStorageUnits(rawOpening, rawUnit)
                             if (opening > 0L) {
                                 if (!canSetStock) openingGivenButNotAllowed = true
@@ -736,6 +758,7 @@ class ProductViewModel @Inject constructor(
                             if (normBarcode != null) existingBarcodeMap[normBarcode] = newProduct
                             if (normName.isNotBlank()) existingNameMap[normName] = newProduct
                             importedCount++
+                            if (salePricePaise <= 0) zeroPriceCount++
                             val opening = com.kadaikutty.pos.feature.stock.domain.openingStockToStorageUnits(rawOpening, rawUnit)
                             if (opening > 0L && canSetStock) {
                                 stockBatch.add(com.kadaikutty.pos.feature.billing.data.StockMovementEntity(newRecordId(), companyId, newProduct.id, opening, "ADJUSTMENT", "Opening stock (import)", System.currentTimeMillis()))
@@ -758,6 +781,7 @@ class ProductViewModel @Inject constructor(
                         }
                     } catch (rowErr: Exception) {
                         skippedCount++
+                        if (rowErrors.size < MAX_ROW_ERRORS) rowErrors.add("Row $rowNumber: ${rowErr.message ?: rowErr.javaClass.simpleName}")
                     }
                 }
 
@@ -780,7 +804,9 @@ class ProductViewModel @Inject constructor(
                         stockSetCount = stockSetCount,
                         stockKeptCount = stockKeptCount,
                         unstockedWithMinCount = unstockedWithMinCount,
-                        openingGivenButNotAllowed = openingGivenButNotAllowed
+                        openingGivenButNotAllowed = openingGivenButNotAllowed,
+                        zeroPriceCount = zeroPriceCount,
+                        rowErrors = rowErrors
                     )
                 )
             } catch (e: Exception) {
@@ -887,7 +913,11 @@ class ProductViewModel @Inject constructor(
                                                 val idx = rawStr.toIntOrNull() ?: -1
                                                 if (idx in 0 until sharedStrings.size) sharedStrings[idx] else rawStr
                                             } else {
-                                                rawStr
+                                                // A numeric cell (barcode, price...) whose raw XML value came out in
+                                                // scientific notation (e.g. "8.901001001E9") would otherwise import as
+                                                // that literal text. A 13-digit barcode is within Double precision, so
+                                                // this recovers the exact integer instead of a garbage barcode.
+                                                plainNumericString(rawStr)
                                             }
                                             currentRow[colIndex] = finalVal
                                         }
@@ -911,6 +941,17 @@ class ProductViewModel @Inject constructor(
         } catch (ignored: Exception) {}
 
         return rows
+    }
+
+    /** "8.901001001E9" -> "8901001001"; anything that is not scientific notation is returned unchanged. */
+    private fun plainNumericString(raw: String): String {
+        if (!raw.contains('E', ignoreCase = true)) return raw
+        val value = raw.toDoubleOrNull() ?: return raw
+        return if (value == Math.floor(value) && !value.isInfinite()) {
+            java.math.BigDecimal(value).toBigInteger().toString()
+        } else {
+            java.math.BigDecimal(raw).toPlainString()
+        }
     }
 
     private fun colRefToIndex(ref: String): Int {
@@ -965,7 +1006,11 @@ data class ProductImportSummary(
     /** New products with a minimum level but no opening stock: they show as low stock until stocked. */
     val unstockedWithMinCount: Int = 0,
     /** The file had opening stock but the signed-in user may not set stock (administrators only). */
-    val openingGivenButNotAllowed: Boolean = false
+    val openingGivenButNotAllowed: Boolean = false,
+    /** New or updated products left with no selling price (0), which cannot be billed until priced. */
+    val zeroPriceCount: Int = 0,
+    /** Up to 20 "Row N: reason" messages, so a rejected line can be found and fixed instead of just counted. */
+    val rowErrors: List<String> = emptyList()
 )
 
 @HiltViewModel

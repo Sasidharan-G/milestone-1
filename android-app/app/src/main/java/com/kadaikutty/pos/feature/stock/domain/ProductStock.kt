@@ -28,3 +28,29 @@ fun openingStockToStorageUnits(typed: Double, unitType: String?): Long {
     val rounded = Math.round(scaled)
     return if (rounded in 1..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) rounded else 0L
 }
+
+/**
+ * The unit typed in a bulk-import file or scanned label almost never matches one of the five app
+ * unit types exactly ("Kgs", "ltr", "pcs", "Nos", "Bottles"...). Maps the common shorthand a shop
+ * actually writes to a supported type; anything unrecognised is kept as PIECE, which is safe (it
+ * only changes whether ×1000 storage scaling applies, and a wrongly-scaled loose item is worse
+ * than one counted as pieces).
+ */
+val SUPPORTED_UNIT_TYPES = listOf("PIECE", "KG", "LITER", "BOX", "PACK", "BAG", "BOTTLE", "TUB")
+
+fun normalizeUnitType(raw: String?): String {
+    val u = raw?.trim()?.uppercase().orEmpty()
+    if (u.isBlank()) return "PIECE"
+    if (u in SUPPORTED_UNIT_TYPES) return u
+    return when {
+        u.startsWith("KG") || u == "KILOGRAM" || u == "KILOGRAMS" || u == "KILO" || u == "KILOS" -> "KG"
+        u == "LTR" || u == "LTRS" || u.startsWith("LITRE") || u.startsWith("LITER") -> "LITER"
+        u == "PCS" || u == "PC" || u == "NOS" || u == "NO" || u == "UNIT" || u == "UNITS" || u == "EACH" -> "PIECE"
+        u == "PKT" || u == "PKTS" || u == "PACKET" || u == "PACKETS" || u == "PACKS" -> "PACK"
+        u == "BOXES" -> "BOX"
+        u == "BAGS" -> "BAG"
+        u == "BTL" || u == "BTLS" || u == "BOTTLES" -> "BOTTLE"
+        u == "TUBS" -> "TUB"
+        else -> "PIECE"
+    }
+}

@@ -445,6 +445,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var unitTypeExpanded by remember { mutableStateOf(value = false) }
     var barcode by remember { mutableStateOf("") }
     var minStockLevel by remember { mutableStateOf("") }
+    // Admin only (server-enforced too); a cashier never sees this field, and a blank value adds nothing.
+    var openingStock by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(value = false) }
@@ -562,6 +564,23 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 "${s.unstockedWithMinCount} new items have a Min Stock but no Opening Stock, so they will show as low stock until you add stock (Purchase, or Adjust Stock). Add an Opening Stock column to the file to avoid this.",
                                 color = Color(0xFFF59E0B), fontSize = 13.sp
                             )
+                        }
+                        if (s.zeroPriceCount > 0) {
+                            Text(
+                                "${s.zeroPriceCount} items have no Selling Price and cannot be billed until you set one (edit the product, or fix the file and re-import).",
+                                color = MaterialTheme.colorScheme.error, fontSize = 13.sp
+                            )
+                        }
+                        if (s.rowErrors.isNotEmpty()) {
+                            Text("Rows that were skipped:", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(max = 140.dp)
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                s.rowErrors.forEach { line -> Text("• $line", color = Color(0xFFF59E0B), fontSize = 12.sp) }
+                            }
                         }
                     }
                 }
@@ -778,6 +797,17 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                             )
 
+                            OutlinedTextField(
+                                value = openingStock,
+                                onValueChange = { openingStock = InputRules.quantity(it, allowDecimals = true) },
+                                label = { Text("Opening Stock (Optional)") },
+                                placeholder = { Text("What's on the shelf now") },
+                                singleLine = true,
+                                shape = RoundedCornerShape(12.dp),
+                                modifier = Modifier.fillMaxWidth(),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                            )
+
                             ExposedDropdownMenuBox(
                                 expanded = unitTypeExpanded,
                                 onExpandedChange = { unitTypeExpanded = !unitTypeExpanded }
@@ -796,7 +826,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     expanded = unitTypeExpanded,
                                     onDismissRequest = { unitTypeExpanded = false }
                                 ) {
-                                    listOf("PIECE", "KG", "LITER", "BOX", "PACK").forEach { type ->
+                                    com.kadaikutty.pos.feature.stock.domain.SUPPORTED_UNIT_TYPES.forEach { type ->
                                         DropdownMenuItem(
                                             text = { Text(type) },
                                             onClick = {
@@ -818,13 +848,15 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         val purVal = CheckoutMath.rupeesToMinorUnits(purchasePrice.toDoubleOrNull() ?: 0.0)
                                         val saleVal = CheckoutMath.rupeesToMinorUnits(salePrice.toDoubleOrNull() ?: 0.0)
                                         val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
-                                        viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
+                                        val openingStockVal = openingStock.toDoubleOrNull() ?: 0.0
+                                        viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, onSuccess = {
                                             isSubmitting = false
                                             name = ""
                                             purchasePrice = ""
                                             salePrice = ""
                                             barcode = ""
                                             minStockLevel = ""
+                                            openingStock = ""
                                             message = "Product added successfully"
                                             android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                         }, onError = {
@@ -1104,6 +1136,17 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
                             )
 
+                        OutlinedTextField(
+                            value = openingStock,
+                            onValueChange = { openingStock = InputRules.quantity(it, allowDecimals = true) },
+                            label = { Text("Opening Stock (Optional)") },
+                            placeholder = { Text("What's on the shelf now") },
+                            singleLine = true,
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.fillMaxWidth(),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                        )
+
                         ExposedDropdownMenuBox(
                             expanded = unitTypeExpanded,
                             onExpandedChange = { unitTypeExpanded = !unitTypeExpanded }
@@ -1122,7 +1165,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 expanded = unitTypeExpanded,
                                 onDismissRequest = { unitTypeExpanded = false }
                             ) {
-                                listOf("PIECE", "KG", "LITER", "BOX", "PACK").forEach { type ->
+                                com.kadaikutty.pos.feature.stock.domain.SUPPORTED_UNIT_TYPES.forEach { type ->
                                     DropdownMenuItem(
                                         text = { Text(type) },
                                         onClick = {
@@ -1144,7 +1187,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     val purVal = CheckoutMath.rupeesToMinorUnits(purchasePrice.toDoubleOrNull() ?: 0.0)
                                     val saleVal = CheckoutMath.rupeesToMinorUnits(salePrice.toDoubleOrNull() ?: 0.0)
                                     val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
-                                    viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, onSuccess = {
+                                    val openingStockVal = openingStock.toDoubleOrNull() ?: 0.0
+                                    viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, onSuccess = {
                                         isSubmitting = false
                                         name = ""
                                         purchasePrice = ""
@@ -1152,6 +1196,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         unitType = "PIECE"
                                         barcode = ""
                                         minStockLevel = ""
+                                        openingStock = ""
                                         message = "Product added successfully"
                                         android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                     }, onError = {
@@ -3512,7 +3557,7 @@ fun ProductEditDialog(
                         expanded = unitExpanded,
                         onDismissRequest = { unitExpanded = false }
                     ) {
-                        listOf("PIECE", "KG", "LITER", "BOX", "PACK").forEach { type ->
+                        com.kadaikutty.pos.feature.stock.domain.SUPPORTED_UNIT_TYPES.forEach { type ->
                             DropdownMenuItem(
                                 text = { Text(type) },
                                 onClick = {
