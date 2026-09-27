@@ -24,7 +24,7 @@ android {
         // the installer only says "problem parsing the package".
         minSdk = 24
         targetSdk = 35
-        versionCode = 30 // Google Play needs this to go up on every upload
+        versionCode = 32 // Google Play needs this to go up on every upload
         versionName = "0.1.0"
         testInstrumentationRunner = "com.kadaikutty.pos.HiltTestRunner"
         buildConfigField("String", "SENTRY_DSN", "\"${releaseValue("SENTRY_DSN") ?: ""}\"")
@@ -36,7 +36,7 @@ android {
 
         val masterSupportPhone = releaseValue("MASTER_SUPPORT_PHONE")
             ?: (project.findProperty("MASTER_SUPPORT_PHONE") as? String)
-            ?: "+919962255661"
+            ?: "+919789418144"
         buildConfigField("String", "MASTER_SUPPORT_PHONE", "\"$masterSupportPhone\"")
 
     }

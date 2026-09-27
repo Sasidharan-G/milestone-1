@@ -16,3 +16,13 @@ test('master login accepts configured PIN format only', () => {
     assert.equal(validMasterLoginInput('9962255661', '12345'), false);
     assert.equal(validMasterLoginInput('9962255661', 'abcdef'), false);
 });
+
+test('the master mobile matches however it was written down, but never an empty or different one', async () => {
+  const { sameMasterMobile } = await import('../routes/accountRoutes');
+  assert.equal(sameMasterMobile('9789418144', '+919789418144'), true);
+  assert.equal(sameMasterMobile('9789418144', '9789418144'), true);
+  assert.equal(sameMasterMobile('+91 97894 18144', '919789418144'), true);
+  assert.equal(sameMasterMobile('9789418144', '9962255661'), false);
+  assert.equal(sameMasterMobile('', ''), false);
+  assert.equal(sameMasterMobile(undefined, '+919789418144'), false);
+});

@@ -94,16 +94,22 @@ data class LoginUiState(
         }
     }
 
+    /**
+     * [mobileNumber] must be the number the code was actually sent to (see [requestMasterResetOtp],
+     * which sends to a number typed on the sign-in screen when there is one). The OTP session is bound
+     * to that number, so verifying against the built-in default failed whenever the two differed.
+     */
     fun verifyMasterOtpAndSetNewPin(
         verificationId: String,
         otp: String,
         newPin: String,
+        mobileNumber: String = BuildConfig.MASTER_SUPPORT_PHONE,
         onResult: (Boolean, String?) -> Unit
     ) {
         viewModelScope.launch {
             try {
                 mutableState.update { it.copy(loading = true, error = null) }
-                when (val result = authRepository.changeMasterPin(verificationId, otp, newPin.toCharArray(), BuildConfig.MASTER_SUPPORT_PHONE)) {
+                when (val result = authRepository.changeMasterPin(verificationId, otp, newPin.toCharArray(), mobileNumber.ifBlank { BuildConfig.MASTER_SUPPORT_PHONE })) {
                     is com.kadaikutty.pos.core.auth.RecoveryResult.Success -> {
                         mutableState.update { it.copy(loading = false) }
                         onResult(true, null)

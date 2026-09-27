@@ -110,6 +110,17 @@ export const validMasterLoginInput = (_mobileNumber: unknown, pin: unknown): boo
   typeof pin === 'string' && /^\d{6,12}$/.test(pin);
 
 /**
+ * The master mobile can be configured as 9789418144 or +919789418144 (an EB environment property,
+ * or the number typed in the app). Comparing the raw strings made a "+91" value never match the
+ * 10-digit number the app sends, so the OTP flow for changing the master PIN always failed.
+ */
+export const sameMasterMobile = (candidate: unknown, configured: unknown): boolean => {
+  const a = normalizePhone(String(candidate ?? ''));
+  const b = normalizePhone(String(configured ?? ''));
+  return a.length === 10 && a === b;
+};
+
+/**
  * Master login only issues tokens. Establishing a device session is the same universal
  * POST /sessions/register call every principal uses, which already enforces single-device
  * (it revokes every other live session for this companyId+userId, platform/master included).
@@ -168,7 +179,7 @@ router.post('/auth/master/pin', limitOtpVerify, async (req: AuthenticatedRequest
       throw new AppError(400, 'MASTER_PIN_INPUT_INVALID', 'A valid mobile number and 6-digit numeric PIN are required');
     }
     const master = await providers().dataStore.getMasterConfig();
-    if (mobile !== master.mobile || !resetProofValid(mobile, resetToken)) {
+    if (!sameMasterMobile(mobile, master.mobile) || !resetProofValid(mobile, resetToken)) {
       throw new AppError(401, 'OTP_PROOF_INVALID', 'Verify an OTP for the current master mobile number');
     }
     await burnProof('master-pin-reset', mobile, resetToken);

@@ -458,7 +458,8 @@ fun LoginScreenContent(
                             viewModel.verifyMasterOtpAndSetNewPin(
                                 verificationId = masterResetVerificationId!!,
                                 otp = masterResetOtp,
-                                newPin = masterNewPin
+                                newPin = masterNewPin,
+                                mobileNumber = masterResetTargetPhone
                             ) { success, errMsg ->
                                 masterResetLoading = false
                                 if (success) {
