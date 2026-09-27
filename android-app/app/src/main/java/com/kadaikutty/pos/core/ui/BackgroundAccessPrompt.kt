@@ -32,6 +32,8 @@ object BackgroundAccess {
     private const val PREFS = "background_access"
     private const val SNOOZE_UNTIL = "snooze_until"
     private const val AUTOSTART_OPENED = "autostart_opened"
+    private const val BATTERY_REQUESTED = "battery_requested"
+    private const val BATTERY_CONFIRMED = "battery_confirmed"
     private const val SNOOZE_MS = 24L * 60 * 60 * 1000
 
     fun isUnrestricted(context: Context): Boolean {
@@ -43,10 +45,34 @@ object BackgroundAccess {
     fun autoStartPending(context: Context): Boolean =
         hasAutoStartScreen() && !context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(AUTOSTART_OPENED, false)
 
-    fun shouldAsk(context: Context): Boolean {
-        if (isUnrestricted(context) && !autoStartPending(context)) return false
-        val until = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(SNOOZE_UNTIL, 0L)
-        return System.currentTimeMillis() >= until
+    /**
+     * The battery setting is only readable on stock Android. Vivo, Oppo, Xiaomi and others keep their
+     * own "unrestricted" switch that [isUnrestricted] never sees, so an owner who has set it correctly
+     * would be asked forever. After going to the settings screen the owner can say it is done, and that
+     * answer is trusted from then on.
+     */
+    fun batteryConfirmed(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(BATTERY_CONFIRMED, false)
+
+    fun batteryRequested(context: Context): Boolean =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean(BATTERY_REQUESTED, false)
+
+    fun confirmBattery(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(BATTERY_CONFIRMED, true).apply()
+    }
+
+    fun batteryNeeded(context: Context): Boolean = !(isUnrestricted(context) || batteryConfirmed(context))
+
+    fun shouldAsk(context: Context): Boolean = shouldAskFor(
+        batteryNeeded = batteryNeeded(context),
+        autoStartPending = autoStartPending(context),
+        snoozeUntil = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getLong(SNOOZE_UNTIL, 0L),
+        now = System.currentTimeMillis()
+    )
+
+    internal fun shouldAskFor(batteryNeeded: Boolean, autoStartPending: Boolean, snoozeUntil: Long, now: Long): Boolean {
+        if (!batteryNeeded && !autoStartPending) return false
+        return now >= snoozeUntil
     }
 
     fun snooze(context: Context) {
@@ -92,6 +118,7 @@ object BackgroundAccess {
      * the rest, and this app has to be publishable there. Falls back to this app's settings page.
      */
     fun requestUnrestricted(context: Context) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean(BATTERY_REQUESTED, true).apply()
         if (launch(context, Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))) return
         openAppSettings(context)
     }
@@ -128,13 +155,20 @@ fun BackgroundAccessPrompt() {
 
     if (!visible) return
 
-    val needsBattery = !BackgroundAccess.isUnrestricted(context)
+    val needsBattery = BackgroundAccess.batteryNeeded(context)
+    // Already sent to the settings screen and still showing: this phone does not report its own
+    // battery setting to apps, so ask the owner instead of asking again forever.
+    val alreadyOpened = needsBattery && BackgroundAccess.batteryRequested(context)
     AlertDialog(
         onDismissRequest = { BackgroundAccess.snooze(context); visible = false },
         title = { Text("Allow background sync", fontWeight = FontWeight.Bold) },
         text = {
             Text(
-                if (needsBattery) {
+                if (alreadyOpened) {
+                    "Did you set KadaiKutty to \"Unrestricted\" / \"Don't optimise\"? Some phones (Vivo, Oppo, Xiaomi) " +
+                        "do not tell apps their own battery setting, so KadaiKutty cannot see it. If you have set it, tap " +
+                        "\"Yes, it's set\" and this message will not appear again."
+                } else if (needsBattery) {
                     "This phone may stop KadaiKutty in the background, so bills made offline would not reach " +
                         "the cloud until you open the app. Tap Allow, find KadaiKutty in the list and choose \"Don't optimise\" / \"Unrestricted\"."
                 } else {
@@ -145,11 +179,17 @@ fun BackgroundAccessPrompt() {
         },
         confirmButton = {
             TextButton(onClick = {
-                if (needsBattery) BackgroundAccess.requestUnrestricted(context) else BackgroundAccess.openAutoStart(context)
-            }) { Text(if (needsBattery) "Allow" else "Open", fontWeight = FontWeight.Bold) }
+                when {
+                    alreadyOpened -> { BackgroundAccess.confirmBattery(context); visible = BackgroundAccess.shouldAsk(context) }
+                    needsBattery -> BackgroundAccess.requestUnrestricted(context)
+                    else -> BackgroundAccess.openAutoStart(context)
+                }
+            }) { Text(if (alreadyOpened) "Yes, it's set" else if (needsBattery) "Allow" else "Open", fontWeight = FontWeight.Bold) }
         },
         dismissButton = {
-            TextButton(onClick = { BackgroundAccess.snooze(context); visible = false }) { Text("Later") }
+            TextButton(onClick = {
+                if (alreadyOpened) BackgroundAccess.requestUnrestricted(context) else { BackgroundAccess.snooze(context); visible = false }
+            }) { Text(if (alreadyOpened) "Open settings again" else "Later") }
         }
     )
 }
