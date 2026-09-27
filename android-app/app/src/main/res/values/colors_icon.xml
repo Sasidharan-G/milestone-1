@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="ic_launcher_background">#1E40AF</color>
+    <!-- Sampled from the logo card's own background so the padding an OS mask reveals around the
+         shrunk foreground card blends into it, instead of showing as a mismatched colour ring. -->
+    <color name="ic_launcher_background">#0C1018</color>
 </resources>
