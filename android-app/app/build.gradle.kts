@@ -24,7 +24,7 @@ android {
         // the installer only says "problem parsing the package".
         minSdk = 24
         targetSdk = 35
-        versionCode = 33 // Google Play needs this to go up on every upload
+        versionCode = 34 // Google Play needs this to go up on every upload
         versionName = "0.1.0"
         testInstrumentationRunner = "com.kadaikutty.pos.HiltTestRunner"
         buildConfigField("String", "SENTRY_DSN", "\"${releaseValue("SENTRY_DSN") ?: ""}\"")
