@@ -116,11 +116,11 @@ fun BillingApp() {
     // simply mid-renewal never sees two different lock screens fighting for the same problem.
 
     if (isLoggedIn == null || isLicenseLoading) {
-        // Same maroon as the launch splash, so the white status bar icons stay readable while loading.
+        // Same charcoal as the launch splash, so the white status bar icons stay readable while loading.
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF5C151A)),
+                .background(Color(0xFF0C1018)),
             contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator(color = Color.White)
@@ -630,18 +630,18 @@ fun HomeScreen(
             // A plain rounded-bottom banner - simpler and predictable at any content height,
             // unlike the old custom S-curve Shape whose control points were tuned for a much
             // taller (KPI-carousel) header and would have looked wrong once that content left.
-            val maroonHeaderShape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
+            val brandHeaderShape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
 
             Box(modifier = Modifier.fillMaxWidth()) {
                 // Behind the status bar the header would sit under the phone's white
-                // signal/wifi/battery icons and hide them; a maroon strip keeps them readable.
-                Box(modifier = Modifier.fillMaxWidth().height(topInset).background(Color(0xFF5C151A)))
-                // 1. Maroon banner with bottom-rounded corners
+                // signal/wifi/battery icons and hide them; a charcoal strip keeps them readable.
+                Box(modifier = Modifier.fillMaxWidth().height(topInset).background(Color(0xFF0C1018)))
+                // 1. Charcoal banner with bottom-rounded corners
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(maroonHeaderShape)
-                        .background(Color(0xFF5C151A))
+                        .clip(brandHeaderShape)
+                        .background(Color(0xFF0C1018))
                         .padding(top = topInset + 20.dp)
                         .padding(bottom = 20.dp)
                 ) {
@@ -652,7 +652,7 @@ fun HomeScreen(
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
-                } // close maroon Column
+                } // close brand-header Column
 
                 // 2. Icons overlay at top-right
                 Row(
@@ -667,8 +667,8 @@ fun HomeScreen(
                         Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
                     }) {
                         val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
-                        // These three icons sit on the fixed maroon header, not a themed surface -
-                        // MaterialTheme.colorScheme.primary is that exact same maroon in light mode,
+                        // These three icons sit on the fixed charcoal header, not a themed surface -
+                        // MaterialTheme.colorScheme.primary is that exact same charcoal in light mode,
                         // which made the icons nearly invisible there. White reads on the header in
                         // both themes, the same way the shop-name text above it is fixed white too.
                         Icon(

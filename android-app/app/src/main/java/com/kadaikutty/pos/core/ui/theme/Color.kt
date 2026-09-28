@@ -2,21 +2,23 @@ package com.kadaikutty.pos.core.ui.theme
 
 import androidx.compose.ui.graphics.Color
 
-// Retail POS palette. The brand colour is maroon; the "Sapphire"/"Blue" names are left from an
-// earlier blue identity and are kept only because they are referenced widely - the values are what
-// matter. Dark-mode tones live beside each one so the two schemes stay the same colour family.
-val PrimarySapphire = Color(0xFF5C151A)         // Brand maroon, light-mode primary
-val PrimaryDarkSapphire = Color(0xFF4A1115)
-val PrimaryLightSapphire = Color(0xFF8B252C)
-val PrimaryContainerBlue = Color(0xFFFDF7F7)     // Very light maroon tint
-val OnPrimaryContainerBlue = Color(0xFF3A0D10)
+// Retail POS palette. Brand identity (2026-09-28): charcoal + gold, matching the app's own
+// launcher icon (a dark near-black card with a gold crown/border) instead of the earlier maroon.
+// The "Sapphire"/"Rose" names are left from even earlier identities and are kept only because
+// they are referenced widely - the values are what matter. Dark-mode tones live beside each one
+// so the two schemes stay the same colour family.
+val PrimarySapphire = Color(0xFF0C1018)         // Brand charcoal, light-mode primary (icon card colour)
+val PrimaryDarkSapphire = Color(0xFF05070A)
+val PrimaryLightSapphire = Color(0xFF3A2E22)
+val PrimaryContainerBlue = Color(0xFFF3EDE3)     // Very light warm-gold tint
+val OnPrimaryContainerBlue = Color(0xFF241A08)
 
-// Dark-mode maroon ramp. A deep maroon cannot be a dark-theme primary - it disappears against the
-// canvas - so the primary lightens to a rose that still reads as the same brand, while containers
-// keep the deep tone. Contrast against DarkCardSurface is >= 4.5:1 for every "on" pair below.
-val PrimaryRoseDark = Color(0xFFE8909A)          // Light-mode maroon lifted for dark surfaces
-val PrimaryContainerDark = Color(0xFF5C151A)     // The brand maroon itself, used as a container
-val OnPrimaryContainerDark = Color(0xFFFFDBDF)
+// Dark-mode charcoal ramp. A near-black cannot be a dark-theme primary - it disappears against the
+// canvas - so the primary switches to the icon's own gold, while containers keep the deep charcoal
+// tone. Contrast against DarkCardSurface is >= 4.5:1 for every "on" pair below.
+val PrimaryRoseDark = Color(0xFFD9B77A)          // Icon's gold, lifted for dark surfaces
+val PrimaryContainerDark = Color(0xFF3A2E10)     // Deep gold-brown container
+val OnPrimaryContainerDark = Color(0xFFF3EDE3)
 
 val EmeraldSuccess = Color(0xFF10B981)          // Electric Emerald for sales & profit
 val EmeraldDark = Color(0xFF059669)
@@ -36,7 +38,7 @@ val CoralErrorContainer = Color(0xFFFEE2E2)
 val OnCoralErrorContainer = Color(0xFF991B1B)
 
 // Home-screen menu tile accents (Ledger, Reports) - light AND dark pairs, same reasoning as the
-// dark-mode maroon ramp above: a light pastel container would look like a mistake on a dark canvas.
+// dark-mode charcoal-and-gold ramp above: a light pastel container would look like a mistake on a dark canvas.
 val SkyContainer = Color(0xFFE0F2FE)
 val OnSkyContainer = Color(0xFF075985)
 val DarkSkyContainer = Color(0xFF0C4A6E)
@@ -51,11 +53,11 @@ val DarkOnTealContainer = Color(0xFFCCFBF1)
 val LightAppBackground = Color(0xFFF8FAFC)      // Ultra-clean grey-slate canvas
 val LightCardSurface = Color(0xFFFFFFFF)        // Crisp pure white card
 val LightSurfaceVariant = Color(0xFFF1F5F9)     // Soft neutral container
-val LightOutline = Color(0xFF5C151A)            // App brand Maroon input border
+val LightOutline = Color(0xFF0C1018)            // App brand charcoal input border
 
-// Dark surfaces carry a faint warm cast so they sit under the maroon brand instead of fighting it
-// with the cold blue-slate the old values had. Each step is lighter than the last, which is what
-// gives cards and dialogs their depth without needing hardcoded colours at the call site.
+// Dark surfaces carry a faint warm cast so they sit under the charcoal-and-gold brand instead of
+// fighting it with a cold blue-slate. Each step is lighter than the last, which is what gives
+// cards and dialogs their depth without needing hardcoded colours at the call site.
 val DarkAppBackground = Color(0xFF14100F)       // App canvas
 val DarkCardSurface = Color(0xFF1E1817)         // Card / sheet surface
 val DarkSurfaceVariant = Color(0xFF2B2322)      // Elevated container inside a card

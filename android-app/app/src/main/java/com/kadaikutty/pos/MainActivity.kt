@@ -36,7 +36,7 @@ class MainActivity : FragmentActivity() {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color(0xFF5C151A)),
+                    .background(Color(0xFF0C1018)),
                 contentAlignment = Alignment.Center
             ) {
                 Column(

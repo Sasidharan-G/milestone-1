@@ -45,7 +45,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 
 /**
- * Modern High-Contrast Royal Maroon & Warm Gold Glassmorphic OTP Verification View.
+ * Modern High-Contrast Charcoal & Warm Gold Glassmorphic OTP Verification View.
  * Sleek, professional UI with fluid micro-animations:
  * - Clean single-header card layout with close action button
  * - Properly formatted masked phone number badge
@@ -507,7 +507,7 @@ fun OrbitOtpVerificationView(
                 shape = RoundedCornerShape(percent = 50),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.White,
-                    contentColor = Color(0xFF5C151A),
+                    contentColor = Color(0xFF0C1018),
                     disabledContainerColor = Color.White.copy(alpha = 0.3f),
                     disabledContentColor = Color.White.copy(alpha = 0.45f)
                 ),
@@ -522,7 +522,7 @@ fun OrbitOtpVerificationView(
                 if (isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
-                        color = Color(0xFF5C151A),
+                        color = Color(0xFF0C1018),
                         strokeWidth = 2.5.dp
                     )
                 } else {

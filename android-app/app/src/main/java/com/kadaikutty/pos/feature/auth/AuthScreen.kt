@@ -56,7 +56,7 @@ fun AuthScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF5C151A)), // Deep Maroon
+            .background(Color(0xFF0C1018)), // Deep Charcoal
         contentAlignment = Alignment.Center
     ) {
         // Pattern background
@@ -89,7 +89,7 @@ fun AuthScreen(
                 ),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF5C151A) // Solid maroon to block pattern inside the card
+                containerColor = Color(0xFF0C1018) // Solid charcoal to block pattern inside the card
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
@@ -167,7 +167,7 @@ fun TopErrorToast(message: String, onDismiss: () -> Unit) {
     }
 
     androidx.compose.material3.Surface(
-        color = Color(0xFF8E2128), // Matches maroon theme, slightly lighter than background
+        color = com.kadaikutty.pos.core.ui.theme.CoralError, // An error toast should read as an error, not just another brand-coloured card
         shape = RoundedCornerShape(8.dp),
         shadowElevation = 8.dp,
         modifier = Modifier

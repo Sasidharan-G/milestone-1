@@ -30,12 +30,12 @@ private val LightColors = lightColorScheme(
     surfaceVariant = LightSurfaceVariant,
     onSurfaceVariant = Color(0xFF0F172A),
     outline = LightOutline,
-    outlineVariant = Color(0xFF8B252C)
+    outlineVariant = PrimaryLightSapphire
 )
 
 private val DarkColors = darkColorScheme(
     primary = PrimaryRoseDark,
-    onPrimary = Color(0xFF3A0D10),
+    onPrimary = Color(0xFF241A08),
     primaryContainer = PrimaryContainerDark,
     onPrimaryContainer = OnPrimaryContainerDark,
     secondary = Color(0xFF6EE7B7),
@@ -104,7 +104,7 @@ fun BillingTheme(
             if (window != null) {
                 val insetsController = androidx.core.view.WindowCompat.getInsetsController(window, view)
                 val isLight = colors == LightColors
-                // Every screen has a maroon (or dark) header under the status bar, in the light theme
+                // Every screen has a charcoal (or dark) header under the status bar, in the light theme
                 // too, so its clock and icons must be white. Dark icons there were unreadable.
                 insetsController.isAppearanceLightStatusBars = false
                 insetsController.isAppearanceLightNavigationBars = isLight

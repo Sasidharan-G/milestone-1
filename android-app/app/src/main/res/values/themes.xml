@@ -1,8 +1,8 @@
 <resources>
     <style name="Theme.ClientBilling" parent="android:style/Theme.Material.Light.NoActionBar">
-        <item name="android:windowBackground">#5C151A</item>
-        <item name="android:statusBarColor">#5C151A</item>
-        <item name="android:navigationBarColor">#5C151A</item>
+        <item name="android:windowBackground">#0C1018</item>
+        <item name="android:statusBarColor">#0C1018</item>
+        <item name="android:navigationBarColor">#0C1018</item>
     </style>
 </resources>
 

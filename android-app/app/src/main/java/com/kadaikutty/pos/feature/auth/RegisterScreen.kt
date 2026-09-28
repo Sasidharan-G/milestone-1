@@ -413,7 +413,7 @@ fun RegisterScreenContent(
             ) {
                 Surface(
                     shape = RoundedCornerShape(28.dp),
-                    color = Color(0xFF5C151A),
+                    color = Color(0xFF0C1018),
                     border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.35f)),
                     shadowElevation = 24.dp,
                     modifier = Modifier

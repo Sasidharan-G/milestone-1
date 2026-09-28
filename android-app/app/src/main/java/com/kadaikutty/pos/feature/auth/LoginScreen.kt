@@ -262,7 +262,7 @@ fun LoginScreenContent(
                     enteredMasterPin = ""
                     masterPinError = false
                 },
-                containerColor = Color(0xFF5C151A), // Maroon Background
+                containerColor = Color(0xFF0C1018), // Charcoal Background
                 titleContentColor = Color.White,
                 textContentColor = Color.White.copy(alpha = 0.9f),
                 title = {
@@ -365,9 +365,9 @@ fun LoginScreenContent(
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color.White,
-                            contentColor = Color(0xFF5C151A),
+                            contentColor = Color(0xFF0C1018),
                             disabledContainerColor = Color.White.copy(alpha = 0.5f),
-                            disabledContentColor = Color(0xFF5C151A).copy(alpha = 0.5f)
+                            disabledContentColor = Color(0xFF0C1018).copy(alpha = 0.5f)
                         ),
                         enabled = enteredMasterPin.length >= 6 && !isCheckingMasterPin
                     ) {
@@ -392,7 +392,7 @@ fun LoginScreenContent(
                     masterNewPin = ""
                     masterResetVerificationId = null
                 },
-                containerColor = Color(0xFF5C151A), // Maroon Background
+                containerColor = Color(0xFF0C1018), // Charcoal Background
                 titleContentColor = Color.White,
                 textContentColor = Color.White.copy(alpha = 0.9f),
                 title = { Text("Reset Master Secret PIN", fontWeight = FontWeight.Bold, color = Color.White) },
@@ -476,9 +476,9 @@ fun LoginScreenContent(
                         },
                         colors = ButtonDefaults.buttonColors(
                             containerColor = Color.White,
-                            contentColor = Color(0xFF5C151A),
+                            contentColor = Color(0xFF0C1018),
                             disabledContainerColor = Color.White.copy(alpha = 0.5f),
-                            disabledContentColor = Color(0xFF5C151A).copy(alpha = 0.5f)
+                            disabledContentColor = Color(0xFF0C1018).copy(alpha = 0.5f)
                         ),
                         enabled = masterResetOtp.length == 6 && masterNewPin.length >= 6 && !masterResetLoading
                     ) {
@@ -503,7 +503,7 @@ fun LoginScreenContent(
             ) {
                 Surface(
                     shape = RoundedCornerShape(28.dp),
-                    color = Color(0xFF5C151A),
+                    color = Color(0xFF0C1018),
                     border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.35f)),
                     shadowElevation = 24.dp,
                     modifier = Modifier
@@ -588,7 +588,7 @@ fun LoginScreenContent(
                                 modifier = Modifier.fillMaxWidth().height(50.dp),
                                 colors = ButtonDefaults.buttonColors(
                                     containerColor = Color.White,
-                                    contentColor = Color(0xFF5C151A),
+                                    contentColor = Color(0xFF0C1018),
                                     disabledContainerColor = Color.White.copy(alpha = 0.25f),
                                     disabledContentColor = Color.White.copy(alpha = 0.4f)
                                 ),
@@ -599,7 +599,7 @@ fun LoginScreenContent(
                                 if (state.loading) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(22.dp),
-                                        color = Color(0xFF5C151A),
+                                        color = Color(0xFF0C1018),
                                         strokeWidth = 2.5.dp
                                     )
                                 } else {
