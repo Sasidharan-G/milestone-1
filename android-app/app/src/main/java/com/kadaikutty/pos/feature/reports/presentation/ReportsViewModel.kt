@@ -252,26 +252,9 @@ class ReportsViewModel @Inject constructor(
                 onError(Exception("Only admin or manager can delete sales."))
                 return@launch
             }
-            val sale = database.saleDao().getSaleById(session.companyId, saleId)
-            val amount = sale?.totalMinorUnits ?: 0L
-
-            when (val result = saleRepository.deleteSale(saleId, billNumber)) {
+            // The repository writes the BILL_CANCEL audit row inside the delete transaction.
+            when (val result = saleRepository.deleteSale(saleId, billNumber, reason.ifBlank { "Bill deleted from Reports" })) {
                 is com.kadaikutty.pos.core.common.AppResult.Success -> {
-                    if (session != null) {
-                        database.auditLogDao().insertAuditLog(
-                            com.kadaikutty.pos.feature.billing.data.AuditLogEntity(
-                                id = com.kadaikutty.pos.core.common.newRecordId(),
-                                companyId = session.companyId,
-                                action = "BILL_CANCEL",
-                                billNumber = billNumber,
-                                amountMinorUnits = amount,
-                                reason = reason.ifBlank { "Bill deleted from Reports" },
-                                performedByUserId = session.userId,
-                                performedByUserName = session.displayName,
-                                timestampEpochMs = System.currentTimeMillis()
-                            )
-                        )
-                    }
                     loadReport()
                     onSuccess()
                 }
@@ -279,6 +262,28 @@ class ReportsViewModel @Inject constructor(
                     onError(Exception(result.error.userMessage))
                 }
             }
+        }
+    }
+
+    /** Deletes several bills one by one; each gets its own transaction and audit row. */
+    fun deleteSales(billNumbers: List<String>, reason: String, onDone: (deleted: Int, failures: List<String>) -> Unit) {
+        viewModelScope.launch {
+            val session = sessionStore.activeSession.first()
+            val isAdminOrManager = session?.role in listOf("ADMIN", "SUPER_ADMIN", "OWNER") || session?.permissions?.contains(com.kadaikutty.pos.core.security.Permission.USER_MANAGE) == true
+            if (session == null || !isAdminOrManager) {
+                onDone(0, listOf("Only admin or manager can delete sales."))
+                return@launch
+            }
+            var deleted = 0
+            val failures = mutableListOf<String>()
+            for (billNumber in billNumbers.distinct()) {
+                when (val result = saleRepository.deleteSale(billNumber, billNumber, reason.ifBlank { "Bill deleted from Reports" })) {
+                    is com.kadaikutty.pos.core.common.AppResult.Success -> deleted++
+                    is com.kadaikutty.pos.core.common.AppResult.Failure -> failures += "#$billNumber: ${result.error.userMessage}"
+                }
+            }
+            loadReport()
+            onDone(deleted, failures)
         }
     }
 }

@@ -663,9 +663,7 @@ class BillingViewModel @Inject constructor(
                 onError(Exception("Only admin or manager can delete sales."))
                 return@launch
             }
-            val sale = saleDao.getSaleById(session.companyId, saleId)
-            val amount = sale?.totalMinorUnits ?: 0L
-            when (val result = saleRepository.deleteSale(saleId, billNumber)) {
+            when (val result = saleRepository.deleteSale(saleId, billNumber, reason)) {
                 is AppResult.Success -> {
                     onSuccess()
                 }

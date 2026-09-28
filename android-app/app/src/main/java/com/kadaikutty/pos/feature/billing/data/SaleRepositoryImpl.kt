@@ -131,20 +131,25 @@ class SaleRepositoryImpl(
     } catch (e: CancellationException) { throw e
     } catch (e: Exception) { AppResult.Failure(AppError.Unexpected(e.message ?: "Unable to save bill")) }
 
-    override suspend fun deleteSale(saleId: String, billNumber: String): AppResult<Unit> = try {
+    override suspend fun deleteSale(saleId: String, billNumber: String, reason: String): AppResult<Unit> = try {
         val session = sessionStore.activeSession.first() ?: error("Sign in first")
         require(session.role in listOf("ADMIN", "SUPER_ADMIN")) { "Only an administrator can cancel bills" }
         database.withTransaction {
-            val sale = saleDao.getSaleById(session.companyId, saleId) ?: error("Bill no longer exists")
-            saleDao.movementsFor(session.companyId, saleId).forEach { syncManager.enqueueStockMovement(it, "DELETE") }
-            saleDao.creditsFor(session.companyId, saleId).forEach { syncManager.enqueueCustomerCredit(it, "DELETE") }
-            saleDao.deleteSaleCascade(session.companyId, saleId, sale.billNumber)
+            // Reports rows carry only the bill number (they are formatted display rows, not the
+            // sale's own row ID), so resolve the sale from whichever identifier the caller has.
+            val sale = saleDao.getSaleById(session.companyId, saleId)
+                ?: saleDao.getSaleByBillNumber(session.companyId, billNumber)
+                ?: error("Bill no longer exists")
+            val id = sale.id
+            saleDao.movementsFor(session.companyId, id).forEach { syncManager.enqueueStockMovement(it, "DELETE") }
+            saleDao.creditsFor(session.companyId, id).forEach { syncManager.enqueueCustomerCredit(it, "DELETE") }
+            saleDao.deleteSaleCascade(session.companyId, id, sale.billNumber)
             syncManager.enqueueSale(sale, emptyList(), "DELETE")
             // Stock or credit rows for this bill may still arrive from other devices; the sync
             // sweep removes them while this marker exists.
             database.localOperationDao().put(LocalOperationEntity(session.companyId, "${com.kadaikutty.pos.core.sync.ConflictResolver.DOC_TOMBSTONE_PREFIX}Sale:${sale.id}", System.currentTimeMillis().toString()))
             database.auditLogDao().insertAuditLog(AuditLogEntity(newRecordId(), session.companyId,
-                "BILL_CANCEL", sale.billNumber, sale.totalMinorUnits, "Bill cancelled", session.userId, session.displayName, System.currentTimeMillis()))
+                "BILL_CANCEL", sale.billNumber, sale.totalMinorUnits, reason.ifBlank { "Bill cancelled" }, session.userId, session.displayName, System.currentTimeMillis()))
         }
         AppResult.Success(Unit)
     } catch (e: CancellationException) { throw e

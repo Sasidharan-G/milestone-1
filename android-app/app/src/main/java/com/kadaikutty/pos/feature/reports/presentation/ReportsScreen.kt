@@ -10,6 +10,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInParent
@@ -35,7 +37,7 @@ import java.util.Locale
 import androidx.compose.material.icons.automirrored.filled.List
 import com.kadaikutty.pos.feature.reports.presentation.components.BillDetailsDialog
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
     val context = LocalContext.current
@@ -84,12 +86,23 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
     val dateRangeState = rememberDateRangePickerState()
     var isGridView by remember { mutableStateOf(false) }
     var deletingBillNum by remember { mutableStateOf<String?>(null) }
+    var billSelectionMode by remember { mutableStateOf(false) }
+    var selectedBills by remember { mutableStateOf(setOf<String>()) }
+    var confirmingBulkDelete by remember { mutableStateOf(false) }
+    var bulkDeleteReason by remember { mutableStateOf("") }
 
     var selectedBillNumForDetail by remember { mutableStateOf<String?>(null) }
     var billDetailData by remember { mutableStateOf<BillDetailData?>(null) }
     var isBillDetailLoading by remember { mutableStateOf(false) }
     var salesSearchQuery by remember { mutableStateOf("") }
     var expandedStockRows by remember { mutableStateOf(setOf<String>()) }
+
+    LaunchedEffect(selectedType) {
+        if (selectedType != ReportType.SALES) {
+            billSelectionMode = false
+            selectedBills = emptySet()
+        }
+    }
 
     LaunchedEffect(selectedBillNumForDetail) {
         val target = selectedBillNumForDetail
@@ -153,6 +166,58 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                 TextButton(onClick = { 
                     deletingBillNum = null 
                     deleteReason = ""
+                }) { Text("Cancel") }
+            }
+        )
+    }
+
+    if (confirmingBulkDelete) {
+        val targets = selectedBills.toList()
+        AlertDialog(
+            onDismissRequest = {
+                confirmingBulkDelete = false
+                bulkDeleteReason = ""
+            },
+            title = { Text("Delete ${targets.size} bills?", fontWeight = FontWeight.Bold) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("All sold items on these ${targets.size} bills will be automatically returned back into inventory stock. This cannot be undone.")
+                    OutlinedTextField(
+                        value = bulkDeleteReason,
+                        onValueChange = { bulkDeleteReason = com.kadaikutty.pos.core.common.InputRules.text(it) },
+                        label = { Text("Reason for cancellation (optional)") },
+                        placeholder = { Text("e.g. Duplicate entries, billing error") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                    onClick = {
+                        val reason = bulkDeleteReason
+                        confirmingBulkDelete = false
+                        bulkDeleteReason = ""
+                        billSelectionMode = false
+                        selectedBills = emptySet()
+                        viewModel.deleteSales(targets, reason) { deleted, failures ->
+                            val msg = if (failures.isEmpty()) {
+                                "$deleted bill${if (deleted == 1) "" else "s"} deleted & stock restored!"
+                            } else {
+                                "Deleted $deleted of ${targets.size}. Failed: ${failures.joinToString("; ")}"
+                            }
+                            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    }
+                ) {
+                    Text("Delete ${targets.size} Bills")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    confirmingBulkDelete = false
+                    bulkDeleteReason = ""
                 }) { Text("Cancel") }
             }
         )
@@ -779,24 +844,68 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                             if (!isGridView) {
                                 Column(modifier = Modifier.fillMaxSize()) {
                                 run {
-                                    OutlinedTextField(
-                                        value = salesSearchQuery,
-                                        onValueChange = { salesSearchQuery = it },
-                                        placeholder = { Text("Search", fontSize = 13.sp) },
-                                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                                        trailingIcon = {
-                                            if (salesSearchQuery.isNotBlank()) {
-                                                IconButton(onClick = { salesSearchQuery = "" }) {
-                                                    Icon(Icons.Default.Close, contentDescription = "Clear")
+                                    if (billSelectionMode) {
+                                        val selectableBills = filteredRows.mapNotNull { r ->
+                                            val isTotal = r.any { it.startsWith("TOTAL") } || r.any { it == "---" }
+                                            if (isTotal) null else r.getOrNull(1)?.takeIf { it.isNotBlank() }
+                                        }
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                IconButton(onClick = { billSelectionMode = false; selectedBills = emptySet() }) {
+                                                    Icon(Icons.Default.Close, contentDescription = "Cancel selection")
+                                                }
+                                                Text("${selectedBills.size} selected", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                                            }
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                                                TextButton(onClick = {
+                                                    selectedBills = if (selectedBills.containsAll(selectableBills) && selectedBills.isNotEmpty()) emptySet() else selectableBills.toSet()
+                                                }) {
+                                                    Text(if (selectedBills.containsAll(selectableBills) && selectedBills.isNotEmpty()) "Clear" else "Select all")
+                                                }
+                                                IconButton(
+                                                    onClick = { if (selectedBills.isNotEmpty()) confirmingBulkDelete = true },
+                                                    enabled = selectedBills.isNotEmpty()
+                                                ) {
+                                                    Icon(
+                                                        Icons.Default.Delete,
+                                                        contentDescription = "Delete selected bills",
+                                                        tint = if (selectedBills.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.outline
+                                                    )
                                                 }
                                             }
-                                        },
-                                        shape = RoundedCornerShape(12.dp),
-                                        singleLine = true,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                                    )
+                                        }
+                                    } else {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            OutlinedTextField(
+                                                value = salesSearchQuery,
+                                                onValueChange = { salesSearchQuery = it },
+                                                placeholder = { Text("Search", fontSize = 13.sp) },
+                                                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                                                trailingIcon = {
+                                                    if (salesSearchQuery.isNotBlank()) {
+                                                        IconButton(onClick = { salesSearchQuery = "" }) {
+                                                            Icon(Icons.Default.Close, contentDescription = "Clear")
+                                                        }
+                                                    }
+                                                },
+                                                shape = RoundedCornerShape(12.dp),
+                                                singleLine = true,
+                                                modifier = Modifier.weight(1f)
+                                            )
+                                            if (selectedType == ReportType.SALES) {
+                                                IconButton(onClick = { billSelectionMode = true }) {
+                                                    Icon(Icons.Default.CheckCircle, contentDescription = "Select bills to delete")
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
 
                                 LazyColumn(
@@ -846,13 +955,30 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                                     val dateTime = row.getOrNull(2) ?: ""
                                                     val customer = row.getOrNull(3) ?: "Walk-in Customer"
                                                     val amount = row.getOrNull(4) ?: "₹0"
+                                                    val isSelected = selectedBills.contains(billNum)
 
                                                     Card(
-                                                        onClick = { selectedBillNumForDetail = billNum },
-                                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                                                        colors = CardDefaults.cardColors(
+                                                            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.35f) else MaterialTheme.colorScheme.surface
+                                                        ),
                                                         shape = RoundedCornerShape(12.dp),
                                                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
-                                                        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                        modifier = Modifier
+                                                            .fillMaxWidth()
+                                                            .border(1.dp, if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                                                            .combinedClickable(
+                                                                onClick = {
+                                                                    if (billSelectionMode) {
+                                                                        selectedBills = if (isSelected) selectedBills - billNum else selectedBills + billNum
+                                                                    } else {
+                                                                        selectedBillNumForDetail = billNum
+                                                                    }
+                                                                },
+                                                                onLongClick = {
+                                                                    if (!billSelectionMode) billSelectionMode = true
+                                                                    selectedBills = selectedBills + billNum
+                                                                }
+                                                            )
                                                     ) {
                                                         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                                             Row(
@@ -861,6 +987,13 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                                                 verticalAlignment = Alignment.CenterVertically
                                                             ) {
                                                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                                    if (billSelectionMode) {
+                                                                        Checkbox(
+                                                                            checked = isSelected,
+                                                                            onCheckedChange = { checked -> selectedBills = if (checked) selectedBills + billNum else selectedBills - billNum },
+                                                                            modifier = Modifier.size(20.dp)
+                                                                        )
+                                                                    }
                                                                     if (sNo.isNotBlank()) {
                                                                         Surface(
                                                                             color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
@@ -878,11 +1011,13 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                                                 }
                                                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                                                     Text(amount, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF2E7D32))
-                                                                    IconButton(
-                                                                        onClick = { deletingBillNum = billNum },
-                                                                        modifier = Modifier.size(28.dp)
-                                                                    ) {
-                                                                        Icon(Icons.Default.Delete, contentDescription = "Delete Bill", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                                                    if (!billSelectionMode) {
+                                                                        IconButton(
+                                                                            onClick = { deletingBillNum = billNum },
+                                                                            modifier = Modifier.size(28.dp)
+                                                                        ) {
+                                                                            Icon(Icons.Default.Delete, contentDescription = "Delete Bill", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(18.dp))
+                                                                        }
                                                                     }
                                                                 }
                                                             }
@@ -1158,7 +1293,9 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                         val isTotalRow = row.firstOrNull()?.startsWith("TOTAL") == true || row.firstOrNull() == "---"
                                         val rowBg = if (isTotalRow) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent
                                         val fontW = if (isTotalRow) FontWeight.Bold else FontWeight.Normal
-                                        val billNum = row.firstOrNull() ?: ""
+                                        // The Bill Number is column index 1 (index 0 is S.No) - using the S.No here
+                                        // meant the grid view's delete button silently tried to delete the wrong "bill".
+                                        val billNum = if (isBillsDetail) row.getOrNull(1) ?: "" else row.firstOrNull() ?: ""
                                         Row(
                                             modifier = Modifier.background(rowBg).border(0.5.dp, MaterialTheme.colorScheme.surfaceVariant),
                                             verticalAlignment = Alignment.CenterVertically
@@ -1263,7 +1400,7 @@ private fun AuditLogsView(auditLogs: List<com.kadaikutty.pos.feature.billing.dat
         Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Icon(Icons.Default.Info, contentDescription = null, tint = MaterialTheme.colorScheme.outline, modifier = Modifier.size(48.dp))
-                Text("No deleted or cancelled bills recorded.", color = MaterialTheme.colorScheme.outline, fontSize = 14.sp)
+                Text("No cancellations, edits, or staff changes recorded.", color = MaterialTheme.colorScheme.outline, fontSize = 14.sp)
             }
         }
     } else {
@@ -1275,13 +1412,29 @@ private fun AuditLogsView(auditLogs: List<com.kadaikutty.pos.feature.billing.dat
         ) {
             items(auditLogs) { log ->
                 val dateStr = if (log.timestampEpochMs > 0) timeFormatter.format(Date(log.timestampEpochMs)) else "Recent"
+                val isDestructive = log.action == "BILL_CANCEL" || log.action == "PURCHASE_CANCEL" || log.action == "STAFF_DELETE"
+                val label = when (log.action) {
+                    "BILL_CANCEL" -> "CANCELLED BILL #${log.billNumber}"
+                    "BILL_EDIT" -> "EDITED BILL #${log.billNumber}"
+                    "PURCHASE_CANCEL" -> "CANCELLED PURCHASE #${log.billNumber}"
+                    "PURCHASE_EDIT" -> "EDITED PURCHASE #${log.billNumber}"
+                    "STAFF_CREATE" -> "STAFF ADDED: ${log.billNumber}"
+                    "STAFF_UPDATE" -> "STAFF UPDATED: ${log.billNumber}"
+                    "STAFF_DELETE" -> "STAFF REMOVED: ${log.billNumber}"
+                    else -> "${log.action.ifBlank { "ACTIVITY" }}: ${log.billNumber}"
+                }
+                val showAmount = log.action == "BILL_CANCEL" || log.action == "BILL_EDIT" || log.action == "PURCHASE_CANCEL" || log.action == "PURCHASE_EDIT"
+                val badgeContainer = if (isDestructive) MaterialTheme.colorScheme.errorContainer else MaterialTheme.colorScheme.primaryContainer
+                val badgeContent = if (isDestructive) MaterialTheme.colorScheme.onErrorContainer else MaterialTheme.colorScheme.onPrimaryContainer
+                val borderColor = if (isDestructive) MaterialTheme.colorScheme.error.copy(alpha = 0.3f) else MaterialTheme.colorScheme.primary.copy(alpha = 0.25f)
+
                 Card(
                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                     shape = RoundedCornerShape(12.dp),
                     elevation = CardDefaults.cardElevation(defaultElevation = 1.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                        .border(1.dp, borderColor, RoundedCornerShape(12.dp))
                 ) {
                     Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(
@@ -1290,23 +1443,25 @@ private fun AuditLogsView(auditLogs: List<com.kadaikutty.pos.feature.billing.dat
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Surface(
-                                color = MaterialTheme.colorScheme.errorContainer,
+                                color = badgeContainer,
                                 shape = RoundedCornerShape(6.dp)
                             ) {
                                 Text(
-                                    text = "CANCELLED BILL #${log.billNumber}",
+                                    text = label,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
                                     fontSize = 12.sp,
                                     fontWeight = FontWeight.Bold,
-                                    color = MaterialTheme.colorScheme.onErrorContainer
+                                    color = badgeContent
                                 )
                             }
-                            Text(
-                                text = Money(log.amountMinorUnits).toString(),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp,
-                                color = MaterialTheme.colorScheme.error
-                            )
+                            if (showAmount) {
+                                Text(
+                                    text = Money(log.amountMinorUnits).toString(),
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 15.sp,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
                         }
 
                         Row(
@@ -1315,7 +1470,7 @@ private fun AuditLogsView(auditLogs: List<com.kadaikutty.pos.feature.billing.dat
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                text = "Cancelled by: ${log.performedByUserName.ifBlank { "Staff" }}",
+                                text = "By: ${log.performedByUserName.ifBlank { "Staff" }}",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.SemiBold,
                                 color = MaterialTheme.colorScheme.onSurface
@@ -1334,7 +1489,7 @@ private fun AuditLogsView(auditLogs: List<com.kadaikutty.pos.feature.billing.dat
                                 modifier = Modifier.fillMaxWidth()
                             ) {
                                 Text(
-                                    text = "Reason: ${log.reason}",
+                                    text = log.reason,
                                     modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                                     fontSize = 11.sp,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant

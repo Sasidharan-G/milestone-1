@@ -1045,6 +1045,19 @@ class SettingsViewModel @Inject constructor(
                     lastOnlineVerifiedAt = System.currentTimeMillis()
                 )
                 database.userDao().insertUser(userEntity)
+                database.auditLogDao().insertAuditLog(
+                    com.kadaikutty.pos.feature.billing.data.AuditLogEntity(
+                        id = com.kadaikutty.pos.core.common.newRecordId(),
+                        companyId = companyId,
+                        action = "STAFF_CREATE",
+                        billNumber = "$displayName ($cleanPhone)",
+                        amountMinorUnits = 0,
+                        reason = "Role: $role. Permissions: ${permissions.joinToString(", ") { it.name }.ifBlank { "none" }}",
+                        performedByUserId = session.userId,
+                        performedByUserName = session.displayName,
+                        timestampEpochMs = System.currentTimeMillis()
+                    )
+                )
 
                 onResult(true, "Staff account for '$displayName' ($cleanPhone) created and active.")
             } catch (e: Exception) {
@@ -1089,12 +1102,32 @@ class SettingsViewModel @Inject constructor(
                 // gets a fresh offline credential on their next online sign-in.
                 if (newPassword != null && newPassword.isNotEmpty()) offlineCredentialStore.remove(existing.username)
 
+                val newPermissionsCsv = permissions.joinToString(",") { it.name }
+                val changes = mutableListOf<String>()
+                if (finalDisplayName != existing.displayName) changes += "name '${existing.displayName}' -> '$finalDisplayName'"
+                if (finalRole != existing.role) changes += "role ${existing.role} -> $finalRole"
+                if (newPermissionsCsv != existing.permissions) changes += "permissions changed"
+                if (newPassword != null && newPassword.isNotEmpty()) changes += "password reset"
+
                 val updatedUser = existing.copy(
                     displayName = finalDisplayName,
                     role = finalRole,
-                    permissions = permissions.joinToString(",") { it.name }
+                    permissions = newPermissionsCsv
                 )
                 userDao.updateUser(updatedUser)
+                database.auditLogDao().insertAuditLog(
+                    com.kadaikutty.pos.feature.billing.data.AuditLogEntity(
+                        id = com.kadaikutty.pos.core.common.newRecordId(),
+                        companyId = session.companyId,
+                        action = "STAFF_UPDATE",
+                        billNumber = "$finalDisplayName (${existing.username})",
+                        amountMinorUnits = 0,
+                        reason = changes.joinToString("; ").ifBlank { "No fields changed" },
+                        performedByUserId = session.userId,
+                        performedByUserName = session.displayName,
+                        timestampEpochMs = System.currentTimeMillis()
+                    )
+                )
 
                 onResult(true, "Staff account updated successfully!")
             } catch (e: Exception) {
@@ -1129,6 +1162,19 @@ class SettingsViewModel @Inject constructor(
                 backendApi.deactivateStaff(token, userId)
                 userDao.deleteUser(existing)
                 offlineCredentialStore.remove(existing.username)
+                database.auditLogDao().insertAuditLog(
+                    com.kadaikutty.pos.feature.billing.data.AuditLogEntity(
+                        id = com.kadaikutty.pos.core.common.newRecordId(),
+                        companyId = session.companyId,
+                        action = "STAFF_DELETE",
+                        billNumber = "${existing.displayName} (${existing.username})",
+                        amountMinorUnits = 0,
+                        reason = "Staff account removed",
+                        performedByUserId = session.userId,
+                        performedByUserName = session.displayName,
+                        timestampEpochMs = System.currentTimeMillis()
+                    )
+                )
 
                 onResult(true, "Staff user deleted successfully!")
             } catch (e: Exception) {

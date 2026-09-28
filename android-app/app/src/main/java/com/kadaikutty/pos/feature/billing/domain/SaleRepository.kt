@@ -4,6 +4,6 @@ import com.kadaikutty.pos.core.common.AppResult
 
 interface SaleRepository {
     suspend fun save(draft: SaleDraft): AppResult<String>
-    suspend fun deleteSale(saleId: String, billNumber: String): AppResult<Unit>
+    suspend fun deleteSale(saleId: String, billNumber: String, reason: String = "Bill cancelled"): AppResult<Unit>
 }
 
