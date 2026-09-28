@@ -35,6 +35,18 @@ val CoralError = Color(0xFFEF4444)              // Crisp Coral Red
 val CoralErrorContainer = Color(0xFFFEE2E2)
 val OnCoralErrorContainer = Color(0xFF991B1B)
 
+// Home-screen menu tile accents (Ledger, Reports) - light AND dark pairs, same reasoning as the
+// dark-mode maroon ramp above: a light pastel container would look like a mistake on a dark canvas.
+val SkyContainer = Color(0xFFE0F2FE)
+val OnSkyContainer = Color(0xFF075985)
+val DarkSkyContainer = Color(0xFF0C4A6E)
+val DarkOnSkyContainer = Color(0xFFE0F2FE)
+
+val TealContainer = Color(0xFFCCFBF1)
+val OnTealContainer = Color(0xFF115E59)
+val DarkTealContainer = Color(0xFF115E59)
+val DarkOnTealContainer = Color(0xFFCCFBF1)
+
 // Surfaces & Backgrounds
 val LightAppBackground = Color(0xFFF8FAFC)      // Ultra-clean grey-slate canvas
 val LightCardSurface = Color(0xFFFFFFFF)        // Crisp pure white card

@@ -22,6 +22,12 @@ import javax.inject.Inject
 data class HomeDashboardUiState(
     val todaySalesMinorUnits: Long = 0L,
     val todayInvoicesCount: Int = 0,
+    val yesterdaySalesMinorUnits: Long = 0L,
+    val yesterdayInvoicesCount: Int = 0,
+    val weeklySalesMinorUnits: Long = 0L,
+    val weeklyInvoicesCount: Int = 0,
+    val monthlySalesMinorUnits: Long = 0L,
+    val monthlyInvoicesCount: Int = 0,
     val lowStockCount: Int = 0,
     val customerCreditDueMinorUnits: Long = 0L,
     val todayPurchasesMinorUnits: Long = 0L,
@@ -122,31 +128,54 @@ class HomeViewModel @Inject constructor(
                     set(Calendar.SECOND, 0)
                     set(Calendar.MILLISECOND, 0)
                 }.timeInMillis
+                val startOfYesterday = Calendar.getInstance().apply { timeInMillis = startOfToday; add(Calendar.DAY_OF_YEAR, -1) }.timeInMillis
+                // Rolling windows (last 7 / last 30 days, today inclusive) rather than calendar
+                // week/month - avoids locale-dependent "first day of week" ambiguity for a simple
+                // home-screen figure.
+                val startOfWeek = Calendar.getInstance().apply { timeInMillis = startOfToday; add(Calendar.DAY_OF_YEAR, -6) }.timeInMillis
+                val startOfMonth = Calendar.getInstance().apply { timeInMillis = startOfToday; add(Calendar.DAY_OF_YEAR, -29) }.timeInMillis
 
-                val salesCountFlow = database.saleDao().getSalesCountSince(companyId, startOfToday)
-                val salesTotalFlow = database.saleDao().getSalesTotalSince(companyId, startOfToday)
+                val saleDao = database.saleDao()
+                val periodStatsFlow = combine(
+                    combine(saleDao.getSalesCountSince(companyId, startOfToday), saleDao.getSalesTotalSince(companyId, startOfToday)) { c, t -> c to (t ?: 0L) },
+                    combine(saleDao.getSalesCountBetween(companyId, startOfYesterday, startOfToday), saleDao.getSalesTotalBetween(companyId, startOfYesterday, startOfToday)) { c, t -> c to (t ?: 0L) },
+                    combine(saleDao.getSalesCountSince(companyId, startOfWeek), saleDao.getSalesTotalSince(companyId, startOfWeek)) { c, t -> c to (t ?: 0L) },
+                    combine(saleDao.getSalesCountSince(companyId, startOfMonth), saleDao.getSalesTotalSince(companyId, startOfMonth)) { c, t -> c to (t ?: 0L) }
+                ) { today, yesterday, weekly, monthly -> listOf(today, yesterday, weekly, monthly) }
+
                 val stockFlow = database.purchaseDao().getStockBalances(companyId)
                 val creditsFlow = database.masterDao().getTotalCustomerCreditsReceivable(companyId)
                 val purchasesTotalFlow = database.purchaseDao().getPurchasesTotalSince(companyId, startOfToday)
                 val pendingFlow = database.syncQueueDao().pendingCount(companyId)
                 val recentSalesFlow = database.saleDao().getRecentSales(companyId, 5)
 
+                val periodAndPurchasesFlow = combine(periodStatsFlow, purchasesTotalFlow) { periods, pTotal -> periods to (pTotal ?: 0L) }
+
                 val aggregatedFlow = combine(
-                    combine(salesCountFlow, salesTotalFlow, purchasesTotalFlow) { count, sTotal, pTotal ->
-                        Triple(count, sTotal ?: 0L, pTotal ?: 0L)
-                    },
+                    periodAndPurchasesFlow,
                     stockFlow,
                     creditsFlow,
                     pendingFlow,
                     recentSalesFlow
-                ) { stats, stockList, customerCredits, pendingCount, recent ->
+                ) { periodsAndPurchases, stockList, customerCredits, pendingCount, recent ->
+                    val (periods, purchasesTotal) = periodsAndPurchases
+                    val (todayCount, todayTotal) = periods[0]
+                    val (yesterdayCount, yesterdayTotal) = periods[1]
+                    val (weeklyCount, weeklyTotal) = periods[2]
+                    val (monthlyCount, monthlyTotal) = periods[3]
                     val customerDue = customerCredits ?: 0L
                     HomeDashboardUiState(
-                        todaySalesMinorUnits = stats.second,
-                        todayInvoicesCount = stats.first,
+                        todaySalesMinorUnits = todayTotal,
+                        todayInvoicesCount = todayCount,
+                        yesterdaySalesMinorUnits = yesterdayTotal,
+                        yesterdayInvoicesCount = yesterdayCount,
+                        weeklySalesMinorUnits = weeklyTotal,
+                        weeklyInvoicesCount = weeklyCount,
+                        monthlySalesMinorUnits = monthlyTotal,
+                        monthlyInvoicesCount = monthlyCount,
                         lowStockCount = stockList.count { com.kadaikutty.pos.feature.stock.domain.isLowStock(it.currentStock, it.minStockLevel, it.unitType) },
                         customerCreditDueMinorUnits = customerDue,
-                        todayPurchasesMinorUnits = stats.third,
+                        todayPurchasesMinorUnits = purchasesTotal,
                         recentSales = recent,
                         pendingSyncCount = pendingCount,
                         isSyncing = false, // Default, overwritten by combine below

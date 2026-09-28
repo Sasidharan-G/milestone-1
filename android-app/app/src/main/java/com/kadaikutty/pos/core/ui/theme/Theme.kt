@@ -61,6 +61,31 @@ private val DarkColors = darkColorScheme(
     scrim = Color(0xFF000000)
 )
 
+/**
+ * Brand accents beyond Material's 4 built-in roles (primary/secondary/tertiary/error), for screens
+ * that need a couple more distinct icon-tile colours (e.g. the Home menu grid). Each needs both a
+ * light and a dark value - unlike [MaterialTheme.colorScheme], a raw `Color(0xFF...)` constant
+ * never flips with the theme, which is exactly what makes a screen look wrong in one of the two modes.
+ */
+data class ExtendedColors(
+    val ledgerContainer: Color,
+    val onLedgerContainer: Color,
+    val reportsContainer: Color,
+    val onReportsContainer: Color
+)
+
+private val LightExtendedColors = ExtendedColors(
+    ledgerContainer = SkyContainer, onLedgerContainer = OnSkyContainer,
+    reportsContainer = TealContainer, onReportsContainer = OnTealContainer
+)
+
+private val DarkExtendedColors = ExtendedColors(
+    ledgerContainer = DarkSkyContainer, onLedgerContainer = DarkOnSkyContainer,
+    reportsContainer = DarkTealContainer, onReportsContainer = DarkOnTealContainer
+)
+
+val LocalExtendedColors = androidx.compose.runtime.staticCompositionLocalOf { LightExtendedColors }
+
 @Composable
 fun BillingTheme(
     themeMode: String = "Light",
@@ -70,6 +95,7 @@ fun BillingTheme(
     // "Amoled" is a retired theme; any device still holding that preference falls through to
     // Dark rather than losing its choice.
     val colors = if (themeMode == "Dark" || themeMode == "Amoled" || darkTheme) DarkColors else LightColors
+    val extendedColors = if (colors === DarkColors) DarkExtendedColors else LightExtendedColors
 
     val view = androidx.compose.ui.platform.LocalView.current
     if (!view.isInEditMode) {
@@ -86,16 +112,18 @@ fun BillingTheme(
         }
     }
 
-    MaterialTheme(
-        colorScheme = colors,
-        shapes = androidx.compose.material3.Shapes(
-            extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
-            small = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
-            medium = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
-            large = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
-            extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
-        ),
-        typography = Typography,
-        content = content
-    )
+    androidx.compose.runtime.CompositionLocalProvider(LocalExtendedColors provides extendedColors) {
+        MaterialTheme(
+            colorScheme = colors,
+            shapes = androidx.compose.material3.Shapes(
+                extraSmall = androidx.compose.foundation.shape.RoundedCornerShape(6.dp),
+                small = androidx.compose.foundation.shape.RoundedCornerShape(10.dp),
+                medium = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                large = androidx.compose.foundation.shape.RoundedCornerShape(18.dp),
+                extraLarge = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)
+            ),
+            typography = Typography,
+            content = content
+        )
+    }
 }

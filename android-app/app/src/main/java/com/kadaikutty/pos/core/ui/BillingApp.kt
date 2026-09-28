@@ -139,7 +139,7 @@ fun BillingApp() {
                             Icon(
                                 imageVector = Icons.Default.Warning,
                                 contentDescription = null,
-                                tint = Color(0xFFEF4444),
+                                tint = MaterialTheme.colorScheme.error,
                                 modifier = Modifier.size(24.dp)
                             )
                             Spacer(modifier = Modifier.width(8.dp))
@@ -165,7 +165,7 @@ fun BillingApp() {
                                     popUpTo(0) { inclusive = true }
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
                         ) {
                             Text("Back to Login", color = Color.White, fontWeight = FontWeight.Bold)
                         }
@@ -615,89 +615,7 @@ fun HomeScreen(
         return
     }
 
-    Scaffold(
-        bottomBar = {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding() // keep clear of the 3-button / gesture system bar
-                    .padding(16.dp), // Floating margin
-                contentAlignment = Alignment.Center
-            ) {
-                Surface(
-                    modifier = Modifier.width(260.dp).height(65.dp),
-                    shape = RoundedCornerShape(35.dp),
-                    color = Color.Transparent,
-                    shadowElevation = 8.dp
-                ) {
-                    Box(
-                        modifier = Modifier.fillMaxSize().background(
-                            androidx.compose.ui.graphics.Brush.horizontalGradient(
-                                colors = listOf(Color(0xFF4A1115), Color(0xFF5C151A), Color(0xFF4A1115))
-                            )
-                        )
-                    ) {
-                        Row(
-                            modifier = Modifier.fillMaxSize().padding(horizontal = 24.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                        // Left: Master Catalog
-                        if (showMasters) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.clickable { onNavigateTo(AppRoute.Masters) }.padding(8.dp)
-                            ) {
-                                Icon(Icons.Default.Inventory2, contentDescription = "Masters", tint = Color.White.copy(alpha = 0.8f))
-                                Text("Masters", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.width(48.dp))
-                        }
-
-                        // Center Spacer for FAB (its "Purchase" label sits underneath the raised button)
-                        Box(modifier = Modifier.width(64.dp).fillMaxHeight(), contentAlignment = Alignment.BottomCenter) {
-                            if (showPurchases) {
-                                Text("Purchase", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp, modifier = Modifier.padding(bottom = 8.dp))
-                            }
-                        }
-
-                        // Right: Reports
-                        if (showReports) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier.clickable { onNavigateTo(AppRoute.Reports) }.padding(8.dp)
-                            ) {
-                                Icon(Icons.Default.BarChart, contentDescription = "Reports", tint = Color.White.copy(alpha = 0.8f))
-                                Text("Reports", color = Color.White.copy(alpha = 0.8f), fontSize = 10.sp)
-                            }
-                        } else {
-                            Spacer(modifier = Modifier.width(48.dp))
-                        }
-                        }
-                    }
-                }
-
-                // Center Raised FAB (Inward Stock)
-                if (showPurchases) {
-                    FloatingActionButton(
-                        onClick = { onNavigateTo(AppRoute.Purchases) },
-                        modifier = Modifier
-                            .align(Alignment.TopCenter)
-                            .offset(y = (-20).dp)
-                            .size(64.dp)
-                            .border(4.dp, MaterialTheme.colorScheme.background, CircleShape),
-                        shape = CircleShape,
-                        containerColor = Color(0xFF5C151A),
-                        contentColor = Color.White,
-                        elevation = FloatingActionButtonDefaults.elevation(defaultElevation = 10.dp)
-                    ) {
-                        Icon(Icons.Default.LocalShipping, contentDescription = "Purchase", modifier = Modifier.size(30.dp))
-                    }
-                }
-            }
-        }
-    ) { paddingValues ->
+    Scaffold { paddingValues ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -709,60 +627,22 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             val topInset = paddingValues.calculateTopPadding()
-            val scoopHeight = topInset + 72.dp
-            val density = LocalDensity.current
-            val maroonScoopShape = remember(scoopHeight, density) {
-                object : androidx.compose.ui.graphics.Shape {
-                    override fun createOutline(
-                        size: androidx.compose.ui.geometry.Size,
-                        layoutDirection: androidx.compose.ui.unit.LayoutDirection,
-                        density: androidx.compose.ui.unit.Density
-                    ): androidx.compose.ui.graphics.Outline {
-                        val scoopDepth = with(density) { scoopHeight.toPx() }
-                        val corner = with(density) { 48.dp.toPx() }
-                        val path = Path().apply {
-                            moveTo(0f, 0f)
-                            lineTo(size.width * 0.35f, 0f)
-                            // S-curve: wider white area at top for icons
-                            cubicTo(
-                                size.width * 0.58f, 0f,
-                                size.width * 0.50f, scoopDepth * 0.85f,
-                                size.width, scoopDepth
-                            )
-                            lineTo(size.width, size.height - corner)
-                            quadraticTo(size.width, size.height, size.width - corner, size.height)
-                            lineTo(corner, size.height)
-                            quadraticTo(0f, size.height, 0f, size.height - corner)
-                            close()
-                        }
-                        return androidx.compose.ui.graphics.Outline.Generic(path)
-                    }
-                }
-            }
-
-            val pagerState = androidx.compose.foundation.pager.rememberPagerState(pageCount = { 4 })
-            LaunchedEffect(pagerState) {
-                while(true) {
-                    kotlinx.coroutines.delay(3000)
-                    val nextPage = (pagerState.currentPage + 1) % 4
-                    pagerState.animateScrollToPage(
-                        page = nextPage,
-                        animationSpec = tween(durationMillis = 800, easing = FastOutSlowInEasing)
-                    )
-                }
-            }
+            // A plain rounded-bottom banner - simpler and predictable at any content height,
+            // unlike the old custom S-curve Shape whose control points were tuned for a much
+            // taller (KPI-carousel) header and would have looked wrong once that content left.
+            val maroonHeaderShape = RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp)
 
             Box(modifier = Modifier.fillMaxWidth()) {
-                // Behind the status bar the white scoop would sit under the phone's white
+                // Behind the status bar the header would sit under the phone's white
                 // signal/wifi/battery icons and hide them; a maroon strip keeps them readable.
                 Box(modifier = Modifier.fillMaxWidth().height(topInset).background(Color(0xFF5C151A)))
-                // 1. Maroon background with S-curve + bottom rounded corners
+                // 1. Maroon banner with bottom-rounded corners
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .clip(maroonScoopShape)
+                        .clip(maroonHeaderShape)
                         .background(Color(0xFF5C151A))
-                        .padding(top = scoopHeight - 12.dp)
+                        .padding(top = topInset + 20.dp)
                         .padding(bottom = 20.dp)
                 ) {
                     Text(
@@ -772,87 +652,6 @@ fun HomeScreen(
                         color = Color.White,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
-
-                    Spacer(modifier = Modifier.height(12.dp))
-
-                    Text(
-                        text = "In the moment",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    androidx.compose.foundation.pager.HorizontalPager(
-                        state = pagerState,
-                        contentPadding = PaddingValues(start = 16.dp, end = 48.dp),
-                        pageSpacing = 12.dp,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { page ->
-                        when (page) {
-                            0 -> DashboardKpiCard(
-                                title = "Today's Sales",
-                                value = Money(dashboardState.todaySalesMinorUnits).toString(),
-                                subtitle = "${dashboardState.todayInvoicesCount} Invoices",
-                                icon = Icons.Default.ShoppingCart,
-                                accentColor = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.fillMaxWidth().height(150.dp),
-                                onClick = { if (showReports) onNavigateTo(AppRoute.Reports) }
-                            )
-                            1 -> DashboardKpiCard(
-                                title = "Low Stock Alert",
-                                value = "${dashboardState.lowStockCount} Items",
-                                subtitle = if (dashboardState.lowStockCount > 0) "Needs Restock" else "Stock Healthy",
-                                icon = Icons.Default.Warning,
-                                accentColor = if (dashboardState.lowStockCount > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.fillMaxWidth().height(150.dp),
-                                onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
-                            )
-                            2 -> DashboardKpiCard(
-                                title = "Customer Due",
-                                value = Money(dashboardState.customerCreditDueMinorUnits).toString(),
-                                subtitle = "Ledger Balance",
-                                icon = Icons.Default.AccountBox,
-                                accentColor = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.fillMaxWidth().height(150.dp),
-                                onClick = { if (showMasters) onNavigateTo(AppRoute.Masters) }
-                            )
-                            3 -> DashboardKpiCard(
-                                title = "Inward Stock",
-                                value = Money(dashboardState.todayPurchasesMinorUnits).toString(),
-                                subtitle = "Purchased Today",
-                                icon = Icons.Default.LocalShipping,
-                                accentColor = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.fillMaxWidth().height(150.dp),
-                                onClick = { if (showPurchases) onNavigateTo(AppRoute.Purchases) }
-                            )
-                        }
-                    }
-
-                    // Dots
-                    Box(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 16.dp)
-                                .align(Alignment.Center),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            repeat(4) { iteration ->
-                                val color = if (pagerState.currentPage == iteration) Color.White else Color.White.copy(alpha = 0.3f)
-                                Box(
-                                    modifier = Modifier
-                                        .padding(horizontal = 4.dp)
-                                        .clip(CircleShape)
-                                        .background(color)
-                                        .size(6.dp)
-                                )
-                            }
-                        }
-                    }
                 } // close maroon Column
 
                 // 2. Icons overlay at top-right
@@ -868,19 +667,23 @@ fun HomeScreen(
                         Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
                     }) {
                         val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
+                        // These three icons sit on the fixed maroon header, not a themed surface -
+                        // MaterialTheme.colorScheme.primary is that exact same maroon in light mode,
+                        // which made the icons nearly invisible there. White reads on the header in
+                        // both themes, the same way the shop-name text above it is fixed white too.
                         Icon(
                             imageVector = if (dashboardState.pendingSyncCount == 0 && !dashboardState.isSyncing) Icons.Default.CloudDone else Icons.Default.Sync,
                             contentDescription = "Cloud Sync",
-                            tint = if (dashboardState.isSyncing) Color(0xFF38BDF8) else MaterialTheme.colorScheme.primary,
+                            tint = if (dashboardState.isSyncing) Color(0xFF38BDF8) else Color.White,
                             modifier = Modifier.size(24.dp).then(syncIconModifier)
                         )
                     }
                     IconButton(onClick = onCloseShiftClick) {
-                        Icon(Icons.Default.Lock, contentDescription = "Close Shift", tint = MaterialTheme.colorScheme.primary)
+                        Icon(Icons.Default.Lock, contentDescription = "Close Shift", tint = Color.White)
                     }
                     Box {
                         IconButton(onClick = { showSettingsMenu = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = MaterialTheme.colorScheme.primary)
+                            Icon(Icons.Default.Settings, contentDescription = "Settings", tint = Color.White)
                         }
                         DropdownMenu(
                             expanded = showSettingsMenu,
@@ -915,6 +718,24 @@ fun HomeScreen(
                     .padding(horizontal = 16.dp),
                 verticalArrangement = Arrangement.spacedBy(24.dp)
             ) {
+
+            // Plain sales-figures table - easy to read at a glance, no reading of chart/graph
+            // needed, matches how the client's reference app shows this.
+            if (showSales) {
+                Card(
+                    modifier = Modifier.fillMaxWidth().offset(y = (-28).dp),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                ) {
+                    Column(modifier = Modifier.padding(vertical = 6.dp)) {
+                        SalesSummaryRow("Today Sale", dashboardState.todaySalesMinorUnits, dashboardState.todayInvoicesCount)
+                        SalesSummaryRow("Yesterday Sale", dashboardState.yesterdaySalesMinorUnits, dashboardState.yesterdayInvoicesCount)
+                        SalesSummaryRow("Weekly Sale", dashboardState.weeklySalesMinorUnits, dashboardState.weeklyInvoicesCount)
+                        SalesSummaryRow("Monthly Sale", dashboardState.monthlySalesMinorUnits, dashboardState.monthlyInvoicesCount, isLast = true)
+                    }
+                }
+            }
 
             if (hasStaleUnsyncedData) {
                 Card(
@@ -962,114 +783,38 @@ fun HomeScreen(
                 }
             }
 
-            // 2. Hero Point of Sale Card
-            if (showSales) {
-                // Deliberately fixed maroon, not a theme role: this is a branded panel that
-                // carries white content in both themes, the way the app bar above it does.
-                val heroGradient = androidx.compose.ui.graphics.Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFF5C151A),
-                        Color(0xFF8B252C),
-                        Color(0xFF4A1115)
-                    )
-                )
+            // 2. Big-icon menu grid - every destination one tap away, label under a coloured
+            // icon so the screen reads even for a shopkeeper who isn't comfortable with English
+            // text alone. Every tile below calls the exact same onNavigateTo(...)/permission
+            // check the old bottom-bar/FAB/hero-card used - only the layout changed.
+            val extendedColors = com.kadaikutty.pos.core.ui.theme.LocalExtendedColors.current
+            data class MenuTile(val label: String, val icon: ImageVector, val container: Color, val onContainer: Color, val onClick: () -> Unit)
+            val menuTiles = buildList {
+                if (showSales) add(MenuTile("Billing", Icons.Default.PointOfSale, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer) { onNavigateTo(AppRoute.Billing) })
+                if (showMasters) add(MenuTile("Category", Icons.Default.Category, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer) { onNavigateTo(AppRoute.Masters) })
+                if (showMasters) add(MenuTile("Product", Icons.Default.Inventory2, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer) { onNavigateTo(AppRoute.Masters) })
+                if (showMasters) add(MenuTile("Ledger", Icons.Default.MenuBook, extendedColors.ledgerContainer, extendedColors.onLedgerContainer) { onNavigateTo(AppRoute.Masters) })
+                if (showPurchases) add(MenuTile("Purchase", Icons.Default.LocalShipping, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer) { onNavigateTo(AppRoute.Purchases) })
+                if (showReports) add(MenuTile("Reports", Icons.Default.BarChart, extendedColors.reportsContainer, extendedColors.onReportsContainer) { onNavigateTo(AppRoute.Reports) })
+                if (showSettings) add(MenuTile("Settings", Icons.Default.Settings, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant) { onNavigateTo(AppRoute.Settings) })
+            }
 
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(20.dp))
-                        .clickable { onNavigateTo(AppRoute.Billing) }
-                        .border(
-                            width = 1.dp,
-                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.4f),
-                            shape = RoundedCornerShape(20.dp)
-                        ),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = Color.Transparent),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(heroGradient)
-                            .padding(16.dp)
-                    ) {
-                        Column(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalArrangement = Arrangement.spacedBy(14.dp)
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Surface(
-                                    shape = RoundedCornerShape(14.dp),
-                                    color = Color.White.copy(alpha = 0.2f),
-                                    border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
-                                ) {
-                                    Icon(
-                                        Icons.Default.PointOfSale,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.padding(10.dp).size(26.dp)
-                                    )
-                                }
-
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = "Point of Sale (POS)",
-                                        fontSize = 17.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = Color.White
-                                    )
-                                    Spacer(modifier = Modifier.height(2.dp))
-                                    Text(
-                                        text = "Create Invoices, Barcode Scan & Instant Checkout",
-                                        fontSize = 11.sp,
-                                        lineHeight = 15.sp,
-                                        color = Color.White.copy(alpha = 0.9f)
-                                    )
-                                }
-                            }
-
-                            // Dedicated START NEW BILL CTA Button
-                            Surface(
-                                shape = RoundedCornerShape(12.dp),
-                                color = Color.White,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                    verticalAlignment = Alignment.CenterVertically
-                                ) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                    ) {
-                                        Text(
-                                            text = "START NEW BILL",
-                                            fontWeight = FontWeight.ExtraBold,
-                                            fontSize = 13.sp,
-                                            color = MaterialTheme.colorScheme.primary
-                                        )
-                                    }
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                }
-                            }
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                menuTiles.chunked(3).forEach { rowTiles ->
+                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        rowTiles.forEach { tile ->
+                            DashboardTileCard(
+                                title = tile.label,
+                                icon = tile.icon,
+                                iconContainerColor = tile.container,
+                                iconTint = tile.onContainer,
+                                modifier = Modifier.width(100.dp),
+                                onClick = tile.onClick
+                            )
                         }
                     }
                 }
             }
-
 
 
             // 4. Recent Invoices Live Activity Feed
@@ -1153,11 +898,32 @@ fun HomeScreen(
                 }
             }
 
-            // The floating bottom bar isn't part of this scroll area, so leave room for it (plus the raised
-            // Purchase button) or the last invoice ends up hidden behind it.
-            Spacer(modifier = Modifier.height(paddingValues.calculateBottomPadding() + 32.dp))
+            Spacer(modifier = Modifier.height(paddingValues.calculateBottomPadding() + 24.dp))
         } // close the inner Column
         } // close the outer scrolling Column
+    }
+}
+
+/** One row of the plain Today/Yesterday/Weekly/Monthly sales table - "amount - N bills". */
+@Composable
+private fun SalesSummaryRow(label: String, amountMinorUnits: Long, invoiceCount: Int, isLast: Boolean = false) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(text = label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+        Text(
+            text = "${Money(amountMinorUnits)}  •  $invoiceCount",
+            fontSize = 15.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+    if (!isLast) {
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
     }
 }
 

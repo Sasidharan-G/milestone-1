@@ -1010,7 +1010,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                                                     }
                                                                 }
                                                                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                                                    Text(amount, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = Color(0xFF2E7D32))
+                                                                    Text(amount, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = MaterialTheme.colorScheme.secondary)
                                                                     if (!billSelectionMode) {
                                                                         IconButton(
                                                                             onClick = { deletingBillNum = billNum },
@@ -1192,7 +1192,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                                                 text = "Profit: $profit",
                                                                 fontWeight = FontWeight.Bold,
                                                                 fontSize = 14.sp,
-                                                                color = if (isNegative) Color(0xFFC62828) else Color(0xFF2E7D32)
+                                                                color = if (isNegative) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondary
                                                             )
                                                         }
                                                         Row(

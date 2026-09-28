@@ -59,6 +59,12 @@ import kotlinx.coroutines.flow.Flow
     
     @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs")
     fun getSalesTotalSince(companyId: String, sinceEpochMs: Long): Flow<Long?>
+
+    @Query("SELECT COUNT(*) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :fromEpochMs AND createdAtEpochMs < :toEpochMs")
+    fun getSalesCountBetween(companyId: String, fromEpochMs: Long, toEpochMs: Long): Flow<Int>
+
+    @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :fromEpochMs AND createdAtEpochMs < :toEpochMs")
+    fun getSalesTotalBetween(companyId: String, fromEpochMs: Long, toEpochMs: Long): Flow<Long?>
     
     @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC LIMIT :limit")
     fun getRecentSales(companyId: String, limit: Int): Flow<List<SaleEntity>>
