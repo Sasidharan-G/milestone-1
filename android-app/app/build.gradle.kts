@@ -24,8 +24,10 @@ android {
         // the installer only says "problem parsing the package".
         minSdk = 24
         targetSdk = 35
-        versionCode = 37 // Google Play needs this to go up on every upload
-        versionName = "0.1.0"
+        versionCode = 38 // Google Play needs this to go up on every upload
+        // Shown in the brand footer and Android's app info. Bump the minor for a feature release,
+        // the patch for fixes; the build number (versionCode) is appended so support can tell builds apart.
+        versionName = "1.0.0 ($versionCode)"
         testInstrumentationRunner = "com.kadaikutty.pos.HiltTestRunner"
         buildConfigField("String", "SENTRY_DSN", "\"${releaseValue("SENTRY_DSN") ?: ""}\"")
 
