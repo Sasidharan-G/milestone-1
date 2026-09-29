@@ -2,7 +2,7 @@ name: Node.js Backend CI
 
 on:
   push:
-    branches: [ "main", "security-hardening" ]
+    branches: [ "main", "security-hardening", "mumbai-launch-*", "release/**" ]
     paths: [ "server/**", "scripts/**", ".github/workflows/server.yml" ]
   pull_request:
     branches: [ "main" ]

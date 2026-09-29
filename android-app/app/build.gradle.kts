@@ -66,7 +66,9 @@ android {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            signingConfig = signingConfigs.getByName("release")
+            // Without a keystore (CI) the release build stays unsigned instead of failing, so CI still
+            // runs the real R8/minified release path; a local or release build with the keystore signs.
+            if (releaseValue("KADAIKUTTY_KEYSTORE_FILE") != null) signingConfig = signingConfigs.getByName("release")
             buildConfigField("String", "SIGNING_CERT_SHA256", "\"$signingCertSha256\"")
         }
         debug {

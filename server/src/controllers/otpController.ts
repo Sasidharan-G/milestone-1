@@ -14,10 +14,25 @@ import { sendRouteError } from '../routes/http';
 const OTP_TTL_MS = 10 * 60 * 1000;
 const RESET_TOKEN_TTL_MS = 10 * 60 * 1000;
 
+/** Verify tries allowed per OTP send; after that the session is dead and a fresh OTP is needed. */
+export const MAX_OTP_ATTEMPTS = 5;
+
 export const otpSessions = {
   async consume(sessionId: string, phone: string): Promise<boolean> {
     const nonce = crypto.createHash('sha256').update(`${phone}:${sessionId}`).digest('hex');
     return providers().dataStore.consumeNonce('otp-session', nonce, Date.now() + 86_400_000);
+  },
+  /**
+   * Takes the next of MAX_OTP_ATTEMPTS attempt slots for this session; false once all are used.
+   * Kept in the data store (a conditional put per slot), so the cap holds across instances and
+   * deploys - the in-memory rate limiter alone reset on every deploy and multiplied per instance.
+   */
+  async takeAttempt(sessionId: string, phone: string): Promise<boolean> {
+    for (let slot = 1; slot <= MAX_OTP_ATTEMPTS; slot++) {
+      const nonce = crypto.createHash('sha256').update(`${phone}:${sessionId}:attempt:${slot}`).digest('hex');
+      if (await providers().dataStore.consumeNonce('otp-attempt', nonce, Date.now() + OTP_TTL_MS + 60_000)) return true;
+    }
+    return false;
   }
 };
 
@@ -93,6 +108,10 @@ export const verifyOtp = async (req: Request, res: Response) => {
 
     const session = readOtpSession(cleanPhone, requestId);
     if (!session) throw new AppError(400, 'OTP_SESSION_INVALID', 'Request a new OTP before verification.');
+    // Counted before the code is checked, so a correct guess on attempt six is refused too.
+    if (!await otpSessions.takeAttempt(session.sessionId, cleanPhone)) {
+      throw new AppError(429, 'OTP_ATTEMPTS_EXCEEDED', 'Too many wrong OTP attempts. Request a new OTP.');
+    }
 
     let verified = false;
     const fixed = process.env.LOCAL_DEV_OTP_CODE || '';

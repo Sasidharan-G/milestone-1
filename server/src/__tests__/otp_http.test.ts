@@ -52,3 +52,18 @@ test('a second OTP send for the same phone verifies independently even with a fi
   assert.equal(secondVerify.code, 200);
   assert.equal(typeof secondVerify.result.resetToken, 'string');
 });
+
+test('an OTP session dies after five wrong codes, even for the right code afterwards', async () => {
+  const challenge = await invoke(sendOtp, { mobileNumber: '9876500123' });
+  for (let i = 0; i < 5; i++) {
+    const wrong = await invoke(verifyOtp, { mobileNumber: '9876500123', otp: '000000', requestId: challenge.result.requestId });
+    assert.equal(wrong.code, 400);
+  }
+  const locked = await invoke(verifyOtp, { mobileNumber: '9876500123', otp: '123456', requestId: challenge.result.requestId });
+  assert.equal(locked.code, 429);
+
+  // A fresh send is a fresh session with its own five attempts.
+  const fresh = await invoke(sendOtp, { mobileNumber: '9876500123' });
+  const ok = await invoke(verifyOtp, { mobileNumber: '9876500123', otp: '123456', requestId: fresh.result.requestId });
+  assert.equal(ok.code, 200);
+});

@@ -157,12 +157,16 @@ export const limitLogin = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-// 6. Master login: one shared bucket for every caller. The per-IP limit above only slows a single
-// source down, and a 6-digit PIN is guessable from many addresses; the operator can wait out 15 minutes.
-const masterLoginLimiter = new InMemoryRateLimiter(15 * 60 * 1000, 20, 0);
+// 6. Master login: a tight per-source bucket plus a global ceiling. With only the global bucket
+// (20 per 15 min) one stranger sending 20 wrong PINs locked the real operator out; per source they
+// now get 5, and the ceiling still caps a PIN guess spread over many addresses.
+const masterLoginIpLimiter = new InMemoryRateLimiter(15 * 60 * 1000, 5, 0);
+const masterLoginGlobalLimiter = new InMemoryRateLimiter(15 * 60 * 1000, 60, 0);
 
 export const limitMasterLogin = (req: Request, res: Response, next: NextFunction) => {
-  const result = masterLoginLimiter.check('master_login_global');
-  if (!result.allowed) return tooMany(res, req, 'Too many master sign-in attempts. Please try again later.', result.retryAfterSeconds);
+  const fromIp = masterLoginIpLimiter.check(`master_login_${getClientIp(req)}`);
+  if (!fromIp.allowed) return tooMany(res, req, 'Too many master sign-in attempts. Please try again later.', fromIp.retryAfterSeconds);
+  const overall = masterLoginGlobalLimiter.check('master_login_global');
+  if (!overall.allowed) return tooMany(res, req, 'Too many master sign-in attempts. Please try again later.', overall.retryAfterSeconds);
   next();
 };
