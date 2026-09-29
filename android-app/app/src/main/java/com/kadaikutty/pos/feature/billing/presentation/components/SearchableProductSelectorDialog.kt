@@ -17,7 +17,6 @@ import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -278,17 +277,12 @@ fun SearchableProductSelectorDialog(
                                                 modifier = Modifier.fillMaxSize()
                                             )
                                         } else {
-                                            Box(
-                                                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                                                contentAlignment = Alignment.Center
-                                            ) {
-                                                Icon(
-                                                    imageVector = Icons.Default.Inventory2,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                                                    modifier = Modifier.size(36.dp)
-                                                )
-                                            }
+                                            AsyncImage(
+                                                model = com.kadaikutty.pos.feature.stock.domain.ProductPlaceholder.forProduct(product.name),
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
                                         }
                                         if (isOutOfStock) {
                                             Surface(

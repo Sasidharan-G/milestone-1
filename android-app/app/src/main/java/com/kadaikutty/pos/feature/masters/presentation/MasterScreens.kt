@@ -969,6 +969,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     ProductGridTile(
                                         product = product,
                                         context = context,
+                                        categoryName = categories.find { it.id == product.categoryId }?.name,
                                         stockLabel = "$formattedStock $unitLabel",
                                         saleText = Money(product.salePriceMinorUnits).toString(),
                                         isLowStock = com.kadaikutty.pos.feature.stock.domain.isLowStock(curStock, product.minStockLevel, product.unitType),
@@ -1015,6 +1016,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     }
                                     com.kadaikutty.pos.core.presentation.components.ProductThumbnail(
                                         imageModel = thumbModel,
+                                        placeholderRes = com.kadaikutty.pos.feature.stock.domain.ProductPlaceholder.forProduct(product.name, catName),
                                         modifier = Modifier.padding(end = 10.dp)
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
@@ -1375,6 +1377,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                             ProductGridTile(
                                                 product = product,
                                                 context = context,
+                                                categoryName = categories.find { it.id == product.categoryId }?.name,
                                                 stockLabel = "$formattedStock $unitLabel",
                                                 saleText = Money(product.salePriceMinorUnits).toString(),
                                                 isLowStock = com.kadaikutty.pos.feature.stock.domain.isLowStock(curStock, product.minStockLevel, product.unitType),
@@ -1405,6 +1408,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         }
                                         com.kadaikutty.pos.core.presentation.components.ProductThumbnail(
                                             imageModel = thumbModel,
+                                            placeholderRes = com.kadaikutty.pos.feature.stock.domain.ProductPlaceholder.forProduct(product.name, catName),
                                             modifier = Modifier.padding(end = 10.dp)
                                         )
                                         Column(modifier = Modifier.weight(1f)) {
@@ -4271,6 +4275,7 @@ fun ProductGstFields(
 private fun ProductGridTile(
     product: ProductEntity,
     context: android.content.Context,
+    categoryName: String?,
     stockLabel: String,
     saleText: String,
     isLowStock: Boolean,
@@ -4280,6 +4285,9 @@ private fun ProductGridTile(
 ) {
     val imageModel = remember(product.id, product.imageUrl) {
         ProductImageStore.localFile(context, product.id).takeIf { it.exists() } ?: product.imageUrl
+    }
+    val placeholderRes = remember(product.id, product.name, categoryName) {
+        com.kadaikutty.pos.feature.stock.domain.ProductPlaceholder.forProduct(product.name, categoryName)
     }
     Card(
         modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(14.dp)),
@@ -4296,17 +4304,12 @@ private fun ProductGridTile(
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    Box(
-                        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Inventory2,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
-                            modifier = Modifier.size(36.dp)
-                        )
-                    }
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(placeholderRes),
+                        contentDescription = null,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
                 }
             }
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {

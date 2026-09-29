@@ -139,10 +139,20 @@ fun ProductPhotoField(
     }
 }
 
-/** Read-only thumbnail for a product list row. Local photo first (instant, works offline), then
- *  the cloud URL for a product photographed on another device, then a plain placeholder icon. */
+/**
+ * Read-only thumbnail for a product list row. Local photo first (instant, works offline), then
+ * the cloud URL for a product photographed on another device, then [placeholderRes] - a blurred,
+ * category-themed placeholder ([com.kadaikutty.pos.feature.stock.domain.ProductPlaceholder] picks
+ * it from the product's name/category) rather than a bare icon, so an unphotographed product still
+ * looks roughly like what it is.
+ */
 @Composable
-fun ProductThumbnail(imageModel: Any?, modifier: Modifier = Modifier, size: androidx.compose.ui.unit.Dp = 44.dp) {
+fun ProductThumbnail(
+    imageModel: Any?,
+    modifier: Modifier = Modifier,
+    size: androidx.compose.ui.unit.Dp = 44.dp,
+    @androidx.annotation.DrawableRes placeholderRes: Int = com.kadaikutty.pos.feature.stock.domain.ProductPlaceholder.GENERAL
+) {
     Box(
         modifier = modifier
             .size(size)
@@ -158,11 +168,11 @@ fun ProductThumbnail(imageModel: Any?, modifier: Modifier = Modifier, size: andr
                 modifier = Modifier.size(size).clip(RoundedCornerShape(10.dp))
             )
         } else {
-            Icon(
-                imageVector = Icons.Default.Photo,
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(placeholderRes),
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.size(size / 2)
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.size(size).clip(RoundedCornerShape(10.dp))
             )
         }
     }

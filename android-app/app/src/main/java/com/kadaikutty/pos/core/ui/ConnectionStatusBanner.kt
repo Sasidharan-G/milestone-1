@@ -40,7 +40,11 @@ fun ConnectionStatusBanner(
     modifier: Modifier = Modifier,
 ) {
     if (needsSignIn) {
-        AnimatedVisibility(visible = true, modifier = modifier.statusBarsPadding()) {
+        // Full-width, so unlike the small badges below it needs real clearance: 56dp is the same
+        // offset BillingApp's "Synced" pill uses to clear the header's icon row and shop-name
+        // title on Home - this banner was sitting right on top of them, blocking the settings /
+        // lock / logout buttons underneath.
+        AnimatedVisibility(visible = true, modifier = modifier.statusBarsPadding().padding(top = 56.dp)) {
             Surface(
                 color = MaterialTheme.colorScheme.errorContainer,
                 modifier = Modifier.fillMaxWidth()
