@@ -357,6 +357,16 @@ class SettingsViewModel @Inject constructor(
         initialValue = false
     )
 
+    val shareBillFormat: StateFlow<String> = appPreferences.shareBillFormat.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = "A4"
+    )
+
+    fun setShareBillFormat(format: String) {
+        viewModelScope.launch { appPreferences.saveShareBillFormat(format) }
+    }
+
     fun setAutoPrintReceipt(enabled: Boolean) {
         viewModelScope.launch { appPreferences.saveAutoPrintReceipt(enabled) }
     }

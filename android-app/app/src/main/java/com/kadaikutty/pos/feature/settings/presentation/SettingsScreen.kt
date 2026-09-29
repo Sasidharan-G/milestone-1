@@ -587,6 +587,19 @@ fun SettingsScreen(
                             Switch(checked = autoPrint, onCheckedChange = { viewModel.setAutoPrintReceipt(it) })
                         }
 
+                        val shareFormat by viewModel.shareBillFormat.collectAsState()
+                        Text("Shared bill (PDF) format:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = shareFormat == "A4", onClick = { viewModel.setShareBillFormat("A4") })
+                                Text("A4 invoice")
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                RadioButton(selected = shareFormat == "RECEIPT", onClick = { viewModel.setShareBillFormat("RECEIPT") })
+                                Text("Receipt (paper width)")
+                            }
+                        }
+
                         Button(
                             onClick = {
                                 viewModel.saveSettings(selectedType, selectedDeviceId, selectedPaperWidth)

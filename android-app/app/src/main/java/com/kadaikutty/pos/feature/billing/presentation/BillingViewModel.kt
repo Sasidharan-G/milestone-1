@@ -726,7 +726,9 @@ class BillingViewModel @Inject constructor(
             val shopLogoPath = appPreferences.shopLogoPath.first()
             val cashierName = session.displayName
 
-            val pdfBytes = shareManager.generatePdfInvoice(
+            val pdfBytes = if (appPreferences.shareBillFormat.first() == "RECEIPT") {
+                shareManager.generateReceiptPdf(buildReceiptDocument(companyId, sale))
+            } else shareManager.generatePdfInvoice(
                 sale = sale,
                 items = items,
                 productsMap = productsMap,
@@ -750,6 +752,58 @@ class BillingViewModel @Inject constructor(
         }
     }
 
+    /** The thermal receipt for [sale]; the same content is used for a receipt-size shared PDF. */
+    private suspend fun buildReceiptDocument(companyId: String, sale: com.kadaikutty.pos.feature.billing.data.SaleEntity): com.kadaikutty.pos.core.printer.domain.PrintDocument {
+        val items = saleDao.getSaleItems(companyId, sale.id).first()
+        val productsMap = masterDao.products(companyId, "").first().associateBy { it.id }
+        val shopName = appPreferences.shopName.first().ifBlank { "Store" }
+        val shopAddress = appPreferences.shopAddress.first()
+        
+        val customerName = if (sale.customerId == null) {
+            "Walk-in Customer"
+        } else if (sale.customerId == "online") {
+            "Online Customer"
+        } else {
+            masterDao.getCustomerById(companyId, sale.customerId)?.name ?: "Walk-in Customer"
+        }
+
+        val printItems = items.map { item ->
+            // Unit and name as saved on the bill, so a later product edit can't change a reprint.
+            val p = productsMap[item.productId]
+            val unit = item.unitType ?: p?.unitType
+            val qtyStr = com.kadaikutty.pos.feature.stock.domain.storageUnitsToTyped(item.quantity, unit)
+            val perUnit = if (com.kadaikutty.pos.feature.stock.domain.isThousandthsUnit(unit)) "/" + com.kadaikutty.pos.feature.stock.domain.unitShortLabel(unit) else ""
+            com.kadaikutty.pos.core.printer.domain.BillItem(
+                name = item.productName ?: p?.name ?: "Unknown",
+                quantityText = qtyStr,
+                price = Money(item.unitPriceMinorUnits).toString() + perUnit,
+                total = Money(item.lineTotalMinorUnits).toString()
+            )
+        }
+
+        val subtotal = Money(sale.totalMinorUnits + sale.discountMinorUnits).toString()
+        val discount = Money(sale.discountMinorUnits).toString()
+        val grandTotal = Money(sale.totalMinorUnits).toString()
+        val dateStr = java.text.SimpleDateFormat("dd/MM/yy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(sale.createdAtEpochMs))
+
+        return com.kadaikutty.pos.core.printer.domain.BillReceipt.document(
+            shopName = shopName,
+            shopAddress = shopAddress,
+            billNumber = sale.billNumber,
+            date = dateStr,
+            customerName = customerName,
+            items = printItems,
+            subtotal = subtotal,
+            discount = discount,
+            grandTotal = grandTotal,
+            paperWidth = appPreferences.printerPaperWidth.first(),
+            shopPhone = appPreferences.shopPhone.first(),
+            gstNumber = appPreferences.gstNumber.first(),
+            paymentMode = sale.paymentMode,
+            cancelled = sale.status == com.kadaikutty.pos.feature.billing.data.SaleStatus.VOID
+        )
+    }
+
     fun printBill(context: android.content.Context, billNumber: String) {
         viewModelScope.launch(errors) {
             val macAddress = appPreferences.printerDeviceId.first()
@@ -761,52 +815,8 @@ class BillingViewModel @Inject constructor(
             }
 
             val session = sessionStore.activeSession.first() ?: return@launch
-            val companyId = session.companyId
-            val sale = saleDao.getSaleByBillNumber(companyId, billNumber) ?: return@launch
-            val items = saleDao.getSaleItems(companyId, sale.id).first()
-            val productsList = masterDao.products(companyId, "").first()
-            val productsMap = productsList.associateBy { it.id }
-            
-            val shopName = appPreferences.shopName.first().ifBlank { "Store" }
-            val shopAddress = appPreferences.shopAddress.first()
-            
-            val customerName = if (sale.customerId == null) {
-                "Walk-in Customer"
-            } else if (sale.customerId == "online") {
-                "Online Customer"
-            } else {
-                masterDao.getCustomerById(companyId, sale.customerId)?.name ?: "Walk-in Customer"
-            }
-
-            val printItems = items.map { item ->
-                // Unit and name as saved on the bill, so a later product edit can't change a reprint.
-                val p = productsMap[item.productId]
-                val qtyStr = com.kadaikutty.pos.feature.stock.domain.storageUnitsToTyped(item.quantity, item.unitType ?: p?.unitType)
-                com.kadaikutty.pos.core.printer.domain.BillItem(
-                    name = item.productName ?: p?.name ?: "Unknown",
-                    quantityText = qtyStr,
-                    price = Money(item.unitPriceMinorUnits).toString(),
-                    total = Money(item.lineTotalMinorUnits).toString()
-                )
-            }
-
-            val subtotal = Money(sale.totalMinorUnits + sale.discountMinorUnits).toString()
-            val discount = Money(sale.discountMinorUnits).toString()
-            val grandTotal = Money(sale.totalMinorUnits).toString()
-            val dateStr = java.text.SimpleDateFormat("dd/MM/yy HH:mm", java.util.Locale.getDefault()).format(java.util.Date(sale.createdAtEpochMs))
-
-            val document = com.kadaikutty.pos.core.printer.domain.BillReceipt.document(
-                shopName = shopName,
-                shopAddress = shopAddress,
-                billNumber = billNumber,
-                date = dateStr,
-                customerName = customerName,
-                items = printItems,
-                subtotal = subtotal,
-                discount = discount,
-                grandTotal = grandTotal,
-                paperWidth = appPreferences.printerPaperWidth.first()
-            )
+            val sale = saleDao.getSaleByBillNumber(session.companyId, billNumber) ?: return@launch
+            val document = buildReceiptDocument(session.companyId, sale)
             val printerType = com.kadaikutty.pos.core.printer.data.PrinterManager.PrinterType
                 .fromSetting(appPreferences.printerType.first())
             val result = printerManager.printJob(printerType, macAddress, document)

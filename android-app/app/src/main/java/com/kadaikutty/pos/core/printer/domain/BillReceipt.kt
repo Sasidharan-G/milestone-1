@@ -24,11 +24,18 @@ object BillReceipt {
         subtotal: String,
         discount: String,
         grandTotal: String,
-        paperWidth: Int
+        paperWidth: Int,
+        shopPhone: String = "",
+        gstNumber: String = "",
+        paymentMode: String = "",
+        cancelled: Boolean = false
     ): PrintDocument = PrintDocument(
         title = shopName,
         headers = listOfNotNull(
+            if (cancelled) "*** CANCELLED BILL ***" else null,
             shopAddress.takeIf { it.isNotBlank() },
+            shopPhone.takeIf { it.isNotBlank() }?.let { "Ph: $it" },
+            gstNumber.takeIf { it.isNotBlank() }?.let { "GSTIN: $it" },
             "Bill No: $billNumber",
             "Date: $date",
             "Customer: $customerName"
@@ -39,6 +46,7 @@ object BillReceipt {
             // A zero discount is a line that tells the customer nothing, so it is left off.
             if (discount.isNotBlank() && !isZeroAmount(discount)) add("Discount" to discount)
             add("TOTAL" to grandTotal)
+            if (paymentMode.isNotBlank()) add("Paid by" to paymentMode)
         },
         footer = "Thank you for shopping!",
         paperWidth = paperWidth

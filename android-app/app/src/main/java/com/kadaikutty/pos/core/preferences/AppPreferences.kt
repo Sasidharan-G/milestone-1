@@ -38,6 +38,15 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     private val autoPrintReceiptKey = booleanPreferencesKey("auto_print_receipt")
     val autoPrintReceipt: Flow<Boolean> = dataStore.data.map { it[autoPrintReceiptKey] ?: false }
 
+    /** "A4" (full invoice) or "RECEIPT" (the thermal receipt at 58/80 mm) for bills shared as PDF. */
+    private val shareBillFormatKey = stringPreferencesKey("share_bill_format")
+    val shareBillFormat: Flow<String> = dataStore.data.map { it[shareBillFormatKey] ?: "A4" }
+
+    suspend fun saveShareBillFormat(format: String) {
+        require(format in listOf("A4", "RECEIPT")) { "Unknown bill format" }
+        dataStore.edit { it[shareBillFormatKey] = format }
+    }
+
     suspend fun saveAutoPrintReceipt(enabled: Boolean) {
         dataStore.edit { it[autoPrintReceiptKey] = enabled }
     }

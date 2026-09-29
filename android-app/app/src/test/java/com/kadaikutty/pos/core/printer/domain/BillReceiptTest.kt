@@ -73,4 +73,18 @@ class BillReceiptTest {
         assertEquals(PrinterManager.PrinterType.Bluetooth, PrinterManager.PrinterType.fromSetting(null))
         assertEquals(PrinterManager.PrinterType.Bluetooth, PrinterManager.PrinterType.fromSetting("Serial"))
     }
+
+    @Test
+    fun `phone, GSTIN and payment mode are printed when the shop has them`() {
+        val doc = BillReceipt.document(
+            shopName = "Kadaikutty Stores", shopAddress = "", billNumber = "B-1", date = "d", customerName = "c",
+            items = emptyList(), subtotal = "₹1.00", discount = "", grandTotal = "₹1.00", paperWidth = 32,
+            shopPhone = "9876543210", gstNumber = "33ABCDE1234F1Z5", paymentMode = "UPI"
+        )
+        assertTrue(doc.headers.contains("Ph: 9876543210"))
+        assertTrue(doc.headers.contains("GSTIN: 33ABCDE1234F1Z5"))
+        assertEquals("Paid by" to "UPI", doc.totals.last())
+        // Left off entirely when blank.
+        assertFalse(document().headers.any { it.startsWith("Ph:") || it.startsWith("GSTIN:") })
+    }
 }

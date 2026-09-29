@@ -103,6 +103,58 @@ class ShareManager(private val context: Context) {
         }
     }
 
+    /**
+     * The thermal receipt as a PDF at the paper's own width (58 mm or 80 mm), same lines as the
+     * printer gets, so a bill shared on WhatsApp or sent to a mobile printer app prints at receipt
+     * size instead of an A4 page shrunk to a strip.
+     */
+    fun generateReceiptPdf(doc: com.kadaikutty.pos.core.printer.domain.PrintDocument): ByteArray {
+        val columns = doc.paperWidth.takeIf { it in 24..64 } ?: 32
+        val pageWidth = if (columns >= 48) 227 else 164 // 80 mm / 58 mm in PDF points
+        val margin = 8f
+        val mono = android.graphics.Typeface.MONOSPACE
+        val paint = Paint().apply { color = Color.BLACK; isAntiAlias = true; typeface = mono }
+        // Size the monospace font so exactly [columns] characters fill the printable width.
+        paint.textSize = 10f
+        paint.textSize = 10f * (pageWidth - 2 * margin) / paint.measureText("M".repeat(columns))
+        val lineHeight = paint.textSize * 1.35f
+
+        data class Row(val text: String, val bold: Boolean = false, val center: Boolean = false)
+        val rows = mutableListOf<Row>()
+        fun add(text: String, bold: Boolean = false, center: Boolean = false) =
+            com.kadaikutty.pos.core.printer.data.ReceiptLayout.wrap(text, columns).forEach { rows += Row(it, bold, center) }
+        add(doc.title, bold = true, center = true)
+        doc.headers.forEach { add(it) }
+        rows += Row("-".repeat(columns))
+        doc.lines.forEach { line ->
+            add(line.name, bold = true)
+            com.kadaikutty.pos.core.printer.data.ReceiptLayout.columns("${line.quantityText} x ${line.price}", line.total, columns).forEach { rows += Row(it) }
+        }
+        rows += Row("-".repeat(columns))
+        doc.totals.forEach { (label, value) ->
+            com.kadaikutty.pos.core.printer.data.ReceiptLayout.columns(label, value, columns).forEach { rows += Row(it, bold = true) }
+        }
+        if (doc.footer.isNotBlank()) { rows += Row(""); add(doc.footer, center = true) }
+
+        val pageHeight = (margin * 2 + lineHeight * (rows.size + 1)).toInt()
+        val pdf = PdfDocument()
+        val page = pdf.startPage(PdfDocument.PageInfo.Builder(pageWidth, pageHeight, 1).create())
+        val canvas = page.canvas
+        canvas.drawColor(Color.WHITE)
+        var y = margin + lineHeight
+        rows.forEach { row ->
+            paint.isFakeBoldText = row.bold
+            val x = if (row.center) (pageWidth - paint.measureText(row.text)) / 2f else margin
+            canvas.drawText(row.text, x, y, paint)
+            y += lineHeight
+        }
+        pdf.finishPage(page)
+        val out = java.io.ByteArrayOutputStream()
+        pdf.writeTo(out)
+        pdf.close()
+        return out.toByteArray()
+    }
+
     fun generatePdfInvoice(
         sale: com.kadaikutty.pos.feature.billing.data.SaleEntity,
         items: List<com.kadaikutty.pos.feature.billing.data.SaleItemEntity>,
@@ -322,6 +374,13 @@ class ShareManager(private val context: Context) {
         paint.textSize = 13f
         canvas.drawText("Grand Total: ", 450f, y, paint)
         canvas.drawText(Money(grandTotalMinor).toString(), 550f, y, paint)
+        if (sale.status == com.kadaikutty.pos.feature.billing.data.SaleStatus.VOID) {
+            // A cancelled bill is kept for the record; its copy must never pass for a live one.
+            y += 18f
+            paint.color = Color.rgb(200, 30, 30)
+            canvas.drawText("*** CANCELLED BILL ***", 550f, y, paint)
+            paint.color = Color.BLACK
+        }
         if (hasGst) {
             y += 16f
             paint.isFakeBoldText = false
