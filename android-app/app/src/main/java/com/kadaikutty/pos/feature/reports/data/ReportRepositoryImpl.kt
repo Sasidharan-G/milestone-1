@@ -74,7 +74,7 @@ class ReportRepositoryImpl(
 
                     val qtyFormatted = formatUnit(item.currentStock)
                     val stockVal = if (item.unitType == "KG" || item.unitType == "LITER") {
-                        ((item.purchasePrice * item.currentStock) / 1000.0).toLong()
+                        Math.round((item.purchasePrice * item.currentStock) / 1000.0)
                     } else {
                         item.purchasePrice * item.currentStock
                     }

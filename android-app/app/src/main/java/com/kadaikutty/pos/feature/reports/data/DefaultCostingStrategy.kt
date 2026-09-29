@@ -47,6 +47,8 @@ class DefaultCostingStrategy(
             unitCostMinorUnits * quantity
         }
         
-        return Money(totalCostMinorUnits.toLong())
+        // Rounded, the same rule the sale uses when it records its cost (SaleRepositoryImpl);
+        // truncating here made the two disagree by a paisa per line.
+        return Money(Math.round(totalCostMinorUnits))
     }
 }

@@ -508,13 +508,13 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                 Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
                                     Text("Inward (+)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    val inText = if (totalStockInward % 1.0 == 0.0) totalStockInward.toLong().toString() else String.format(java.util.Locale.US, "%.2f", totalStockInward)
                                     Text(
-                                        text = "+$inText",
-                                        fontSize = 12.sp,
+                                        text = "+$totalStockInward",
+                                        fontSize = 11.sp,
+                                        lineHeight = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF059669),
-                                        maxLines = 1
+                                        maxLines = 2
                                     )
                                 }
                             }
@@ -535,13 +535,13 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                 Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
                                     Text("Sold (-)", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    val outText = if (totalStockOutward % 1.0 == 0.0) totalStockOutward.toLong().toString() else String.format(java.util.Locale.US, "%.2f", totalStockOutward)
                                     Text(
-                                        text = "-$outText",
-                                        fontSize = 12.sp,
+                                        text = "-$totalStockOutward",
+                                        fontSize = 11.sp,
+                                        lineHeight = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFFDC2626),
-                                        maxLines = 1
+                                        maxLines = 2
                                     )
                                 }
                             }
@@ -560,15 +560,15 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp)) {
-                                    Text("Closing Units", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Text("Closing Stock", fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                     Spacer(modifier = Modifier.height(2.dp))
-                                    val unitText = if (totalStockUnits % 1.0 == 0.0) totalStockUnits.toLong().toString() else String.format(java.util.Locale.US, "%.2f", totalStockUnits)
                                     Text(
-                                        text = unitText,
-                                        fontSize = 12.sp,
+                                        text = totalStockUnits,
+                                        fontSize = 11.sp,
+                                        lineHeight = 13.sp,
                                         fontWeight = FontWeight.Bold,
                                         color = Color(0xFF2563EB),
-                                        maxLines = 1
+                                        maxLines = 2
                                     )
                                 }
                             }

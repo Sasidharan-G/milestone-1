@@ -42,7 +42,7 @@ fun EditQuantityDialog(
                 )
 
                 // Quick Increment Buttons
-                if (line.unitType == "PIECE") {
+                if (!com.kadaikutty.pos.feature.stock.domain.isThousandthsUnit(line.unitType)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         listOf(1, 2, 5, 10).forEach { addVal ->
                             FilterChip(

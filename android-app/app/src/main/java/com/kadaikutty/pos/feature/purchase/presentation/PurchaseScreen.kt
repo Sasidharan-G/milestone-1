@@ -330,7 +330,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                 val isDecimal = selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER"
                                 if (isDecimal) {
                                     val current = quantityText.toDoubleOrNull() ?: 1.0
-                                    val next = maxOf(0.25, current - 1.0)
+                                    val next = maxOf(0.25, current - 0.25)
                                     quantityText = String.format(Locale.US, "%.3f", next)
                                 } else {
                                     val current = quantityText.toLongOrNull() ?: 1L
@@ -365,7 +365,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                 val isDecimal = selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER"
                                 if (isDecimal) {
                                     val current = quantityText.toDoubleOrNull() ?: 0.0
-                                    val next = current + 1.0
+                                    val next = current + 0.25
                                     quantityText = String.format(Locale.US, "%.3f", next)
                                 } else {
                                     val current = quantityText.toLongOrNull() ?: 0L
@@ -464,7 +464,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                         ) {
                                             Text(lineSuppName, fontSize = 10.sp, fontWeight = FontWeight.Medium, modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp))
                                         }
-                                        Text("${line.unitValue} each", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
+                                        Text("${line.unitValue} ${if (com.kadaikutty.pos.feature.stock.domain.isThousandthsUnit(line.unitType)) "/ " + com.kadaikutty.pos.feature.stock.domain.unitShortLabel(line.unitType) else "each"}", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
                                     }
 
                                     // Quantity Stepper: [-] [ Qty ] [+]

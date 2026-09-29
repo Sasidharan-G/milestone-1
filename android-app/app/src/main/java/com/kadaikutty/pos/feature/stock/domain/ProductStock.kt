@@ -52,10 +52,15 @@ fun typedQuantityToStorageUnits(text: String, unitType: String?): Long? = try {
 fun storageUnitsToTyped(quantity: Long, unitType: String?): String =
     if (isThousandthsUnit(unitType)) java.math.BigDecimal.valueOf(quantity, 3).toPlainString() else quantity.toString()
 
-/** Short unit label for quantities and per-unit prices: "Kg", "L", "Pcs". */
+/** Short unit label for quantities and per-unit prices: "Kg", "L", "Pcs", "Box"... */
 fun unitShortLabel(unitType: String?): String = when (unitType) {
     "KG" -> "Kg"
     "LITER" -> "L"
+    "BOX" -> "Box"
+    "PACK" -> "Pack"
+    "BAG" -> "Bag"
+    "BOTTLE" -> "Btl"
+    "TUB" -> "Tub"
     else -> "Pcs"
 }
 

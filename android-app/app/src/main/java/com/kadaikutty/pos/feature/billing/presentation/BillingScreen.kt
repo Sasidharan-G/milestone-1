@@ -156,8 +156,12 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
             onBarcodeScanned = { barcode ->
                 viewModel.onBarcodeScanned(
                     barcode = barcode,
-                    onProductFound = { prod ->
-                        android.widget.Toast.makeText(context, "Scanned: ${prod.name} (+1 in Cart)", android.widget.Toast.LENGTH_SHORT).show()
+                    onProductFound = { prod, added ->
+                        android.widget.Toast.makeText(context, "Scanned: ${prod.name} (+$added)", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    onAddFailed = { reason ->
+                        message = reason
+                        android.widget.Toast.makeText(context, reason, android.widget.Toast.LENGTH_SHORT).show()
                     },
                     onProductNotFound = {
                         message = "Product not found for barcode: $barcode"
@@ -360,8 +364,10 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                             onClick = {
                                 val isDecimal = (selectedProduct?.unitType == "KG") || (selectedProduct?.unitType == "LITER")
                                 quantityText = if (isDecimal) {
+                                    // 0.250 kg steps, the same as the cart's stepper (billing and purchase used to
+                                    // jump a whole kg and clamp to different minimums).
                                     val current = quantityText.toDoubleOrNull() ?: 1.0
-                                    val next = maxOf(0.1, current - 1.0)
+                                    val next = maxOf(0.25, current - 0.25)
                                     String.format(Locale.US, "%.3f", next)
                                 } else {
                                     val current = quantityText.toLongOrNull() ?: 1L
@@ -396,7 +402,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                 val isDecimal = (selectedProduct?.unitType == "KG") || (selectedProduct?.unitType == "LITER")
                                 quantityText = if (isDecimal) {
                                     val current = quantityText.toDoubleOrNull() ?: 0.0
-                                    val next = current + 1.0
+                                    val next = current + 0.25
                                     String.format(Locale.US, "%.3f", next)
                                 } else {
                                     val current = quantityText.toLongOrNull() ?: 0L
@@ -501,7 +507,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
                                         )
                                         Text(
-                                            text = "${line.unitPrice} each",
+                                            text = "${line.unitPrice} ${if (com.kadaikutty.pos.feature.stock.domain.isThousandthsUnit(line.unitType)) "/ " + com.kadaikutty.pos.feature.stock.domain.unitShortLabel(line.unitType) else "each"}",
                                             style = MaterialTheme.typography.labelSmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f)
                                         )

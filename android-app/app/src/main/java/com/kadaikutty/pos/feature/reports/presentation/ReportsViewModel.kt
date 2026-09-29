@@ -74,14 +74,16 @@ class ReportsViewModel @Inject constructor(
     private val _totalStockValue = MutableStateFlow(0L)
     val totalStockValue: StateFlow<Long> = _totalStockValue.asStateFlow()
 
-    private val _totalStockInward = MutableStateFlow(0.0)
-    val totalStockInward: StateFlow<Double> = _totalStockInward.asStateFlow()
+    // Quantity totals are per unit ("12 Pcs · 2.500 Kg"): adding kilograms to pieces gave a number
+    // that meant nothing.
+    private val _totalStockInward = MutableStateFlow("0")
+    val totalStockInward: StateFlow<String> = _totalStockInward.asStateFlow()
 
-    private val _totalStockOutward = MutableStateFlow(0.0)
-    val totalStockOutward: StateFlow<Double> = _totalStockOutward.asStateFlow()
+    private val _totalStockOutward = MutableStateFlow("0")
+    val totalStockOutward: StateFlow<String> = _totalStockOutward.asStateFlow()
 
-    private val _totalStockUnits = MutableStateFlow(0.0)
-    val totalStockUnits: StateFlow<Double> = _totalStockUnits.asStateFlow()
+    private val _totalStockUnits = MutableStateFlow("0")
+    val totalStockUnits: StateFlow<String> = _totalStockUnits.asStateFlow()
 
 
 
@@ -154,31 +156,36 @@ class ReportsViewModel @Inject constructor(
                 // Compute period-filtered stock KPIs
                 val stockData = database.reportDao().getStockReport(companyId, _fromEpochMs.value, _toEpochMs.value)
                 var stockValSum = 0L
-                var inSum = 0.0
-                var outSum = 0.0
-                var closingSum = 0.0
+                // Summed per display unit in storage units (g / ml / pcs), formatted at the end.
+                val unitOf: (String) -> String = { u -> if (u == "KG" || u == "LITER") u else "PIECE" }
+                val inSum = linkedMapOf<String, Long>()
+                val outSum = linkedMapOf<String, Long>()
+                val closingSum = linkedMapOf<String, Long>()
 
                 for (item in stockData) {
                     val isWeighted = item.unitType == "KG" || item.unitType == "LITER"
-                    val stockUnits = if (isWeighted) item.currentStock / 1000.0 else item.currentStock.toDouble()
-                    val inUnits = if (isWeighted) item.inwardQty / 1000.0 else item.inwardQty.toDouble()
-                    val outUnits = if (isWeighted) item.outwardQty / 1000.0 else item.outwardQty.toDouble()
+                    val u = unitOf(item.unitType)
+                    inSum.merge(u, item.inwardQty, Long::plus)
+                    outSum.merge(u, item.outwardQty, Long::plus)
+                    closingSum.merge(u, item.currentStock, Long::plus)
 
                     val v = if (isWeighted) {
-                        ((item.purchasePrice * item.currentStock) / 1000.0).toLong()
+                        Math.round((item.purchasePrice * item.currentStock) / 1000.0)
                     } else {
                         item.purchasePrice * item.currentStock
                     }
                     stockValSum += v
-                    inSum += inUnits
-                    outSum += outUnits
-                    closingSum += stockUnits
                 }
 
+                val perUnit: (Map<String, Long>) -> String = { sums ->
+                    sums.filterValues { it != 0L }.entries
+                        .joinToString(" · ") { (u, q) -> com.kadaikutty.pos.feature.stock.domain.formatQuantity(q, u) }
+                        .ifBlank { "0" }
+                }
                 _totalStockValue.value = stockValSum
-                _totalStockInward.value = inSum
-                _totalStockOutward.value = outSum
-                _totalStockUnits.value = closingSum
+                _totalStockInward.value = perUnit(inSum)
+                _totalStockOutward.value = perUnit(outSum)
+                _totalStockUnits.value = perUnit(closingSum)
 
                 val query = ReportQuery(
                     type = _selectedType.value,

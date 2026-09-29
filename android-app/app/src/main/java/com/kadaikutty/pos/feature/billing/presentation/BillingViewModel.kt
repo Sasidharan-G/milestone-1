@@ -379,14 +379,8 @@ class BillingViewModel @Inject constructor(
         }
     }
 
-    private fun formatStock(quantity: Long, unitType: String): String {
-        return if (unitType == "KG" || unitType == "LITER") {
-            val label = if (unitType == "KG") "Kg" else "Ltr"
-            String.format(java.util.Locale.US, "%.3f %s", quantity / 1000.0, label)
-        } else {
-            "$quantity Pcs"
-        }
-    }
+    private fun formatStock(quantity: Long, unitType: String): String =
+        com.kadaikutty.pos.feature.stock.domain.formatQuantity(quantity, unitType)
 
     private fun validateStockForCart(productId: String, productName: String, requestedQuantity: Long, unitType: String): String? {
         val available = (uiState.value.stockBalances[productId] ?: 0L) + (originalQuantities[productId] ?: 0L)
@@ -462,15 +456,25 @@ class BillingViewModel @Inject constructor(
         saveDraftToDb()
     }
 
-    fun onBarcodeScanned(barcode: String, onProductFound: ((ProductEntity) -> Unit)? = null, onProductNotFound: () -> Unit) {
+    /**
+     * One scan adds one unit (1 kg / 1 L for loose items). [onProductFound] gets the product and the
+     * added quantity already formatted; [onAddFailed] gets why it could not go in the cart (out of
+     * stock, limit...) - that used to be reported as "product not found", which it wasn't.
+     */
+    fun onBarcodeScanned(
+        barcode: String,
+        onProductFound: ((ProductEntity, String) -> Unit)? = null,
+        onAddFailed: (String) -> Unit = {},
+        onProductNotFound: () -> Unit
+    ) {
         val product = uiState.value.products.find { it.barcode == barcode }
         if (product != null) {
-            val quantity = if (product.unitType == "KG" || product.unitType == "LITER") 1000L else 1L
+            val quantity = if (com.kadaikutty.pos.feature.stock.domain.isThousandthsUnit(product.unitType)) 1000L else 1L
             val error = addLine(product.id, product.name, quantity, Money(product.salePriceMinorUnits), product.unitType)
             if (error == null) {
-                onProductFound?.invoke(product)
+                onProductFound?.invoke(product, com.kadaikutty.pos.feature.stock.domain.formatQuantity(quantity, product.unitType))
             } else {
-                onProductNotFound()
+                onAddFailed(error)
             }
         } else {
             onProductNotFound()
@@ -484,7 +488,7 @@ class BillingViewModel @Inject constructor(
         for (line in linesToCheck) {
             val available = (currentBalances[line.productId] ?: 0L) + (originalQuantities[line.productId] ?: 0L)
             if (line.quantity > available) {
-                outOfStockNames.add("${line.productName} (Available: $available, Cart: ${line.quantity})")
+                outOfStockNames.add("${line.productName} (Available: ${formatStock(available, line.unitType)}, Cart: ${formatStock(line.quantity, line.unitType)})")
             }
         }
         return outOfStockNames
