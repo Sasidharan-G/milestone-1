@@ -739,6 +739,8 @@ fun HomeScreen(
 
             // Four KPI cards instead of a plain table - still no chart/graph to read, just a
             // bigger number and an icon per period, easier to scan at a glance than a stacked list.
+            // The sales cards open Reports (bill-wise sales) for anyone allowed to see it.
+            val openReports: (() -> Unit)? = if (showReports) ({ onNavigateTo(AppRoute.Reports) }) else null
             fun invoiceSubtitle(count: Int) = "$count ${if (count == 1) "Invoice" else "Invoices"}"
             if (showSales) {
                 Column(
@@ -760,7 +762,8 @@ fun HomeScreen(
                             subtitle = invoiceSubtitle(dashboardState.todayInvoicesCount),
                             icon = Icons.Default.Today,
                             accentColor = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            onClick = openReports
                         )
                         DashboardKpiCard(
                             title = "Yesterday Sale",
@@ -768,7 +771,8 @@ fun HomeScreen(
                             subtitle = invoiceSubtitle(dashboardState.yesterdayInvoicesCount),
                             icon = Icons.Default.History,
                             accentColor = MaterialTheme.colorScheme.tertiary,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            onClick = openReports
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -778,7 +782,8 @@ fun HomeScreen(
                             subtitle = invoiceSubtitle(dashboardState.weeklyInvoicesCount),
                             icon = Icons.Default.CalendarViewWeek,
                             accentColor = Color(0xFFF59E0B),
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            onClick = openReports
                         )
                         DashboardKpiCard(
                             title = "Monthly Sale",
@@ -786,7 +791,8 @@ fun HomeScreen(
                             subtitle = invoiceSubtitle(dashboardState.monthlyInvoicesCount),
                             icon = Icons.Default.CalendarMonth,
                             accentColor = MaterialTheme.colorScheme.secondary,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f),
+                            onClick = openReports
                         )
                     }
                 }
@@ -1023,8 +1029,9 @@ private fun BillingHeroCard(onClick: () -> Unit) {
                 modifier = Modifier.padding(top = 3.dp).widthIn(max = 190.dp)
             )
             Spacer(Modifier.height(16.dp))
+            // Looks like a button, but the whole card is the one tap target (set on the Box above),
+            // so TalkBack reads a single "Start new bill" action instead of two.
             Surface(
-                onClick = onClick,
                 color = Color.White,
                 shape = RoundedCornerShape(14.dp),
                 shadowElevation = 6.dp,
@@ -1123,10 +1130,11 @@ fun DashboardKpiCard(
     icon: ImageVector,
     accentColor: Color,
     modifier: Modifier = Modifier,
-    onClick: () -> Unit = {}
+    onClick: (() -> Unit)? = null
 ) {
     Card(
-        modifier = modifier.clickable { onClick() },
+        // Only tappable when it leads somewhere; a ripple that goes nowhere read as a broken button.
+        modifier = if (onClick != null) modifier.clickable(onClick = onClick) else modifier,
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)

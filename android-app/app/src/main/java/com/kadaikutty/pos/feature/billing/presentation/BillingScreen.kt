@@ -59,7 +59,6 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
     val products = uiState.products
     val customers = uiState.customers
     val pagedSales = viewModel.pagedSales.collectAsLazyPagingItems()
-    val isSyncing by viewModel.isSyncing.collectAsState()
     val lines = uiState.lines
     val selectedCustomerId = uiState.selectedCustomerId
     val stockMap = uiState.stockBalances
@@ -194,20 +193,9 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
-                actions = {
-                    IconButton(onClick = { viewModel.forceSync() }) {
-                        Icon(
-                            Icons.Default.Sync,
-                            contentDescription = "Live Sync",
-                            tint = if (isSyncing) androidx.compose.ui.graphics.Color(0xFFFBBF24) else androidx.compose.ui.graphics.Color(0xFF69F0AE),
-                            modifier = if (isSyncing) Modifier.rotate(180f) else Modifier
-                        )
-                    }
-                    IconButton(onClick = { showCameraScanner = true }) {
-                        Icon(Icons.Default.QrCodeScanner, contentDescription = "Fast Barcode Scanner", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                }
+                // No actions: the barcode scanner sits beside the Product field, and syncing is on Home
+                // (the old "Live Sync" here only nudged the scheduler and never retried failed items).
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
             )
         }
     ) { paddingValues ->

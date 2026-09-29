@@ -351,6 +351,16 @@ class SettingsViewModel @Inject constructor(
         initialValue = 32
     )
 
+    val autoPrintReceipt: StateFlow<Boolean> = appPreferences.autoPrintReceipt.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    fun setAutoPrintReceipt(enabled: Boolean) {
+        viewModelScope.launch { appPreferences.saveAutoPrintReceipt(enabled) }
+    }
+
     val layoutMode: StateFlow<String> = appPreferences.layoutMode.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -588,18 +598,6 @@ class SettingsViewModel @Inject constructor(
     fun saveLayoutMode(mode: String) {
         viewModelScope.launch {
             appPreferences.saveLayoutMode(mode)
-        }
-    }
-
-    fun forceSyncNow() {
-        sessionSecurityManager.resetSessionTermination()
-        requireBiometricAuth {
-            viewModelScope.launch {
-                val session = sessionStore.activeSession.first()
-                if (session != null) {
-                    syncManager.enqueueAllDataForSync()
-                }
-            }
         }
     }
 

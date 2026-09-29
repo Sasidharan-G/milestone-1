@@ -82,6 +82,17 @@ fun SettingsScreen(
     val backupStatus by viewModel.backupStatus.collectAsState()
     val restoreStatus by viewModel.restoreStatus.collectAsState()
     val isBackupRunning by viewModel.isBackupRunning.collectAsState()
+    // Result messages used to stay on screen for as long as Settings was open. Each one now clears
+    // itself a few seconds after it last changed (never while a backup/restore is still running).
+    LaunchedEffect(printStatus) {
+        if (!printStatus.isNullOrBlank()) { kotlinx.coroutines.delay(6_000); viewModel.clearPrintStatus() }
+    }
+    val restoreRunningNow by viewModel.isRestoreRunning.collectAsState()
+    LaunchedEffect(backupStatus, restoreStatus, isBackupRunning, restoreRunningNow) {
+        if (!isBackupRunning && !restoreRunningNow && (!backupStatus.isNullOrBlank() || !restoreStatus.isNullOrBlank())) {
+            kotlinx.coroutines.delay(8_000); viewModel.clearBackupRestoreStatus()
+        }
+    }
     val isRestoreRunning by viewModel.isRestoreRunning.collectAsState()
     val requireRestart by viewModel.requireRestart.collectAsState()
     val biometricAuthPending by viewModel.biometricAuthPending.collectAsState()
@@ -563,6 +574,18 @@ fun SettingsScreen(
                                 shape = RoundedCornerShape(12.dp),
                                 modifier = Modifier.fillMaxWidth()
                             )
+                        }
+
+                        HorizontalDivider()
+                        // Saved at once (not with the button below): it is a billing behaviour, not
+                        // part of the printer connection being edited.
+                        val autoPrint by viewModel.autoPrintReceipt.collectAsState()
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Auto-print receipt", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("Print the bill as soon as it is saved", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = autoPrint, onCheckedChange = { viewModel.setAutoPrintReceipt(it) })
                         }
 
                         Button(
@@ -1266,45 +1289,11 @@ fun SettingsScreen(
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
 
                         // Manual, portable path: works fully offline, one file, safe to move to a new phone.
-                        if (isMobile) {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(
-                                    onClick = { viewModel.exportBackupNow() },
-                                    enabled = !isBackupRunning,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Export Backup Now", fontWeight = FontWeight.Bold)
-                                }
-                                OutlinedButton(
-                                    onClick = { showRestoreChooserDialog = true },
-                                    enabled = !isRestoreRunning,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Restore Backup", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        } else {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(
-                                    onClick = { viewModel.exportBackupNow() },
-                                    enabled = !isBackupRunning,
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Export Backup Now", fontWeight = FontWeight.Bold)
-                                }
-                                OutlinedButton(
-                                    onClick = { showRestoreChooserDialog = true },
-                                    enabled = !isRestoreRunning,
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Restore Backup", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
+                        AdaptiveButtonPair(
+                            stacked = isMobile,
+                            primaryText = "Export Backup Now", primaryEnabled = !isBackupRunning, onPrimary = { viewModel.exportBackupNow() },
+                            secondaryText = "Restore Backup", secondaryEnabled = !isRestoreRunning, onSecondary = { showRestoreChooserDialog = true }
+                        )
 
                         Text(lastBackupLabel, fontSize = 12.sp, color = MaterialTheme.colorScheme.outline)
 
@@ -1316,45 +1305,11 @@ fun SettingsScreen(
                         if (!isOnline) {
                             Text("Cloud backup and restore need internet.", fontSize = 12.sp, color = MaterialTheme.colorScheme.error)
                         }
-                        if (isMobile) {
-                            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(
-                                    onClick = { viewModel.runCloudBackup() },
-                                    enabled = session != null && !isBackupRunning && isOnline,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Back Up to Cloud", fontWeight = FontWeight.Bold)
-                                }
-                                OutlinedButton(
-                                    onClick = { showCloudRestoreDialog = true },
-                                    enabled = session != null && !isRestoreRunning && isOnline,
-                                    modifier = Modifier.fillMaxWidth(),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Restore Latest Cloud Backup", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        } else {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                                Button(
-                                    onClick = { viewModel.runCloudBackup() },
-                                    enabled = session != null && !isBackupRunning && isOnline,
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Back Up to Cloud", fontWeight = FontWeight.Bold)
-                                }
-                                OutlinedButton(
-                                    onClick = { showCloudRestoreDialog = true },
-                                    enabled = session != null && !isRestoreRunning && isOnline,
-                                    modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text("Restore Latest Cloud Backup", fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
+                        AdaptiveButtonPair(
+                            stacked = isMobile,
+                            primaryText = "Back Up to Cloud", primaryEnabled = session != null && !isBackupRunning && isOnline, onPrimary = { viewModel.runCloudBackup() },
+                            secondaryText = "Restore Latest Cloud Backup", secondaryEnabled = session != null && !isRestoreRunning && isOnline, onSecondary = { showCloudRestoreDialog = true }
+                        )
                         }
 
                         HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp), color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f))
@@ -2099,9 +2054,8 @@ fun SettingsScreen(
                 } else {
                     when (activeCategory) {
                         SettingsCategory.SHOP_PROFILE -> {
+                            // The receipt preview lives under Printer only; showing it here too was a duplicate.
                             shopDetailsCard(Modifier.fillMaxWidth())
-                            Spacer(modifier = Modifier.height(16.dp))
-                            thermalReceiptPreviewCard(Modifier.fillMaxWidth())
                         }
                         SettingsCategory.PRINTER -> {
                             printerPreferencesCard(Modifier.fillMaxWidth())
@@ -2150,7 +2104,6 @@ fun AddUserDialog(
     var accessReports by remember { mutableStateOf(false) }
     var accessSettings by remember { mutableStateOf(false) }
 
-    var requirePasswordChange by remember { mutableStateOf(false) }
 
     var errorMsg by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -2315,22 +2268,6 @@ fun AddUserDialog(
                     }
                 }
 
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(8.dp)
-                    ) {
-                        Checkbox(checked = requirePasswordChange, onCheckedChange = { requirePasswordChange = it }, enabled = !isSubmitting)
-                        Column {
-                            Text("Force Password Reset on Login", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            Text("User must set a new PIN when they first log in", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
 
                 if (errorMsg.isNotBlank()) {
                     Text(errorMsg, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Medium)
@@ -2368,9 +2305,6 @@ fun AddUserDialog(
                             }
                             if (accessSettings) {
                                 addAll(listOf(Permission.SETTINGS_VIEW, Permission.SETTINGS_EDIT, Permission.BACKUP_CREATE))
-                            }
-                            if (requirePasswordChange) {
-                                add(Permission.REQUIRE_PASSWORD_CHANGE)
                             }
                         }
                         onCreate(cleanDigits, displayName.trim(), password.toCharArray(), selectedRole, pSet) {
@@ -2416,7 +2350,6 @@ fun EditUserDialog(
     var accessSettings by remember { mutableStateOf(initialPerms.contains(Permission.SETTINGS_VIEW)) }
     
     var isActive by remember { mutableStateOf(!initialPerms.contains(Permission.ACCOUNT_INACTIVE)) }
-    var requirePasswordChange by remember { mutableStateOf(initialPerms.contains(Permission.REQUIRE_PASSWORD_CHANGE)) }
 
     fun applyRoleDefaults(role: String) {
         selectedRole = role
@@ -2617,22 +2550,6 @@ fun EditUserDialog(
                     }
                 }
 
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(8.dp)
-                    ) {
-                        Checkbox(checked = requirePasswordChange, onCheckedChange = { requirePasswordChange = it }, enabled = !isSubmitting)
-                        Column {
-                            Text("Force Password Reset on Login", fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                            Text("User must set a new PIN when they next log in", fontSize = 11.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
             }
         },
         confirmButton = {
@@ -2672,9 +2589,6 @@ fun EditUserDialog(
                             }
                             if (!isActive) {
                                 add(Permission.ACCOUNT_INACTIVE)
-                            }
-                            if (requirePasswordChange) {
-                                add(Permission.REQUIRE_PASSWORD_CHANGE)
                             }
                         }
                         val passArray = if (newPassword.isBlank()) null else newPassword.toCharArray()
@@ -2721,5 +2635,35 @@ fun decodeSampledBitmapFromFile(path: String, reqWidth: Int = 512, reqHeight: In
         BitmapFactory.decodeFile(file.absolutePath, decodeOptions)
     } catch (_: Exception) {
         null
+    }
+}
+
+/** A filled + outlined button pair: stacked full-width on a phone, side by side on a tablet. */
+@Composable
+private fun AdaptiveButtonPair(
+    stacked: Boolean,
+    primaryText: String, primaryEnabled: Boolean, onPrimary: () -> Unit,
+    secondaryText: String, secondaryEnabled: Boolean, onSecondary: () -> Unit
+) {
+    val primary: @Composable (Modifier) -> Unit = { m ->
+        Button(onClick = onPrimary, enabled = primaryEnabled, modifier = m, shape = RoundedCornerShape(12.dp)) {
+            Text(primaryText, fontWeight = FontWeight.Bold)
+        }
+    }
+    val secondary: @Composable (Modifier) -> Unit = { m ->
+        OutlinedButton(onClick = onSecondary, enabled = secondaryEnabled, modifier = m, shape = RoundedCornerShape(12.dp)) {
+            Text(secondaryText, fontWeight = FontWeight.Bold)
+        }
+    }
+    if (stacked) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            primary(Modifier.fillMaxWidth())
+            secondary(Modifier.fillMaxWidth())
+        }
+    } else {
+        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            primary(Modifier.weight(1f))
+            secondary(Modifier.weight(1f))
+        }
     }
 }

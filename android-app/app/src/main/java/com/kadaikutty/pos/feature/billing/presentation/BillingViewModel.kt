@@ -52,10 +52,6 @@ class BillingViewModel @Inject constructor(
     private val printerManager: com.kadaikutty.pos.core.printer.data.PrinterManager
 ) : ViewModel() {
 
-    fun forceSync() {
-        syncScheduler.request()
-    }
-
     private val _discountInput = MutableStateFlow("")
     val discountInput = _discountInput.asStateFlow()
     fun setDiscountInput(value: String) {
@@ -78,9 +74,6 @@ class BillingViewModel @Inject constructor(
     private val purchaseDao = database.purchaseDao()
     private val draftCartDao = database.draftCartDao()
     private val auditLogDao = database.auditLogDao()
-
-    val isSyncing: kotlinx.coroutines.flow.StateFlow<Boolean> = syncScheduler.isSyncingFlow
-        .stateIn(viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), false)
 
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val stockBalances = sessionStore.activeSession

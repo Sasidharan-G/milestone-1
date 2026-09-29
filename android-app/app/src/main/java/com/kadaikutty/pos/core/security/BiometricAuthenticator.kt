@@ -22,12 +22,23 @@ object BiometricAuthenticator {
         onSuccess: () -> Unit,
         onError: (String) -> Unit
     ) {
+        // SecurityShield records a 15-minute lockout after repeated failures; it was written but never
+        // checked, so the prompt kept coming back. Refuse up front while it lasts.
+        if (SecurityShield.isBiometricLockedOut(activity)) {
+            onError("Too many failed attempts. Try again in ${SecurityShield.getRemainingLockoutMinutes(activity)} min.")
+            return
+        }
         val executor = ContextCompat.getMainExecutor(activity)
+        var biometricPromptRef: BiometricPrompt? = null
         val biometricPrompt = BiometricPrompt(activity, executor,
             object : BiometricPrompt.AuthenticationCallback() {
                 override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                     super.onAuthenticationError(errorCode, errString)
-                    SecurityShield.recordAccessAttempt(activity, false)
+                    // Only a real lockout counts against the user; closing the prompt or tapping
+                    // Cancel is not a failed attempt.
+                    if (errorCode == BiometricPrompt.ERROR_LOCKOUT || errorCode == BiometricPrompt.ERROR_LOCKOUT_PERMANENT) {
+                        SecurityShield.recordAccessAttempt(activity, false)
+                    }
                     onError(errString.toString())
                 }
 
@@ -38,9 +49,12 @@ object BiometricAuthenticator {
                 }
 
                 override fun onAuthenticationFailed() {
+                    // A finger that did not match; the prompt stays open for another try, so this
+                    // only counts the attempt - onError here would report failure while it is still up.
                     super.onAuthenticationFailed()
-                    SecurityShield.recordAccessAttempt(activity, false)
-                    onError("Authentication failed")
+                    if (!SecurityShield.recordAccessAttempt(activity, false)) {
+                        biometricPromptRef?.cancelAuthentication()
+                    }
                 }
             })
 
@@ -52,6 +66,7 @@ object BiometricAuthenticator {
             )
             .build()
 
+        biometricPromptRef = biometricPrompt
         biometricPrompt.authenticate(promptInfo)
     }
 }
