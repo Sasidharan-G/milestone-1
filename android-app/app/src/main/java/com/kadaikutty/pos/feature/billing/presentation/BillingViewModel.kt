@@ -75,6 +75,10 @@ class BillingViewModel @Inject constructor(
     private val draftCartDao = database.draftCartDao()
     private val auditLogDao = database.auditLogDao()
 
+    val productGridView: kotlinx.coroutines.flow.StateFlow<Boolean> = appPreferences.productGridView.stateIn(
+        viewModelScope, kotlinx.coroutines.flow.SharingStarted.WhileSubscribed(5000), false
+    )
+
     @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
     private val stockBalances = sessionStore.activeSession
         .flatMapLatest { session ->

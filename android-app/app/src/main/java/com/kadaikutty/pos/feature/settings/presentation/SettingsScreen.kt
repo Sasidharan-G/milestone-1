@@ -396,6 +396,38 @@ fun SettingsScreen(
                 }
             }
 
+            val productViewCard: @Composable (Modifier) -> Unit = { modifier ->
+                val gridViewOn by viewModel.productGridView.collectAsState()
+                Card(
+                    modifier = modifier.border(
+                        width = 1.dp,
+                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.25f),
+                        shape = RoundedCornerShape(20.dp)
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(16.dp)
+                    ) {
+                        Text("Product View", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Product Image Grid", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text(
+                                    "Show products as a two-column image grid instead of a list, in Billing, Purchase and the Product list. Off shows the compact list with name, price and stock.",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(checked = gridViewOn, onCheckedChange = { viewModel.setProductGridView(it) })
+                        }
+                    }
+                }
+            }
+
             val themePreferencesCard: @Composable (Modifier) -> Unit = { modifier ->
                 val themeModePref by viewModel.themeMode.collectAsState()
                 
@@ -2027,6 +2059,8 @@ fun SettingsScreen(
                         }
                         SettingsCategory.DISPLAY -> {
                             layoutModeCard(Modifier.fillMaxWidth())
+                            Spacer(modifier = Modifier.height(16.dp))
+                            productViewCard(Modifier.fillMaxWidth())
                             Spacer(modifier = Modifier.height(16.dp))
                             themePreferencesCard(Modifier.fillMaxWidth())
                         }

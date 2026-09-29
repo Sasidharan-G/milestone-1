@@ -100,11 +100,13 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
         },
     ) { showCustomerSearchDialog = false }
 
+    val productGridView by viewModel.productGridView.collectAsState()
     SearchableProductSelectorDialog(
         showDialog = showProductSearchDialog,
         products = products,
         stockMap = stockMap,
         allowOutOfStockSelection = true,
+        gridView = productGridView,
         onProductSelected = { prod ->
             val pStock = stockMap[prod.id] ?: 0L
             if (pStock <= 0L) {

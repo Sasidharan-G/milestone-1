@@ -1,15 +1,23 @@
 package com.kadaikutty.pos.feature.billing.presentation.components
 
 import androidx.compose.animation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.AsyncImage
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,11 +43,13 @@ fun SearchableProductSelectorDialog(
     products: List<ProductEntity>,
     stockMap: Map<String, Long>,
     allowOutOfStockSelection: Boolean = true,
+    gridView: Boolean = false,
     onProductSelected: (ProductEntity) -> Unit,
     onDismiss: () -> Unit
 ) {
     if (!showDialog) return
 
+    val context = LocalContext.current
     var query by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
 
@@ -207,6 +217,128 @@ fun SearchableProductSelectorDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             fontSize = 14.sp
                         )
+                    }
+                } else if (gridView) {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(2),
+                        modifier = Modifier
+                            .weight(1f)
+                            .fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(filteredProducts, key = { it.id }) { product ->
+                            val pStock = stockMap[product.id] ?: 0L
+                            val isDecimal = product.unitType == "KG" || product.unitType == "LITER"
+                            val pStockStr = if (isDecimal) {
+                                String.format(Locale.US, "%.3f %s", pStock / 1000.0, if (product.unitType == "KG") "Kg" else "Ltr")
+                            } else "$pStock Pcs"
+                            val isOutOfStock = pStock <= 0L
+                            val threshold = product.minStockLevel
+                            val isLowStock = !isOutOfStock && threshold > 0.0 && (
+                                (isDecimal && (pStock.toDouble() / 1000.0) <= threshold) ||
+                                (!isDecimal && pStock.toDouble() <= threshold)
+                            )
+                            // Local photo first (instant, offline), then the S3 url once another
+                            // device's photo has synced here, same resolution order as the Product list.
+                            val imageModel = remember(product.id, product.imageUrl) {
+                                com.kadaikutty.pos.core.common.ProductImageStore.localFile(context, product.id).takeIf { it.exists() } ?: product.imageUrl
+                            }
+
+                            Card(
+                                onClick = {
+                                    if (!isOutOfStock || allowOutOfStockSelection) {
+                                        onProductSelected(product)
+                                        onDismiss()
+                                    }
+                                },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .border(
+                                        width = 1.dp,
+                                        color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f),
+                                        shape = RoundedCornerShape(14.dp)
+                                    ),
+                                shape = RoundedCornerShape(14.dp),
+                                colors = CardDefaults.cardColors(
+                                    containerColor = if (isOutOfStock && !allowOutOfStockSelection) {
+                                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+                                    } else {
+                                        MaterialTheme.colorScheme.surface
+                                    }
+                                )
+                            ) {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
+                                        if (imageModel != null) {
+                                            AsyncImage(
+                                                model = imageModel,
+                                                contentDescription = null,
+                                                contentScale = ContentScale.Crop,
+                                                modifier = Modifier.fillMaxSize()
+                                            )
+                                        } else {
+                                            Box(
+                                                modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.Inventory2,
+                                                    contentDescription = null,
+                                                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                                                    modifier = Modifier.size(36.dp)
+                                                )
+                                            }
+                                        }
+                                        if (isOutOfStock) {
+                                            Surface(
+                                                color = MaterialTheme.colorScheme.errorContainer,
+                                                shape = RoundedCornerShape(6.dp),
+                                                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                                            ) {
+                                                Text("Out", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                                            }
+                                        } else if (isLowStock) {
+                                            Surface(
+                                                color = Color(0xFFFEF3C7),
+                                                shape = RoundedCornerShape(6.dp),
+                                                modifier = Modifier.align(Alignment.TopEnd).padding(6.dp)
+                                            ) {
+                                                Text("Low", modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp), fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color(0xFFB45309))
+                                            }
+                                        }
+                                    }
+                                    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)) {
+                                        Text(
+                                            text = product.name,
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 12.5.sp,
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis,
+                                            minLines = 2,
+                                            color = MaterialTheme.colorScheme.onSurface
+                                        )
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.Bottom
+                                        ) {
+                                            Text(
+                                                text = "${Money(product.salePriceMinorUnits)}",
+                                                fontWeight = FontWeight.ExtraBold,
+                                                fontSize = 12.5.sp,
+                                                color = Color(0xFF059669)
+                                            )
+                                            Text(
+                                                text = pStockStr,
+                                                fontSize = 10.sp,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 } else {
                     LazyColumn(

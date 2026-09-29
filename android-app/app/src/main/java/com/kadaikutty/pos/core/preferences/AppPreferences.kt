@@ -78,6 +78,15 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         }
     }
 
+    /** Product picker layout (Billing, Purchase, Product list): a plain list, or a 2-column photo
+     *  grid for a shop where staff pick items by sight rather than by reading the name. */
+    private val productGridViewKey = booleanPreferencesKey("product_grid_view")
+    val productGridView: Flow<Boolean> = dataStore.data.map { it[productGridViewKey] ?: false }
+
+    suspend fun saveProductGridView(enabled: Boolean) {
+        dataStore.edit { it[productGridViewKey] = enabled }
+    }
+
     private val themeModeKey = stringPreferencesKey("theme_mode")
     val themeMode: Flow<String> = dataStore.data.map { it[themeModeKey] ?: "Light" }
 

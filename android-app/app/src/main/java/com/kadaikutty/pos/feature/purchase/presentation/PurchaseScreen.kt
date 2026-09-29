@@ -86,11 +86,13 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
 
     var showProductSearchDialog by remember { mutableStateOf(false) }
 
+    val productGridView by viewModel.productGridView.collectAsState()
     SearchableProductSelectorDialog(
         showDialog = showProductSearchDialog,
         products = products,
         stockMap = uiState.stocks.associate { it.productId to it.currentStock },
         allowOutOfStockSelection = true,
+        gridView = productGridView,
         onProductSelected = { prod ->
             selectedProductId = prod.id
             expandedProduct = false

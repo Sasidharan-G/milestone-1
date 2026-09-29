@@ -32,8 +32,13 @@ import javax.inject.Inject
 class PurchaseViewModel @Inject constructor(
     private val database: BillingDatabase,
     private val purchaseRepository: PurchaseRepository,
-    private val sessionStore: SessionStore
+    private val sessionStore: SessionStore,
+    private val appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences
 ) : ViewModel() {
+
+    val productGridView: StateFlow<Boolean> = appPreferences.productGridView.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), false
+    )
 
     private var checkoutId = com.kadaikutty.pos.core.common.newRecordId()
     private var editingPurchase: PurchaseEntity? = null

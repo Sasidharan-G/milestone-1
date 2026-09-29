@@ -18,6 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -32,6 +35,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.kadaikutty.pos.core.common.CheckoutMath
@@ -439,6 +443,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     val lowStockProducts by viewModel.lowStockProducts.collectAsState()
     val categories by viewModel.categories.collectAsState()
     val stockBalances by viewModel.stockBalances.collectAsState()
+    val productGridView by viewModel.productGridView.collectAsState()
     var name by remember { mutableStateOf("") }
     var selectedCategoryId by remember { mutableStateOf("") }
     var purchasePrice by remember { mutableStateOf("") }
@@ -950,6 +955,32 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             )
                         }
                     }
+                } else if (productGridView) {
+                    items(products.chunked(2), key = { row -> row.joinToString("-") { it.id } }) { rowProducts ->
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            rowProducts.forEach { product ->
+                                val curStock = stockBalances[product.id] ?: 0L
+                                val formattedStock = if (product.unitType == "KG" || product.unitType == "LITER") {
+                                    val valDouble = curStock / 1000.0
+                                    if (valDouble % 1.0 == 0.0) "${valDouble.toLong()}" else String.format(java.util.Locale.US, "%.3f", valDouble).dropLastWhile { it == '0' }.removeSuffix(".")
+                                } else "$curStock"
+                                val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Pcs"
+                                Box(modifier = Modifier.weight(1f)) {
+                                    ProductGridTile(
+                                        product = product,
+                                        context = context,
+                                        stockLabel = "$formattedStock $unitLabel",
+                                        saleText = Money(product.salePriceMinorUnits).toString(),
+                                        isLowStock = com.kadaikutty.pos.feature.stock.domain.isLowStock(curStock, product.minStockLevel, product.unitType),
+                                        onAdjustStock = { adjustingStockProduct = product },
+                                        onEdit = { editingProduct = product },
+                                        onDelete = { deletingProduct = product }
+                                    )
+                                }
+                            }
+                            if (rowProducts.size == 1) Box(modifier = Modifier.weight(1f))
+                        }
+                    }
                 } else {
                     items(products, key = { it.id }) { product ->
                         val catName = categories.find { it.id == product.categoryId }?.name ?: "Unknown Category"
@@ -1328,6 +1359,32 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         fontSize = 14.sp,
                                         textAlign = androidx.compose.ui.text.style.TextAlign.Center
                                     )
+                                }
+                            }
+                        } else if (productGridView) {
+                            items(products.chunked(3), key = { row -> row.joinToString("-") { it.id } }) { rowProducts ->
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    rowProducts.forEach { product ->
+                                        val curStock = stockBalances[product.id] ?: 0L
+                                        val formattedStock = if (product.unitType == "KG" || product.unitType == "LITER") {
+                                            val valDouble = curStock / 1000.0
+                                            if (valDouble % 1.0 == 0.0) "${valDouble.toLong()}" else String.format(java.util.Locale.US, "%.3f", valDouble).dropLastWhile { it == '0' }.removeSuffix(".")
+                                        } else "$curStock"
+                                        val unitLabel = if (product.unitType == "KG") "Kg" else if (product.unitType == "LITER") "Ltr" else "Pcs"
+                                        Box(modifier = Modifier.weight(1f)) {
+                                            ProductGridTile(
+                                                product = product,
+                                                context = context,
+                                                stockLabel = "$formattedStock $unitLabel",
+                                                saleText = Money(product.salePriceMinorUnits).toString(),
+                                                isLowStock = com.kadaikutty.pos.feature.stock.domain.isLowStock(curStock, product.minStockLevel, product.unitType),
+                                                onAdjustStock = { adjustingStockProduct = product },
+                                                onEdit = { editingProduct = product },
+                                                onDelete = { deletingProduct = product }
+                                            )
+                                        }
+                                    }
+                                    repeat(3 - rowProducts.size) { Box(modifier = Modifier.weight(1f)) }
                                 }
                             }
                         } else {
@@ -4200,5 +4257,76 @@ fun ProductGstFields(
             enabled = enabled,
             modifier = Modifier.weight(1f)
         )
+    }
+}
+
+/**
+ * One product in the Product list's image grid (the Settings > Display > Product Image Grid
+ * toggle). Tapping the photo opens Edit, same as the pencil icon below it - the photo is what a
+ * shopkeeper recognises the item by, so it doubles as the edit target. Stock/Edit/Delete stay as
+ * three explicit icons rather than a tap-to-expand overlay, since a grid tile has no natural place
+ * for the list row's "tap to expand" details to slide into.
+ */
+@Composable
+private fun ProductGridTile(
+    product: ProductEntity,
+    context: android.content.Context,
+    stockLabel: String,
+    saleText: String,
+    isLowStock: Boolean,
+    onAdjustStock: () -> Unit,
+    onEdit: () -> Unit,
+    onDelete: () -> Unit
+) {
+    val imageModel = remember(product.id, product.imageUrl) {
+        ProductImageStore.localFile(context, product.id).takeIf { it.exists() } ?: product.imageUrl
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(14.dp)),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+    ) {
+        Column(modifier = Modifier.fillMaxWidth()) {
+            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f).clickable(onClick = onEdit)) {
+                if (imageModel != null) {
+                    coil.compose.AsyncImage(
+                        model = imageModel,
+                        contentDescription = null,
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Inventory2,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                            modifier = Modifier.size(36.dp)
+                        )
+                    }
+                }
+            }
+            Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 12.5.sp, maxLines = 2, minLines = 2, overflow = TextOverflow.Ellipsis)
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.Bottom) {
+                    Text(saleText, fontWeight = FontWeight.Bold, fontSize = 12.5.sp, color = MaterialTheme.colorScheme.primary)
+                    Text(stockLabel, fontSize = 10.sp, fontWeight = FontWeight.Medium, color = if (isLowStock) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                    IconButton(onClick = onAdjustStock, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Tune, contentDescription = "Adjust Stock", tint = MaterialTheme.colorScheme.secondary, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = onEdit, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Edit, contentDescription = "Edit Product", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(16.dp))
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.size(30.dp)) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete Product", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(16.dp))
+                    }
+                }
+            }
+        }
     }
 }

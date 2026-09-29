@@ -164,11 +164,16 @@ class ProductViewModel @Inject constructor(
     private val syncManager: SyncManager,
     private val sessionStore: SessionStore,
     private val syncScheduler: com.kadaikutty.pos.core.sync.SyncScheduler,
+    private val appPreferences: com.kadaikutty.pos.core.preferences.AppPreferences,
     @ApplicationContext private val appContext: android.content.Context
 ) : ViewModel() {
     private val dao = database.masterDao()
     private val reportDao = database.reportDao()
     private val searchQuery = MutableStateFlow("")
+
+    val productGridView: StateFlow<Boolean> = appPreferences.productGridView.stateIn(
+        viewModelScope, SharingStarted.WhileSubscribed(5000), false
+    )
 
     init {
         viewModelScope.launch {

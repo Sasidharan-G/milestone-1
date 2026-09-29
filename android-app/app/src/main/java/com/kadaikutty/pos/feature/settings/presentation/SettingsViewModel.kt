@@ -377,6 +377,16 @@ class SettingsViewModel @Inject constructor(
         initialValue = "Grid"
     )
 
+    val productGridView: StateFlow<Boolean> = appPreferences.productGridView.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = false
+    )
+
+    fun setProductGridView(enabled: Boolean) {
+        viewModelScope.launch { appPreferences.saveProductGridView(enabled) }
+    }
+
     val activeSession: StateFlow<com.kadaikutty.pos.core.auth.Session?> = sessionStore.activeSession.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
