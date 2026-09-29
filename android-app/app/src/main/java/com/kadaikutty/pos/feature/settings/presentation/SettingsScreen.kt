@@ -988,7 +988,13 @@ fun SettingsScreen(
             }
 
             val userManagementCard: @Composable (Modifier) -> Unit = { modifier ->
-                val users by viewModel.usersList.collectAsState()
+                val allUsers by viewModel.usersList.collectAsState()
+                // Staff to manage, not admins to manage: an ADMIN account (including whoever is
+                // signed in right now) has no business being edited or deleted from this list.
+                val users = remember(allUsers, activeSession) {
+                    val adminRoles = setOf("ADMIN", "SUPER_ADMIN")
+                    allUsers.filter { it.role.uppercase() !in adminRoles && it.id != activeSession?.userId }
+                }
 
                 var showAddDialog by remember { mutableStateOf(false) }
                 var showEditDialog by remember { mutableStateOf(false) }
