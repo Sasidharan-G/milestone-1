@@ -248,6 +248,18 @@ class ShareManager(private val context: Context) {
         // Left Column: Bill details
         val sdf = SimpleDateFormat("dd/MM/yyyy hh:mm a", Locale.getDefault())
         val dateStr = sdf.format(Date(sale.createdAtEpochMs))
+        // A GST-registered shop's bill is a tax invoice; the rate-wise tax is shown below the total.
+        val gstRegistered = gstNumber.isNotBlank()
+        // Tax needs each line's rate as it was on the day of the bill; bills made before GST
+        // support have none, and inventing today's rates for them would misstate old tax.
+        val gstLines = if (gstRegistered && items.isNotEmpty() && items.all { it.gstRateBps != null })
+            items.map { (it.netRevenueMinorUnits ?: it.lineTotalMinorUnits) to it.gstRateBps!! } else null
+        if (gstRegistered) {
+            paint.isFakeBoldText = true
+            canvas.drawText("TAX INVOICE", 40f, y, paint)
+            paint.isFakeBoldText = false
+            y += 16f
+        }
         canvas.drawText("Bill No: ${sale.billNumber}", 40f, y, paint)
         y += 16f
         canvas.drawText("Date: $dateStr", 40f, y, paint)
@@ -303,7 +315,16 @@ class ShareManager(private val context: Context) {
             canvas.drawText(qtyStr, 340f, y, paint)
             canvas.drawText(rateStr, 440f, y, paint)
             canvas.drawText(totalStr, 550f, y, paint)
-            
+
+            if (gstLines != null) {
+                y += 12f
+                paint.textAlign = Paint.Align.LEFT
+                paint.textSize = 8.5f
+                val hsn = item.hsnCode?.let { "HSN $it  ·  " } ?: ""
+                canvas.drawText("${hsn}GST ${com.kadaikutty.pos.core.common.GstMath.label(item.gstRateBps ?: 0)} incl.", 80f, y, paint)
+                paint.textSize = 11f
+            }
+
             serial++
         }
         
@@ -315,9 +336,9 @@ class ShareManager(private val context: Context) {
         y += 25f
         paint.textAlign = Paint.Align.RIGHT
         
-        // No CGST/SGST split: products carry no GST rate or HSN, and back-calculating a flat 18% from
-        // every bill printed wrong tax on 0% / 5% goods. Amounts are shown as charged, tax inclusive.
-        val hasGst = gstNumber.isNotBlank()
+        // The tax split comes from each line's own GST rate (the summary under the total); bills
+        // from before GST support carry no rates and just say prices include tax.
+        val hasGst = gstRegistered
         val grandTotalMinor = sale.totalMinorUnits
         val subtotalMinor = items.sumOf { it.lineTotalMinorUnits }
         val discountMinor = sale.discountMinorUnits
@@ -374,6 +395,28 @@ class ShareManager(private val context: Context) {
         paint.textSize = 13f
         canvas.drawText("Grand Total: ", 450f, y, paint)
         canvas.drawText(Money(grandTotalMinor).toString(), 550f, y, paint)
+        if (gstLines != null) {
+            y += 22f
+            paint.isFakeBoldText = true
+            paint.textSize = 9.5f
+            paint.textAlign = Paint.Align.LEFT
+            canvas.drawText("GST", 300f, y, paint)
+            paint.textAlign = Paint.Align.RIGHT
+            canvas.drawText("Taxable", 400f, y, paint)
+            canvas.drawText("CGST", 475f, y, paint)
+            canvas.drawText("SGST", 550f, y, paint)
+            paint.isFakeBoldText = false
+            com.kadaikutty.pos.core.common.GstMath.summarize(gstLines).forEach { row ->
+                y += 14f
+                paint.textAlign = Paint.Align.LEFT
+                canvas.drawText(com.kadaikutty.pos.core.common.GstMath.label(row.rateBps), 300f, y, paint)
+                paint.textAlign = Paint.Align.RIGHT
+                canvas.drawText(Money(row.taxable).toString(), 400f, y, paint)
+                canvas.drawText(Money(row.cgst).toString(), 475f, y, paint)
+                canvas.drawText(Money(row.sgst).toString(), 550f, y, paint)
+            }
+            paint.textSize = 13f
+        }
         if (sale.status == com.kadaikutty.pos.feature.billing.data.SaleStatus.VOID) {
             // A cancelled bill is kept for the record; its copy must never pass for a live one.
             y += 18f

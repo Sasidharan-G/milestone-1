@@ -752,6 +752,14 @@ class BillingViewModel @Inject constructor(
         }
     }
 
+    /** GST inside the total, one row per rate; empty unless the shop has a GSTIN and every line has a rate. */
+    private suspend fun gstReceiptRows(items: List<com.kadaikutty.pos.feature.billing.data.SaleItemEntity>): List<Pair<String, String>> {
+        if (appPreferences.gstNumber.first().isBlank() || items.isEmpty() || items.any { it.gstRateBps == null }) return emptyList()
+        return com.kadaikutty.pos.core.common.GstMath.summarize(items.map { (it.netRevenueMinorUnits ?: it.lineTotalMinorUnits) to it.gstRateBps!! })
+            .filter { it.rateBps > 0 }
+            .map { "GST ${com.kadaikutty.pos.core.common.GstMath.label(it.rateBps)} on ${Money(it.taxable)}" to Money(it.tax).toString() }
+    }
+
     /** The thermal receipt for [sale]; the same content is used for a receipt-size shared PDF. */
     private suspend fun buildReceiptDocument(companyId: String, sale: com.kadaikutty.pos.feature.billing.data.SaleEntity): com.kadaikutty.pos.core.printer.domain.PrintDocument {
         val items = saleDao.getSaleItems(companyId, sale.id).first()
@@ -800,7 +808,8 @@ class BillingViewModel @Inject constructor(
             shopPhone = appPreferences.shopPhone.first(),
             gstNumber = appPreferences.gstNumber.first(),
             paymentMode = sale.paymentMode,
-            cancelled = sale.status == com.kadaikutty.pos.feature.billing.data.SaleStatus.VOID
+            cancelled = sale.status == com.kadaikutty.pos.feature.billing.data.SaleStatus.VOID,
+            gstRows = gstReceiptRows(items)
         )
     }
 

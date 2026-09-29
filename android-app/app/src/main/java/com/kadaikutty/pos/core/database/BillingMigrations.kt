@@ -447,3 +447,13 @@ val migration27To28 = object : Migration(27, 28) {
         db.execSQL("ALTER TABLE `sales` ADD COLUMN `status` TEXT NOT NULL DEFAULT 'ACTIVE'")
     }
 }
+
+/** GST: a rate (basis points) and HSN per product, snapshotted onto each bill line. */
+val migration28To29 = object : Migration(28, 29) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `products` ADD COLUMN `gstRateBps` INTEGER NOT NULL DEFAULT 0")
+        db.execSQL("ALTER TABLE `products` ADD COLUMN `hsnCode` TEXT")
+        db.execSQL("ALTER TABLE `sale_items` ADD COLUMN `gstRateBps` INTEGER")
+        db.execSQL("ALTER TABLE `sale_items` ADD COLUMN `hsnCode` TEXT")
+    }
+}

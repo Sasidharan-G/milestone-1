@@ -51,7 +51,10 @@ data class SaleItemEntity(
     val unitType: String? = null,
     val productName: String? = null,
     val costTotalMinorUnits: Long? = null,
-    val netRevenueMinorUnits: Long? = null
+    val netRevenueMinorUnits: Long? = null,
+    /** The product's GST rate and HSN when the bill was made (null on bills from before GST). */
+    val gstRateBps: Int? = null,
+    val hsnCode: String? = null
 )
 
 @Entity(tableName = "stock_movements", indices = [Index("companyId", "productId"), Index("companyId", "referenceId"), Index("companyId"), Index(value = ["companyId", "productId", "createdAtEpochMs"])])

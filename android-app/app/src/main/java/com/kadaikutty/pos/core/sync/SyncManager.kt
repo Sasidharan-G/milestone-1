@@ -69,6 +69,7 @@ class SyncManager(
             "barcode" to product.barcode,
             "minStockLevel" to product.minStockLevel,
             "imageUrl" to product.imageUrl,
+            "gstRateBps" to product.gstRateBps, "hsnCode" to product.hsnCode,
             "createdAtEpochMs" to product.createdAtEpochMs,
             "updatedAtEpochMs" to product.updatedAtEpochMs,
             "syncStatus" to "SYNCED",
@@ -93,6 +94,7 @@ class SyncManager(
                 "barcode" to product.barcode,
                 "minStockLevel" to product.minStockLevel,
                 "imageUrl" to product.imageUrl,
+                "gstRateBps" to product.gstRateBps, "hsnCode" to product.hsnCode,
                 "createdAtEpochMs" to product.createdAtEpochMs,
                 "updatedAtEpochMs" to product.updatedAtEpochMs,
                 "syncStatus" to "SYNCED",
@@ -166,7 +168,8 @@ class SyncManager(
                 "lineTotalMinorUnits" to item.lineTotalMinorUnits,
                 "discountMinorUnits" to item.discountMinorUnits,
                 "unitType" to item.unitType, "productName" to item.productName,
-                "costTotalMinorUnits" to item.costTotalMinorUnits, "netRevenueMinorUnits" to item.netRevenueMinorUnits
+                "costTotalMinorUnits" to item.costTotalMinorUnits, "netRevenueMinorUnits" to item.netRevenueMinorUnits,
+                "gstRateBps" to item.gstRateBps, "hsnCode" to item.hsnCode
             )
         }
         val payload = toJson(mapOf(

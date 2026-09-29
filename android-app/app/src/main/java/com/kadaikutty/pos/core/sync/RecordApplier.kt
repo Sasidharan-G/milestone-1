@@ -46,7 +46,7 @@ object RecordApplier {
                 // ConflictResolver.preparePulledUpsert).
                 val barcode = data.stringOrNull("barcode")?.replace("\uFEFF", "")?.replace("\u200B", "")?.trim()
                     ?.let { if (it.endsWith(".0") || it.endsWith(".00")) it.substringBefore(".") else it }?.ifBlank { null }
-                database.masterDao().insertProduct(ProductEntity(id, companyId, data.optString("name"), data.optString("categoryId"), data.optLong("purchasePriceMinorUnits"), data.optLong("salePriceMinorUnits"), data.optString("unitType", "PIECE"), barcode, data.optDouble("minStockLevel", 0.0), data.stringOrNull("imageUrl"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
+                database.masterDao().insertProduct(ProductEntity(id, companyId, data.optString("name"), data.optString("categoryId"), data.optLong("purchasePriceMinorUnits"), data.optLong("salePriceMinorUnits"), data.optString("unitType", "PIECE"), barcode, data.optDouble("minStockLevel", 0.0), data.stringOrNull("imageUrl"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED, data.optInt("gstRateBps", 0), data.stringOrNull("hsnCode")))
             }
             "Customer" -> database.masterDao().insertCustomer(CustomerEntity(id, companyId, data.optString("name"), data.stringOrNull("phone"), data.stringOrNull("address"), data.optLong("creditLimitMinorUnits"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
             "Supplier" -> database.masterDao().insertSupplier(SupplierEntity(id, companyId, data.optString("name"), data.stringOrNull("phone"), data.stringOrNull("address"), data.optLong("createdAtEpochMs"), updatedAt, SyncStatus.SYNCED))
@@ -61,7 +61,7 @@ object RecordApplier {
                 val items = data.optJSONArray("items")
                 if (items != null) database.saleDao().insertItems((0 until items.length()).map { index ->
                     val item = items.getJSONObject(index)
-                    SaleItemEntity(companyId, id, item.optString("productId"), item.optLong("quantity"), item.optLong("unitPriceMinorUnits"), item.optLong("lineTotalMinorUnits"), item.optLong("discountMinorUnits"), item.stringOrNull("unitType"), item.stringOrNull("productName"), item.longOrNull("costTotalMinorUnits"), item.longOrNull("netRevenueMinorUnits"))
+                    SaleItemEntity(companyId, id, item.optString("productId"), item.optLong("quantity"), item.optLong("unitPriceMinorUnits"), item.optLong("lineTotalMinorUnits"), item.optLong("discountMinorUnits"), item.stringOrNull("unitType"), item.stringOrNull("productName"), item.longOrNull("costTotalMinorUnits"), item.longOrNull("netRevenueMinorUnits"), if (item.has("gstRateBps") && !item.isNull("gstRateBps")) item.optInt("gstRateBps") else null, item.stringOrNull("hsnCode"))
                 })
             }
             "Purchase" -> {

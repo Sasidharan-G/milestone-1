@@ -36,7 +36,11 @@ data class ProductEntity(
     val imageUrl: String? = null,
     val createdAtEpochMs: Long,
     val updatedAtEpochMs: Long,
-    val syncStatus: SyncStatus
+    val syncStatus: SyncStatus,
+    /** GST rate in basis points (500 = 5%). Sale prices are GST-inclusive; 0 = exempt / not set. */
+    @androidx.room.ColumnInfo(defaultValue = "0") val gstRateBps: Int = 0,
+    /** HSN (goods) or SAC (services) code printed on tax invoices. */
+    val hsnCode: String? = null
 )
 
 @Entity(tableName = "customers", indices = [Index(value = ["companyId", "name"]), Index(value = ["companyId"]), Index(value = ["companyId", "syncStatus"])])

@@ -248,10 +248,16 @@ class ProductViewModel @Inject constructor(
         openingStock: Double = 0.0,
         /** A photo already compressed to a temp file (see ProductImageStore), waiting for the new product's id. */
         pendingImagePath: String? = null,
+        gstRateBps: Int = 0,
+        hsnCode: String? = null,
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit
     ) {
         val cleanName = name.trim()
+        if (gstRateBps !in com.kadaikutty.pos.core.common.GstMath.RATES_BPS) {
+            onError(IllegalArgumentException("Select a valid GST rate"))
+            return
+        }
         if (cleanName.isBlank()) {
             onError(IllegalArgumentException("Product name cannot be blank"))
             return
@@ -312,7 +318,9 @@ class ProductViewModel @Inject constructor(
                     minStockLevel = minStockLevel,
                     createdAtEpochMs = System.currentTimeMillis(),
                     updatedAtEpochMs = System.currentTimeMillis(),
-                    syncStatus = SyncStatus.LOCAL_ONLY
+                    syncStatus = SyncStatus.LOCAL_ONLY,
+                    gstRateBps = gstRateBps,
+                    hsnCode = hsnCode?.trim()?.ifBlank { null }
                 )
                 dao.insertProduct(product)
                 syncManager.enqueueProduct(product, "INSERT")
@@ -350,9 +358,12 @@ class ProductViewModel @Inject constructor(
         newUnitType: String,
         newBarcode: String?,
         newMinStockLevel: Double,
+        newGstRateBps: Int = product.gstRateBps,
+        newHsnCode: String? = product.hsnCode,
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit
     ) {
+        val cleanHsn = newHsnCode?.trim()?.ifBlank { null }
         val cleanName = newName.trim()
         if (cleanName.isBlank()) {
             onError(IllegalArgumentException("Product name cannot be blank"))
@@ -375,7 +386,10 @@ class ProductViewModel @Inject constructor(
 
                 require(product.unitType == newUnitType || database.saleDao().movementCount(product.companyId, product.id) == 0) { "Unit cannot be changed after stock transactions. Create a new product." }
                 require(newPurchasePriceMinorUnits >= 0 && newSalePriceMinorUnits >= 0) { "Prices cannot be negative" }
+                require(newGstRateBps in com.kadaikutty.pos.core.common.GstMath.RATES_BPS) { "Select a valid GST rate" }
                 val updated = product.copy(
+                    gstRateBps = newGstRateBps,
+                    hsnCode = cleanHsn,
                     name = cleanName,
                     categoryId = newCategoryId,
                     purchasePriceMinorUnits = newPurchasePriceMinorUnits,
@@ -395,6 +409,8 @@ class ProductViewModel @Inject constructor(
                 if (product.unitType != newUnitType) updates["unitType"] = newUnitType
                 if (product.barcode != cleanBarcode) updates["barcode"] = cleanBarcode
                 if (product.minStockLevel != newMinStockLevel) updates["minStockLevel"] = newMinStockLevel
+                if (product.gstRateBps != newGstRateBps) updates["gstRateBps"] = newGstRateBps
+                if (product.hsnCode != cleanHsn) updates["hsnCode"] = cleanHsn
                 
                 if (updates.isNotEmpty()) {
                     syncManager.enqueuePartialUpdate("Product", product.id, updates)
@@ -649,6 +665,10 @@ class ProductViewModel @Inject constructor(
                 var colSale = -1
                 var colMinStock = -1
                 var colOpening = -1
+                // Optional GST columns ("GST %", "Tax", "HSN Code"); checked before barcode/price
+                // below, since "HSN Code" contains "code" and "GST Rate" contains "rate".
+                var colGst = -1
+                var colHsn = -1
                 var hasHeader = false
 
                 for (tokens in rawRows) {
@@ -672,6 +692,8 @@ class ProductViewModel @Inject constructor(
                             for (i in tokens.indices) {
                                 val h = cleanName(tokens[i])
                                 when {
+                                    (h.contains("hsn") || h.contains("sac")) -> colHsn = i
+                                    (h.contains("gst") || h.contains("tax") || h.contains("வரி")) -> colGst = i
                                     (h.contains("min") || h.contains("alert") || h.contains("threshold") || h.contains("குறைந்த")) -> colMinStock = i
                                     (h.contains("open") || h.contains("qty") || h.contains("quantity") || h.contains("current") || h.contains("on hand") || h.contains("balance") || h == "stock" || h.contains("இருப்பு")) -> colOpening = i
                                     (h.contains("barcode") || h.contains("பார்கோடு") || h.contains("ean") || h.contains("code")) -> colBarcode = i
@@ -732,6 +754,15 @@ class ProductViewModel @Inject constructor(
                             rawOpening = tokens.getOrNull(7)?.trim()?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                         }
 
+                        // null = the file says nothing, so an existing product keeps its own value.
+                        val gstText = if (hasHeader && colGst >= 0) tokens.getOrNull(colGst)?.trim()?.removeSuffix("%")?.trim().orEmpty() else ""
+                        val rawGstBps: Int? = gstText.toDoubleOrNull()?.let { Math.round(it * 100).toInt() }
+                            ?.takeIf { it in com.kadaikutty.pos.core.common.GstMath.RATES_BPS }
+                        if (gstText.isNotBlank() && rawGstBps == null && rowErrors.size < MAX_ROW_ERRORS) {
+                            rowErrors.add("Row $rowNumber: GST '$gstText' is not a GST slab (0, 0.25, 3, 5, 12, 18, 28) - left unchanged")
+                        }
+                        val rawHsn: String? = if (hasHeader && colHsn >= 0) tokens.getOrNull(colHsn)?.filter(Char::isLetterOrDigit)?.take(8)?.ifBlank { null } else null
+
                         if (rawName.isBlank()) {
                             skippedCount++
                             if (rowErrors.size < MAX_ROW_ERRORS) rowErrors.add("Row $rowNumber: no product name")
@@ -784,6 +815,8 @@ class ProductViewModel @Inject constructor(
                                 unitType = importUnit,
                                 barcode = normBarcode ?: existingProduct.barcode,
                                 minStockLevel = if (rawMinStock > 0) rawMinStock else existingProduct.minStockLevel,
+                                gstRateBps = rawGstBps ?: existingProduct.gstRateBps,
+                                hsnCode = rawHsn ?: existingProduct.hsnCode,
                                 updatedAtEpochMs = System.currentTimeMillis()
                             )
                             productBatch.add(updatedProduct)
@@ -817,7 +850,9 @@ class ProductViewModel @Inject constructor(
                                 minStockLevel = rawMinStock,
                                 createdAtEpochMs = System.currentTimeMillis(),
                                 updatedAtEpochMs = System.currentTimeMillis(),
-                                syncStatus = SyncStatus.LOCAL_ONLY
+                                syncStatus = SyncStatus.LOCAL_ONLY,
+                                gstRateBps = rawGstBps ?: 0,
+                                hsnCode = rawHsn
                             )
                             productBatch.add(newProduct)
                             if (normBarcode != null) existingBarcodeMap[normBarcode] = newProduct

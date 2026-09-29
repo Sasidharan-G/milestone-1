@@ -44,12 +44,12 @@ class MigrationTest {
     fun everyExportedVersionMigratesToTheCurrentSchema() {
         val all = arrayOf(
             migration18To19, migration19To20, migration20To21, migration21To22, migration22To23,
-            migration23To24, migration24To25, migration25To26, migration26To27, migration27To28
+            migration23To24, migration24To25, migration25To26, migration26To27, migration27To28, migration28To29
         )
-        for (start in 18..27) {
+        for (start in 18..28) {
             val name = "migration-chain-$start"
             helper.createDatabase(name, start).close()
-            helper.runMigrationsAndValidate(name, 28, true, *all).close()
+            helper.runMigrationsAndValidate(name, 29, true, *all).close()
         }
     }
 

@@ -83,7 +83,8 @@ class SaleRepositoryImpl(
                 val unitCost = database.purchaseDao().getAveragePurchasePrice(company, line.productId) ?: product.purchasePriceMinorUnits.toDouble()
                 val cost = Math.round(unitCost * line.quantity / if (line.unitType in listOf("KG", "LITER")) 1000.0 else 1.0)
                 SaleItemEntity(company, id, line.productId, line.quantity, line.unitPrice.minorUnits,
-                    line.lineTotal.minorUnits, line.discount.minorUnits, line.unitType, line.productName, cost, line.lineTotal.minorUnits - discounts[index])
+                    line.lineTotal.minorUnits, line.discount.minorUnits, line.unitType, line.productName, cost, line.lineTotal.minorUnits - discounts[index],
+                    gstRateBps = product.gstRateBps, hsnCode = product.hsnCode)
             }
             val sale = SaleEntity(id, company, number, draft.total.minorUnits, old?.createdAtEpochMs ?: now,
                 SyncStatus.LOCAL_ONLY, draft.customerId, draft.paymentMode, draft.paidCash.minorUnits,

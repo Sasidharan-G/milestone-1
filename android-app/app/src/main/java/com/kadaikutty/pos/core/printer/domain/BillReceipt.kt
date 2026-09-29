@@ -28,7 +28,9 @@ object BillReceipt {
         shopPhone: String = "",
         gstNumber: String = "",
         paymentMode: String = "",
-        cancelled: Boolean = false
+        cancelled: Boolean = false,
+        /** Rate-wise GST inside the total, e.g. "GST 5% on ₹100.00" to "₹4.76". */
+        gstRows: List<Pair<String, String>> = emptyList()
     ): PrintDocument = PrintDocument(
         title = shopName,
         headers = listOfNotNull(
@@ -46,6 +48,7 @@ object BillReceipt {
             // A zero discount is a line that tells the customer nothing, so it is left off.
             if (discount.isNotBlank() && !isZeroAmount(discount)) add("Discount" to discount)
             add("TOTAL" to grandTotal)
+            addAll(gstRows)
             if (paymentMode.isNotBlank()) add("Paid by" to paymentMode)
         },
         footer = "Thank you for shopping!",

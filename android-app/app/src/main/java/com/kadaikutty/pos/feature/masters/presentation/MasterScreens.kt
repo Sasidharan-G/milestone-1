@@ -449,6 +449,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var minStockLevel by remember { mutableStateOf("") }
     // Admin only (server-enforced too); a cashier never sees this field, and a blank value adds nothing.
     var openingStock by remember { mutableStateOf("") }
+    var gstRateBps by remember { mutableIntStateOf(0) }
+    var hsnCode by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(value = false) }
@@ -871,6 +873,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                 }
                             }
 
+                            ProductGstFields(gstRateBps, { gstRateBps = it }, hsnCode, { hsnCode = it }, enabled = !isSubmitting)
                             Button(
                                 onClick = {
                                     val trimmed = name.trim()
@@ -882,7 +885,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         val saleVal = CheckoutMath.rupeesToMinorUnits(salePrice.toDoubleOrNull() ?: 0.0)
                                         val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
                                         val openingStockVal = openingStock.toDoubleOrNull() ?: 0.0
-                                        viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, pendingImageFile?.absolutePath, onSuccess = {
+                                        viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, pendingImageFile?.absolutePath, gstRateBps = gstRateBps, hsnCode = hsnCode, onSuccess = {
                                             isSubmitting = false
                                             name = ""
                                             purchasePrice = ""
@@ -890,6 +893,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                             barcode = ""
                                             minStockLevel = ""
                                             openingStock = ""
+                                            gstRateBps = 0
+                                            hsnCode = ""
                                             pendingImageFile = null
                                             message = "Product added successfully"
                                             android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
@@ -1244,6 +1249,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                             }
                         }
 
+                        ProductGstFields(gstRateBps, { gstRateBps = it }, hsnCode, { hsnCode = it }, enabled = !isSubmitting)
                         Button(
                             onClick = {
                                 val trimmed = name.trim()
@@ -1255,7 +1261,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     val saleVal = CheckoutMath.rupeesToMinorUnits(salePrice.toDoubleOrNull() ?: 0.0)
                                     val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
                                     val openingStockVal = openingStock.toDoubleOrNull() ?: 0.0
-                                    viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, pendingImageFile?.absolutePath, onSuccess = {
+                                    viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, pendingImageFile?.absolutePath, gstRateBps = gstRateBps, hsnCode = hsnCode, onSuccess = {
                                         isSubmitting = false
                                         name = ""
                                         purchasePrice = ""
@@ -1264,6 +1270,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         barcode = ""
                                         minStockLevel = ""
                                         openingStock = ""
+                                        gstRateBps = 0
+                                        hsnCode = ""
                                         pendingImageFile = null
                                         message = "Product added successfully"
                                         android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
@@ -3496,6 +3504,8 @@ fun ProductEditDialog(
     var unitType by remember { mutableStateOf(product.unitType) }
     var barcode by remember { mutableStateOf(product.barcode ?: "") }
     var minStockLevel by remember { mutableStateOf(if (product.minStockLevel > 0.0) product.minStockLevel.toString() else "") }
+    var gstRateBps by remember { mutableIntStateOf(product.gstRateBps) }
+    var hsnCode by remember { mutableStateOf(product.hsnCode ?: "") }
     
     var catExpanded by remember { mutableStateOf(false) }
     var unitExpanded by remember { mutableStateOf(false) }
@@ -3639,6 +3649,8 @@ fun ProductEditDialog(
                     enabled = !isSubmitting
                 )
 
+                ProductGstFields(gstRateBps, { gstRateBps = it }, hsnCode, { hsnCode = it }, enabled = !isSubmitting)
+
                 ExposedDropdownMenuBox(
                     expanded = unitExpanded,
                     onExpandedChange = { if (!isSubmitting) unitExpanded = it }
@@ -3695,6 +3707,8 @@ fun ProductEditDialog(
                             newUnitType = unitType,
                             newBarcode = barcode.ifBlank { null },
                             newMinStockLevel = minStockVal,
+                            newGstRateBps = gstRateBps,
+                            newHsnCode = hsnCode,
                             onSuccess = {
                                 isSubmitting = false
                                 android.widget.Toast.makeText(context, "Product updated successfully", android.widget.Toast.LENGTH_SHORT).show()
@@ -4140,3 +4154,51 @@ fun StockAdjustmentDialog(
     )
 }
 
+/** GST slab and HSN code for a product. Prices entered for the product include this GST. */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ProductGstFields(
+    gstRateBps: Int,
+    onGstRateChange: (Int) -> Unit,
+    hsnCode: String,
+    onHsnChange: (String) -> Unit,
+    enabled: Boolean = true
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+        ExposedDropdownMenuBox(
+            expanded = expanded,
+            onExpandedChange = { if (enabled) expanded = it },
+            modifier = Modifier.weight(1f)
+        ) {
+            OutlinedTextField(
+                readOnly = true,
+                value = com.kadaikutty.pos.core.common.GstMath.label(gstRateBps),
+                onValueChange = {},
+                label = { Text("GST (incl.)") },
+                trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                shape = RoundedCornerShape(12.dp),
+                enabled = enabled,
+                modifier = Modifier.menuAnchor(MenuAnchorType.PrimaryNotEditable, enabled = enabled).fillMaxWidth()
+            )
+            ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+                com.kadaikutty.pos.core.common.GstMath.RATES_BPS.forEach { rate ->
+                    DropdownMenuItem(
+                        text = { Text(com.kadaikutty.pos.core.common.GstMath.label(rate)) },
+                        onClick = { onGstRateChange(rate); expanded = false }
+                    )
+                }
+            }
+        }
+        OutlinedTextField(
+            value = hsnCode,
+            onValueChange = { onHsnChange(it.filter(Char::isLetterOrDigit).take(8)) },
+            label = { Text("HSN (optional)") },
+            singleLine = true,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+            shape = RoundedCornerShape(12.dp),
+            enabled = enabled,
+            modifier = Modifier.weight(1f)
+        )
+    }
+}
