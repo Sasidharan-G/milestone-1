@@ -29,6 +29,39 @@ fun openingStockToStorageUnits(typed: Double, unitType: String?): Long {
     return if (rounded in 1..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) rounded else 0L
 }
 
+/** KG and LITER are the units stored in thousandths (g, ml); every other unit is a whole count. */
+fun isThousandthsUnit(unitType: String?): Boolean = unitType == "KG" || unitType == "LITER"
+
+/**
+ * A quantity typed on screen ("1.005" kg, "3" pcs) to storage units. Goes through BigDecimal:
+ * `(1.005 * 1000).toLong()` is 1004 because the double just under 1.005 truncates, so about 1 in
+ * 100 typed weights lost a gram. Returns null for blank, negative, over-precise ("1.0005" kg,
+ * "2.5" pcs) or out-of-range input; 0 is allowed and callers that need > 0 check it themselves.
+ */
+fun typedQuantityToStorageUnits(text: String, unitType: String?): Long? = try {
+    val raw = text.trim()
+    if (raw.isEmpty() || raw == ".") null else {
+        val typed = java.math.BigDecimal(if (raw.startsWith(".")) "0$raw" else raw)
+        val scaled = if (isThousandthsUnit(unitType)) typed.movePointRight(3) else typed
+        if (scaled.signum() < 0 || scaled.stripTrailingZeros().scale() > 0) null
+        else scaled.toBigIntegerExact().toLong().takeIf { it in 0..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY }
+    }
+} catch (_: Exception) { null }
+
+/** Storage units back to what the user types: 25000 g -> "25.000", 3 pcs -> "3". */
+fun storageUnitsToTyped(quantity: Long, unitType: String?): String =
+    if (isThousandthsUnit(unitType)) java.math.BigDecimal.valueOf(quantity, 3).toPlainString() else quantity.toString()
+
+/** Short unit label for quantities and per-unit prices: "Kg", "L", "Pcs". */
+fun unitShortLabel(unitType: String?): String = when (unitType) {
+    "KG" -> "Kg"
+    "LITER" -> "L"
+    else -> "Pcs"
+}
+
+/** "25.000 Kg", "1.500 L", "3 Pcs". */
+fun formatQuantity(quantity: Long, unitType: String?): String = "${storageUnitsToTyped(quantity, unitType)} ${unitShortLabel(unitType)}"
+
 /**
  * The unit typed in a bulk-import file or scanned label almost never matches one of the five app
  * unit types exactly ("Kgs", "ltr", "pcs", "Nos", "Bottles"...). Maps the common shorthand a shop

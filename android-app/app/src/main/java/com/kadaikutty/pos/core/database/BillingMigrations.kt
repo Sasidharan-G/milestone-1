@@ -425,3 +425,15 @@ val migration25To26 = object : Migration(25, 26) {
         db.execSQL("CREATE INDEX IF NOT EXISTS `index_sync_conflicts_companyId_createdAtEpochMs` ON `sync_conflicts` (`companyId`, `createdAtEpochMs`)")
     }
 }
+
+/**
+ * Adds the product photo column. It holds the S3 URL once a device has uploaded the local photo
+ * (see ProductImageUploadWorker); until then it is null and the row is found instead by the
+ * device-local convention path `filesDir/product_images/{id}.jpg`. A plain ADD COLUMN is enough
+ * here (unlike the rebuilds above) because SQLite on API 26 only lacks DROP COLUMN, not ADD.
+ */
+val migration26To27 = object : Migration(26, 27) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `products` ADD COLUMN `imageUrl` TEXT")
+    }
+}

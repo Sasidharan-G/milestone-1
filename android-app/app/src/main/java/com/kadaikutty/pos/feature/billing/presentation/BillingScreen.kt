@@ -438,8 +438,8 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                             onClick = {
                                 val isDecimalUnit = (selectedProduct?.unitType == "KG") || (selectedProduct?.unitType == "LITER")
                                 val parsedQty = if (isDecimalUnit) {
-                                    val qty = quantityText.toDoubleOrNull()
-                                    if (qty != null && qty > 0) (qty * 1000).toLong() else null
+                                    // BigDecimal, not (qty * 1000).toLong(): the double truncates 1.005 kg to 1004 g.
+                                    com.kadaikutty.pos.feature.stock.domain.typedQuantityToStorageUnits(quantityText, "KG")?.takeIf { it > 0 }
                                 } else quantityText.toLongOrNull()
                                 
                                 val priceDouble = priceText.toDoubleOrNull()

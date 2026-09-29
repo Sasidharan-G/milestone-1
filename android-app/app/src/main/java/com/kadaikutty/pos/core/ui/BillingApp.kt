@@ -59,6 +59,9 @@ import com.kadaikutty.pos.feature.auth.RegisterViewModel
 import androidx.compose.animation.core.*
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.ui.platform.LocalContext
 import android.widget.Toast
 import com.kadaikutty.pos.feature.home.HomeViewModel
@@ -74,6 +77,7 @@ import com.kadaikutty.pos.core.ui.theme.BillingTheme
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.layout.layout
 
 val LocalLayoutMode = staticCompositionLocalOf { "Auto" }
 
@@ -120,7 +124,7 @@ fun BillingApp() {
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color(0xFF0C1018)),
+                .background(Color(0xFF1E3A8A)),
             contentAlignment = Alignment.Center,
         ) {
             CircularProgressIndicator(color = Color.White)
@@ -234,6 +238,7 @@ fun BillingApp() {
                         session = session,
                         shopName = shopName,
                         onNavigateTo = { route -> navController.navigate(route.path) },
+                        onOpenMasters = { tab -> navController.navigate("${AppRoute.Masters.path}?tab=$tab") },
                         onLogout = {
                             vm.logout()
                             navController.navigate(AppRoute.Login.path) {
@@ -366,7 +371,15 @@ fun BillingApp() {
                     }
                 }
 
-                composable(AppRoute.Masters.path) {
+                // Optional ?tab= picks the Masters tab to open on (0 Categories, 1 Products, 5 Ledger);
+                // a plain "masters" still matches and opens Categories.
+                composable(
+                    "${AppRoute.Masters.path}?tab={tab}",
+                    arguments = listOf(androidx.navigation.navArgument("tab") {
+                        type = androidx.navigation.NavType.IntType
+                        defaultValue = 0
+                    })
+                ) { backStackEntry ->
                     val catVm: CategoryViewModel = hiltViewModel()
                     val prodVm: ProductViewModel = hiltViewModel()
                     val custVm: CustomerViewModel = hiltViewModel()
@@ -381,6 +394,7 @@ fun BillingApp() {
                         supplierVm = suppVm,
                         expenseVm = expVm,
                         settingsVm = settingsVm,
+                        initialTab = backStackEntry.arguments?.getInt("tab") ?: 0,
                         onBack = { navController.popBackStack() }
                     )
                 }
@@ -497,8 +511,11 @@ fun BillingApp() {
                 modifier = if (syncNotificationState is com.kadaikutty.pos.core.sync.SyncNotificationState.Failed) {
                     Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 8.dp)
                 } else {
-                    // Small "Synced" pill stays top-start so it never covers the sync / lock / settings icons at top-end.
-                    Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 4.dp)
+                    // Small "Synced" pill stays top-start so it never covers the sync / lock / settings icons
+                    // at top-end. 56dp of top padding clears the 26sp bold shop-name title below it (that
+                    // title's own Column starts at topInset + 20.dp and is roughly 32dp tall) - 4dp landed
+                    // the pill directly on top of the title text.
+                    Modifier.align(Alignment.TopStart).statusBarsPadding().padding(top = 56.dp)
                 }
             )
 
@@ -530,6 +547,7 @@ fun HomeScreen(
     session: Session?,
     shopName: String,
     onNavigateTo: (AppRoute) -> Unit,
+    onOpenMasters: (tab: Int) -> Unit,
     onLogout: () -> Unit,
     onCloseShiftClick: () -> Unit = {}
 ) {
@@ -635,13 +653,13 @@ fun HomeScreen(
             Box(modifier = Modifier.fillMaxWidth()) {
                 // Behind the status bar the header would sit under the phone's white
                 // signal/wifi/battery icons and hide them; a charcoal strip keeps them readable.
-                Box(modifier = Modifier.fillMaxWidth().height(topInset).background(Color(0xFF0C1018)))
+                Box(modifier = Modifier.fillMaxWidth().height(topInset).background(Color(0xFF1E3A8A)))
                 // 1. Charcoal banner with bottom-rounded corners
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(brandHeaderShape)
-                        .background(Color(0xFF0C1018))
+                        .background(Color(0xFF1E3A8A))
                         .padding(top = topInset + 20.dp)
                         .padding(bottom = 20.dp)
                 ) {
@@ -716,23 +734,60 @@ fun HomeScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 16.dp),
-                verticalArrangement = Arrangement.spacedBy(24.dp)
+                verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
 
-            // Plain sales-figures table - easy to read at a glance, no reading of chart/graph
-            // needed, matches how the client's reference app shows this.
+            // Four KPI cards instead of a plain table - still no chart/graph to read, just a
+            // bigger number and an icon per period, easier to scan at a glance than a stacked list.
+            fun invoiceSubtitle(count: Int) = "$count ${if (count == 1) "Invoice" else "Invoices"}"
             if (showSales) {
-                Card(
-                    modifier = Modifier.fillMaxWidth().offset(y = (-28).dp),
-                    shape = RoundedCornerShape(18.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                Column(
+                    // Tucks the cards 28dp up into the header. Unlike offset(), this also gives the
+                    // 28dp back to the layout, so no empty band is left under the cards.
+                    modifier = Modifier.fillMaxWidth().layout { measurable, constraints ->
+                        val placeable = measurable.measure(constraints)
+                        val overlap = 28.dp.roundToPx()
+                        layout(placeable.width, (placeable.height - overlap).coerceAtLeast(0)) {
+                            placeable.place(0, -overlap)
+                        }
+                    },
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(modifier = Modifier.padding(vertical = 6.dp)) {
-                        SalesSummaryRow("Today Sale", dashboardState.todaySalesMinorUnits, dashboardState.todayInvoicesCount)
-                        SalesSummaryRow("Yesterday Sale", dashboardState.yesterdaySalesMinorUnits, dashboardState.yesterdayInvoicesCount)
-                        SalesSummaryRow("Weekly Sale", dashboardState.weeklySalesMinorUnits, dashboardState.weeklyInvoicesCount)
-                        SalesSummaryRow("Monthly Sale", dashboardState.monthlySalesMinorUnits, dashboardState.monthlyInvoicesCount, isLast = true)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DashboardKpiCard(
+                            title = "Today Sale",
+                            value = Money(dashboardState.todaySalesMinorUnits).toString(),
+                            subtitle = invoiceSubtitle(dashboardState.todayInvoicesCount),
+                            icon = Icons.Default.Today,
+                            accentColor = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.weight(1f)
+                        )
+                        DashboardKpiCard(
+                            title = "Yesterday Sale",
+                            value = Money(dashboardState.yesterdaySalesMinorUnits).toString(),
+                            subtitle = invoiceSubtitle(dashboardState.yesterdayInvoicesCount),
+                            icon = Icons.Default.History,
+                            accentColor = MaterialTheme.colorScheme.tertiary,
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        DashboardKpiCard(
+                            title = "Weekly Sale",
+                            value = Money(dashboardState.weeklySalesMinorUnits).toString(),
+                            subtitle = invoiceSubtitle(dashboardState.weeklyInvoicesCount),
+                            icon = Icons.Default.CalendarViewWeek,
+                            accentColor = Color(0xFFF59E0B),
+                            modifier = Modifier.weight(1f)
+                        )
+                        DashboardKpiCard(
+                            title = "Monthly Sale",
+                            value = Money(dashboardState.monthlySalesMinorUnits).toString(),
+                            subtitle = invoiceSubtitle(dashboardState.monthlyInvoicesCount),
+                            icon = Icons.Default.CalendarMonth,
+                            accentColor = MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -783,34 +838,53 @@ fun HomeScreen(
                 }
             }
 
-            // 2. Big-icon menu grid - every destination one tap away, label under a coloured
-            // icon so the screen reads even for a shopkeeper who isn't comfortable with English
-            // text alone. Every tile below calls the exact same onNavigateTo(...)/permission
-            // check the old bottom-bar/FAB/hero-card used - only the layout changed.
-            val extendedColors = com.kadaikutty.pos.core.ui.theme.LocalExtendedColors.current
-            data class MenuTile(val label: String, val icon: ImageVector, val container: Color, val onContainer: Color, val onClick: () -> Unit)
-            val menuTiles = buildList {
-                if (showSales) add(MenuTile("Billing", Icons.Default.PointOfSale, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer) { onNavigateTo(AppRoute.Billing) })
-                if (showMasters) add(MenuTile("Category", Icons.Default.Category, MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer) { onNavigateTo(AppRoute.Masters) })
-                if (showMasters) add(MenuTile("Product", Icons.Default.Inventory2, MaterialTheme.colorScheme.tertiaryContainer, MaterialTheme.colorScheme.onTertiaryContainer) { onNavigateTo(AppRoute.Masters) })
-                if (showMasters) add(MenuTile("Ledger", Icons.Default.MenuBook, extendedColors.ledgerContainer, extendedColors.onLedgerContainer) { onNavigateTo(AppRoute.Masters) })
-                if (showPurchases) add(MenuTile("Purchase", Icons.Default.LocalShipping, MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.onPrimaryContainer) { onNavigateTo(AppRoute.Purchases) })
-                if (showReports) add(MenuTile("Reports", Icons.Default.BarChart, extendedColors.reportsContainer, extendedColors.onReportsContainer) { onNavigateTo(AppRoute.Reports) })
-                if (showSettings) add(MenuTile("Settings", Icons.Default.Settings, MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant) { onNavigateTo(AppRoute.Settings) })
+            // 2. Billing hero card, then the Business Modules: three master tiles and two wide cards.
+            // Every entry calls the same onNavigateTo(...)/permission check the old flat grid used.
+            if (showSales) {
+                BillingHeroCard(onClick = { onNavigateTo(AppRoute.Billing) })
             }
 
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                menuTiles.chunked(3).forEach { rowTiles ->
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        rowTiles.forEach { tile ->
-                            DashboardTileCard(
-                                title = tile.label,
-                                icon = tile.icon,
-                                iconContainerColor = tile.container,
-                                iconTint = tile.onContainer,
-                                modifier = Modifier.width(100.dp),
-                                onClick = tile.onClick
-                            )
+            if (showMasters || showPurchases || showReports) {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        "Business Modules",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onBackground,
+                        modifier = Modifier.padding(horizontal = 2.dp)
+                    )
+                    if (showMasters) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            ModuleTile("Category", "Groups", com.kadaikutty.pos.R.drawable.ic3d_category, Modifier.weight(1f)) { onOpenMasters(0) }
+                            ModuleTile("Product", "Items & stock", com.kadaikutty.pos.R.drawable.ic3d_product, Modifier.weight(1f)) { onOpenMasters(1) }
+                            ModuleTile("Ledger", "Customers", com.kadaikutty.pos.R.drawable.ic3d_ledger, Modifier.weight(1f)) { onOpenMasters(5) }
+                        }
+                    }
+                    if (showPurchases || showReports) {
+                        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            if (showPurchases) {
+                                val low = dashboardState.lowStockCount
+                                ModuleWideCard(
+                                    title = "Purchase",
+                                    subtitle = "Inward stock & suppliers",
+                                    iconRes = com.kadaikutty.pos.R.drawable.ic3d_purchase,
+                                    badge = if (low > 0) "$low Low" else null,
+                                    badgeBg = Color(0xFFFEE2E2),
+                                    badgeFg = Color(0xFFDC2626),
+                                    modifier = Modifier.weight(1f)
+                                ) { onNavigateTo(AppRoute.Purchases) }
+                            }
+                            if (showReports) {
+                                ModuleWideCard(
+                                    title = "Reports",
+                                    subtitle = "Sales, bills & profit",
+                                    iconRes = com.kadaikutty.pos.R.drawable.ic3d_reports,
+                                    badge = "Live",
+                                    badgeBg = Color(0xFFD1FAE5),
+                                    badgeFg = Color(0xFF047857),
+                                    modifier = Modifier.weight(1f)
+                                ) { onNavigateTo(AppRoute.Reports) }
+                            }
                         }
                     }
                 }
@@ -838,6 +912,7 @@ fun HomeScreen(
                 }
 
                 val df = SimpleDateFormat("dd MMM, hh:mm a", Locale.getDefault())
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 dashboardState.recentSales.forEach { sale ->
                     Card(
                         onClick = { selectedBillNumForDetail = sale.billNumber },
@@ -846,9 +921,9 @@ fun HomeScreen(
                             .border(
                                 width = 1.dp,
                                 color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                                shape = RoundedCornerShape(14.dp)
+                                shape = RoundedCornerShape(10.dp)
                             ),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(10.dp),
                         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                     ) {
@@ -896,7 +971,10 @@ fun HomeScreen(
                         }
                     }
                 }
+                }
             }
+
+            BrandFooter(modifier = Modifier.padding(top = 8.dp))
 
             Spacer(modifier = Modifier.height(paddingValues.calculateBottomPadding() + 24.dp))
         } // close the inner Column
@@ -904,26 +982,136 @@ fun HomeScreen(
     }
 }
 
-/** One row of the plain Today/Yesterday/Weekly/Monthly sales table - "amount - N bills". */
+/** Big blue "Point of Sale" card with the 3D invoice art and a START NEW BILL button. */
 @Composable
-private fun SalesSummaryRow(label: String, amountMinorUnits: Long, invoiceCount: Int, isLast: Boolean = false) {
-    Row(
+private fun BillingHeroCard(onClick: () -> Unit) {
+    val shape = RoundedCornerShape(20.dp)
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
+            .clip(shape)
+            .background(Brush.linearGradient(listOf(Color(0xFF0A3FC4), Color(0xFF0B6BFF), Color(0xFF4FA3FF))))
+            .clickable(onClickLabel = "Start new bill", onClick = onClick)
     ) {
-        Text(text = label, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
-        Text(
-            text = "${Money(amountMinorUnits)}  •  $invoiceCount",
-            fontSize = 15.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+        androidx.compose.foundation.Image(
+            painter = androidx.compose.ui.res.painterResource(com.kadaikutty.pos.R.drawable.ic3d_billing),
+            contentDescription = null,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 8.dp, end = 6.dp)
+                .size(128.dp)
+                .rotate(-6f)
         )
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp)) {
+            Surface(color = Color.White.copy(alpha = 0.2f), shape = RoundedCornerShape(10.dp)) {
+                Text(
+                    "POINT OF SALE",
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 0.3.sp,
+                    color = Color.White,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+            Spacer(Modifier.height(8.dp))
+            Text("Billing", fontSize = 22.sp, fontWeight = FontWeight.ExtraBold, color = Color.White)
+            Text(
+                "Create invoices, barcode scan & instant checkout",
+                fontSize = 12.sp,
+                lineHeight = 16.sp,
+                color = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.padding(top = 3.dp).widthIn(max = 190.dp)
+            )
+            Spacer(Modifier.height(16.dp))
+            Surface(
+                onClick = onClick,
+                color = Color.White,
+                shape = RoundedCornerShape(14.dp),
+                shadowElevation = 6.dp,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Bolt, contentDescription = null, tint = Color(0xFFF59E0B), modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text("START NEW BILL", fontSize = 14.sp, fontWeight = FontWeight.ExtraBold, color = Color(0xFF0A3FC4), modifier = Modifier.weight(1f))
+                    Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Color(0xFF0A3FC4))
+                }
+            }
+        }
     }
-    if (!isLast) {
-        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f))
+}
+
+/** Small square module tile: 3D icon, bold title, grey caption. */
+@Composable
+private fun ModuleTile(
+    title: String,
+    subtitle: String,
+    @androidx.annotation.DrawableRes iconRes: Int,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(16.dp)),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, top = 12.dp, bottom = 10.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(iconRes),
+                contentDescription = null,
+                modifier = Modifier.size(54.dp)
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(title, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 1)
+            Text(subtitle, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** Wide module card: 3D icon top-left, optional badge top-right, title + caption below. */
+@Composable
+private fun ModuleWideCard(
+    title: String,
+    subtitle: String,
+    @androidx.annotation.DrawableRes iconRes: Int,
+    badge: String?,
+    badgeBg: Color,
+    badgeFg: Color,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier.border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.25f), RoundedCornerShape(18.dp)),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Box(modifier = Modifier.fillMaxWidth().padding(12.dp)) {
+            Column {
+                androidx.compose.foundation.Image(
+                    painter = androidx.compose.ui.res.painterResource(iconRes),
+                    contentDescription = null,
+                    modifier = Modifier.size(60.dp)
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(subtitle, fontSize = 11.sp, lineHeight = 14.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+            }
+            if (badge != null) {
+                Surface(color = badgeBg, shape = RoundedCornerShape(9.dp), modifier = Modifier.align(Alignment.TopEnd)) {
+                    Text(badge, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = badgeFg, modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp))
+                }
+            }
+        }
     }
 }
 
@@ -945,9 +1133,9 @@ fun DashboardKpiCard(
     ) {
         Column(
             modifier = Modifier
-                .padding(16.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
                 .fillMaxSize(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -956,109 +1144,36 @@ fun DashboardKpiCard(
             ) {
                 Text(
                     text = title,
-                    fontSize = 13.sp,
+                    fontSize = 12.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
                 Surface(
                     color = accentColor.copy(alpha = 0.15f),
-                    shape = RoundedCornerShape(8.dp)
+                    shape = RoundedCornerShape(6.dp)
                 ) {
                     Icon(
                         imageVector = icon,
                         contentDescription = null,
                         tint = accentColor,
-                        modifier = Modifier.padding(6.dp).size(20.dp)
+                        modifier = Modifier.padding(4.dp).size(16.dp)
                     )
                 }
             }
 
             Text(
                 text = value,
-                fontSize = 24.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = accentColor
             )
 
             Text(
                 text = subtitle,
-                fontSize = 12.sp,
+                fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.9f)
             )
         }
     }
 }
 
-@Composable
-fun DashboardTileCard(
-    title: String,
-    icon: ImageVector,
-    modifier: Modifier = Modifier,
-    iconContainerColor: Color = MaterialTheme.colorScheme.primaryContainer,
-    iconTint: Color = MaterialTheme.colorScheme.onPrimaryContainer,
-    badge: String? = null,
-    badgeColor: Color = MaterialTheme.colorScheme.primary,
-    onClick: () -> Unit
-) {
-    Card(
-        modifier = modifier
-            .clickable { onClick() }
-            .border(
-                width = 1.dp,
-                color = MaterialTheme.colorScheme.outline.copy(alpha = 0.35f),
-                shape = RoundedCornerShape(16.dp)
-            ),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .padding(14.dp)
-                .fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Surface(
-                    color = iconContainerColor,
-                    shape = RoundedCornerShape(10.dp)
-                ) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = null,
-                        tint = iconTint,
-                        modifier = Modifier.padding(8.dp).size(22.dp)
-                    )
-                }
-
-                if (badge != null) {
-                    Surface(
-                        color = badgeColor.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(6.dp)
-                    ) {
-                        Text(
-                            text = badge,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = badgeColor,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-                }
-            }
-
-            Column {
-                Text(
-                    text = title,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
-        }
-    }
-}

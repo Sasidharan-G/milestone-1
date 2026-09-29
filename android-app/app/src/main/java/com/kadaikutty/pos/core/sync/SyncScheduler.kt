@@ -10,6 +10,7 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.ExistingPeriodicWorkPolicy
 import java.util.concurrent.TimeUnit
 import androidx.work.BackoffPolicy
+import androidx.work.workDataOf
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -128,6 +129,22 @@ class SyncScheduler(private val context: Context) {
             "billing-periodic-sync",
             ExistingPeriodicWorkPolicy.KEEP,
             pushRequest
+        )
+    }
+
+    /**
+     * Enqueues (or replaces the queued upload for) one product's locally-saved photo. Unique per
+     * product id: editing the photo again before the last upload ran must send the newest one, not
+     * queue both.
+     */
+    fun requestProductImageUpload(productId: String) {
+        val request = OneTimeWorkRequestBuilder<ProductImageUploadWorker>()
+            .setInputData(workDataOf(ProductImageUploadWorker.KEY_PRODUCT_ID to productId))
+            .setConstraints(Constraints(requiredNetworkType = NetworkType.CONNECTED))
+            .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
+            .build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "product-image-upload-$productId", ExistingWorkPolicy.REPLACE, request
         )
     }
 

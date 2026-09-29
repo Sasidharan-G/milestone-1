@@ -243,4 +243,13 @@ export interface ObjectStorage {
   writeLocalContent(companyId: string, backupId: string, content: Buffer): Promise<void>;
   readLocalContent(companyId: string, backupId: string): Promise<Buffer>;
   delete(companyId: string, backupId: string): Promise<void>;
+  /**
+   * A product photo has no PENDING/READY bookkeeping the way a backup does: it is small, keyed by
+   * productId alone, and idempotent (a re-upload just overwrites the same object). The device
+   * commits the returned [publicUrl] into the product's normal sync payload itself once the upload
+   * succeeds, so this never touches the data store.
+   */
+  createProductImageUploadUrl(companyId: string, productId: string, contentType: string): Promise<{ uploadUrl: string; publicUrl: string; requiredHeaders?: Record<string, string> }>;
+  writeProductImageContent(companyId: string, productId: string, content: Buffer): Promise<void>;
+  readProductImageContent(companyId: string, productId: string): Promise<Buffer>;
 }

@@ -130,7 +130,7 @@ class ReportRepositoryImpl(
                     rows.add(listOf(
                         "${index + 1}",
                         item.productName,
-                        item.totalQty.toString(),
+                        com.kadaikutty.pos.feature.stock.domain.formatQuantity(item.totalQty, item.unitType),
                         revenue.toString(),
                         cost.toString(),
                         profit.toString()

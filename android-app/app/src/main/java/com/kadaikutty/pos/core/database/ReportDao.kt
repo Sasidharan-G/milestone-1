@@ -17,7 +17,7 @@ data class StockReportRow(
     val outwardQty: Long = 0L,
     val lastUpdatedEpochMs: Long = 0L
 )
-data class ProfitReportRawRow(val productId: String, val productName: String, val totalQty: Long, val totalRevenue: Long, val recordedCost: Long? = null)
+data class ProfitReportRawRow(val productId: String, val productName: String, val totalQty: Long, val totalRevenue: Long, val recordedCost: Long? = null, val unitType: String = "PIECE")
 data class PurchaseReportRow(val purchaseId: String, val orderNumber: String?, val invoiceNumber: String?, val date: String, val supplierName: String, val paymentMode: String, val totalAmount: Long)
 data class ExpenseReportRow(val expenseId: String, val date: String, val description: String, val amount: Long)
 data class LowStockRow(val productName: String, val categoryName: String, val currentStock: Long, val minStockLevel: Double, val unitType: String = "PIECE")
@@ -85,6 +85,7 @@ interface ReportDao {
         SELECT 
             p.id as productId,
             p.name as productName, 
+            p.unitType as unitType,
             SUM(si.quantity) as totalQty, 
             SUM(COALESCE(si.netRevenueMinorUnits, si.lineTotalMinorUnits - (
                 CAST(s.discountMinorUnits * 1.0 * (SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId AND x.productId <= si.productId) / MAX(1, (SELECT SUM(x.lineTotalMinorUnits) FROM sale_items x WHERE x.saleId = si.saleId)) AS INTEGER)

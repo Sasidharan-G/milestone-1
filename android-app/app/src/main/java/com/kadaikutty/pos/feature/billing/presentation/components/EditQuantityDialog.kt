@@ -63,8 +63,8 @@ fun EditQuantityDialog(
                 onClick = {
                     val isDec = line.unitType == "KG" || line.unitType == "LITER"
                     val parsed = if (isDec) {
-                        val d = inputQty.toDoubleOrNull()
-                        if (d != null && d > 0) (d * 1000).toLong() else null
+                        // BigDecimal, not (qty * 1000).toLong(): the double truncates 1.005 kg to 1004 g.
+                        com.kadaikutty.pos.feature.stock.domain.typedQuantityToStorageUnits(inputQty, "KG")?.takeIf { it > 0 }
                     } else inputQty.toLongOrNull()
 
                     if (parsed != null && parsed > 0) {

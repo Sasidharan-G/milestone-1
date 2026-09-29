@@ -985,7 +985,7 @@ fun ShopLicenseAdminCard(
                             license.licenseStatus == "REVOKED" -> "ACCESS REVOKED BY MASTER"
                             license.isExpired -> "EXPIRED"
                             license.licenseStatus == "TRIAL" -> "2-DAY TRIAL (${license.remainingHours}h Left)"
-                            else -> "1-YEAR ACTIVE (${license.remainingDays}d Left)"
+                            else -> "${license.planLabel} ACTIVE (${license.remainingLabel} Left)"
                         }
                         val statusColor = when {
                             license.licenseStatus == "PENDING_APPROVAL" -> Color(0xFFF87171)

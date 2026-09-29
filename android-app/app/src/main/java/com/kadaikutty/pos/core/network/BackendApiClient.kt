@@ -77,6 +77,16 @@ class BackendApiClient @Inject constructor(
         return request("POST", "backups/${intent.getString("backupId")}/complete", token, JSONObject())
     }
 
+    suspend fun requestProductImageUploadUrl(token: String, productId: String, contentType: String): JSONObject =
+        request("POST", "products/$productId/image-upload-url", token, JSONObject().put("contentType", contentType))
+
+    /** Returns the public URL the uploaded photo is now reachable at. */
+    suspend fun uploadProductImage(token: String, productId: String, file: java.io.File, contentType: String): String {
+        val intent = requestProductImageUploadUrl(token, productId, contentType)
+        putFileBinary(token, intent.getString("uploadUrl"), intent.optJSONObject("requiredHeaders"), file)
+        return intent.getString("publicUrl")
+    }
+
     /** Permanently deletes the signed-in owner's shop and all its cloud data. The PIN is asked again on purpose. */
     suspend fun deleteAccount(token: String, pin: String): JSONObject =
         request("DELETE", "account", token, JSONObject().put("confirmation", "DELETE").put("password", pin))

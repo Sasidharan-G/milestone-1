@@ -144,8 +144,8 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                 Button(
                     onClick = {
                         val parsedQty = if (isDec) {
-                            val q = inputQty.toDoubleOrNull()
-                            if (q != null && q > 0) (q * 1000).toLong() else null
+                            // BigDecimal, not (qty * 1000).toLong(): the double truncates 1.005 kg to 1004 g.
+                            com.kadaikutty.pos.feature.stock.domain.typedQuantityToStorageUnits(inputQty, "KG")?.takeIf { it > 0 }
                         } else {
                             inputQty.toLongOrNull()
                         }
@@ -395,8 +395,8 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                             onClick = {
                                 val isDecimalUnit = selectedProduct?.unitType == "KG" || selectedProduct?.unitType == "LITER"
                                 val parsedQty = if (isDecimalUnit) {
-                                    val qty = quantityText.toDoubleOrNull()
-                                    if (qty != null && qty > 0) (qty * 1000).toLong() else null
+                                    // BigDecimal, not (qty * 1000).toLong(): the double truncates 1.005 kg to 1004 g.
+                                    com.kadaikutty.pos.feature.stock.domain.typedQuantityToStorageUnits(quantityText, "KG")?.takeIf { it > 0 }
                                 } else {
                                     quantityText.toLongOrNull()
                                 }
@@ -1014,7 +1014,10 @@ fun PurchaseDetailsDialog(
                 } else {
                     items.forEach { item ->
                         val prodName = products.find { it.id == item.productId }?.name ?: "Product #${item.productId.take(4)}"
-                        val lineTotal = item.quantity * item.unitValueMinorUnits
+                        // The stored line total, not qty x price: KG/LITER qty is in g/ml, so 25 kg at Rs 40/kg
+                        // multiplied out showed Rs 10,00,000. The unit is the one saved on the purchase line.
+                        val lineTotal = item.lineTotalMinorUnits
+                        val itemUnit = item.unitType ?: products.find { it.id == item.productId }?.unitType
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(10.dp),
@@ -1028,7 +1031,7 @@ fun PurchaseDetailsDialog(
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
                                     Text(prodName, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    Text("Qty: ${item.quantity}  ×  ${Money(item.unitValueMinorUnits)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    Text("Qty: ${com.kadaikutty.pos.feature.stock.domain.formatQuantity(item.quantity, itemUnit)}  ×  ${Money(item.unitValueMinorUnits)}${if (com.kadaikutty.pos.feature.stock.domain.isThousandthsUnit(itemUnit)) " / ${com.kadaikutty.pos.feature.stock.domain.unitShortLabel(itemUnit)}" else ""}", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
                                 Text(Money(lineTotal).toString(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
                             }

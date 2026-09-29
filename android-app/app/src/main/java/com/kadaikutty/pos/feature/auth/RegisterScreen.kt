@@ -376,7 +376,7 @@ fun RegisterScreenContent(
                     shape = RoundedCornerShape(percent = 50),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = Color.White,
-                        contentColor = Color(0xFFE40000)
+                        contentColor = Color(0xFF1E3A8A)
                     ),
                     elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 0.dp),
                     enabled = !state.loading
@@ -384,11 +384,11 @@ fun RegisterScreenContent(
                     if (state.loading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            color = Color(0xFFE40000)
+                            color = Color(0xFF1E3A8A)
                         )
                     } else {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFFE40000))
+                            Icon(Icons.Default.Lock, contentDescription = null, tint = Color(0xFF1E3A8A))
                             Text("Verify Mobile & Register", fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
@@ -413,7 +413,7 @@ fun RegisterScreenContent(
             ) {
                 Surface(
                     shape = RoundedCornerShape(28.dp),
-                    color = Color(0xFF0C1018),
+                    color = Color(0xFF1E3A8A),
                     border = androidx.compose.foundation.BorderStroke(1.5.dp, Color.White.copy(alpha = 0.35f)),
                     shadowElevation = 24.dp,
                     modifier = Modifier

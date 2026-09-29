@@ -15,6 +15,7 @@ import sessionRoutes from './routes/sessionRoutes';
 import adminRoutes from './routes/adminRoutes';
 import publicPages from './routes/publicPages';
 import otpRoutes from './routes/otpRoutes';
+import productRoutes from './routes/productRoutes';
 import { providers } from './providers/providerRegistry';
 import { errorHandler, notFoundHandler, requestContext } from './middleware/requestContext';
 import { sessionRoom, userRoom } from './core/realtime';
@@ -86,6 +87,7 @@ app.use('/api/v1/license', licenseRoutes);
 app.use('/api/v1/sessions', sessionRoutes);
 app.use('/api/v1/admin', adminRoutes);
 app.use('/api/v1/otp', otpRoutes);
+app.use('/api/v1/products', productRoutes);
 
 // Web pages Google Play requires in the store listing (privacy policy, how to delete an account).
 app.use(publicPages);

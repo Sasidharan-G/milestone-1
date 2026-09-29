@@ -32,6 +32,8 @@ import kotlinx.coroutines.flow.first
 import com.kadaikutty.pos.core.auth.SessionStore
 import com.kadaikutty.pos.core.security.SyncWritePolicy
 import kotlinx.coroutines.flow.map
+import com.kadaikutty.pos.core.common.ProductImageStore
+import dagger.hilt.android.qualifiers.ApplicationContext
 
 
 data class LedgerEntry(
@@ -160,7 +162,9 @@ class CategoryViewModel @Inject constructor(
 class ProductViewModel @Inject constructor(
     private val database: BillingDatabase,
     private val syncManager: SyncManager,
-    private val sessionStore: SessionStore
+    private val sessionStore: SessionStore,
+    private val syncScheduler: com.kadaikutty.pos.core.sync.SyncScheduler,
+    @ApplicationContext private val appContext: android.content.Context
 ) : ViewModel() {
     private val dao = database.masterDao()
     private val reportDao = database.reportDao()
@@ -242,6 +246,8 @@ class ProductViewModel @Inject constructor(
         barcode: String?,
         minStockLevel: Double,
         openingStock: Double = 0.0,
+        /** A photo already compressed to a temp file (see ProductImageStore), waiting for the new product's id. */
+        pendingImagePath: String? = null,
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit
     ) {
@@ -310,6 +316,12 @@ class ProductViewModel @Inject constructor(
                 )
                 dao.insertProduct(product)
                 syncManager.enqueueProduct(product, "INSERT")
+                if (!pendingImagePath.isNullOrBlank()) {
+                    val temp = java.io.File(pendingImagePath)
+                    if (ProductImageStore.commitTemp(appContext, temp, product.id)) {
+                        syncScheduler.requestProductImageUpload(product.id)
+                    }
+                }
                 // Opening stock is only offered to an administrator in the UI, but a brand new product
                 // never has a stock history, so this can never step on a movement sync already created.
                 val openingUnits = com.kadaikutty.pos.feature.stock.domain.openingStockToStorageUnits(openingStock, unitType)
@@ -394,6 +406,43 @@ class ProductViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Replaces (or adds) this product's photo from a freshly picked/captured [sourceUri]. Runs the
+     * decode/compress off the main thread and only enqueues the upload once the file is safely on
+     * disk, so this returns quickly regardless of how large the original photo was.
+     */
+    fun setProductImage(product: ProductEntity, sourceUri: android.net.Uri, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Product")
+                val saved = ProductImageStore.compressInto(appContext, sourceUri, ProductImageStore.localFile(appContext, product.id))
+                if (!saved) {
+                    onError(IllegalArgumentException("Could not read that photo. Try another one."))
+                    return@launch
+                }
+                syncScheduler.requestProductImageUpload(product.id)
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
+    fun removeProductImage(product: ProductEntity, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
+        viewModelScope.launch {
+            try {
+                SyncWritePolicy.requireEdit(sessionStore.activeSession.first(), "Product")
+                ProductImageStore.delete(appContext, product.id)
+                val updated = product.copy(imageUrl = null, updatedAtEpochMs = System.currentTimeMillis())
+                dao.updateProduct(updated)
+                syncManager.enqueuePartialUpdate("Product", product.id, mapOf("imageUrl" to null))
+                onSuccess()
+            } catch (e: Exception) {
+                onError(e)
+            }
+        }
+    }
+
     val stockBalances: StateFlow<Map<String, Long>> = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
@@ -452,6 +501,7 @@ class ProductViewModel @Inject constructor(
                 }
                 dao.deleteProduct(product)
                 syncManager.enqueueProduct(product, "DELETE")
+                ProductImageStore.delete(appContext, product.id)
                 onSuccess()
             } catch (e: Exception) {
                 onError(e)
@@ -550,6 +600,7 @@ class ProductViewModel @Inject constructor(
                 val openingApplied = mutableSetOf<String>()
                 var stockSetCount = 0
                 var stockKeptCount = 0
+                var unitKeptCount = 0
                 var unstockedWithMinCount = 0
                 var openingGivenButNotAllowed = false
                 var zeroPriceCount = 0
@@ -640,6 +691,8 @@ class ProductViewModel @Inject constructor(
                         val rawBarcode: String?
                         val rawCategory: String
                         val rawUnit: String
+                        // Blank when the file has no unit for this row - an existing product then keeps its own.
+                        val rawUnitText: String?
                         val rawPurchase: Double
                         val rawSale: Double
                         val rawMinStock: Double
@@ -649,7 +702,8 @@ class ProductViewModel @Inject constructor(
                             rawName = tokens.getOrNull(colName)?.replace("\uFEFF", "")?.replace("\u200B", "")?.trim() ?: ""
                             rawBarcode = if (colBarcode >= 0) tokens.getOrNull(colBarcode)?.let { cleanBarcode(it) } else null
                             rawCategory = if (colCategory >= 0) tokens.getOrNull(colCategory)?.trim()?.ifBlank { "General" } ?: "General" else "General"
-                            rawUnit = com.kadaikutty.pos.feature.stock.domain.normalizeUnitType(if (colUnit >= 0) tokens.getOrNull(colUnit) else null)
+                            rawUnitText = if (colUnit >= 0) tokens.getOrNull(colUnit) else null
+                            rawUnit = com.kadaikutty.pos.feature.stock.domain.normalizeUnitType(rawUnitText)
                             rawPurchase = if (colPurchase >= 0) tokens.getOrNull(colPurchase)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
                             rawSale = if (colSale >= 0) tokens.getOrNull(colSale)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0 else 0.0
                             rawMinStock = if (colMinStock >= 0) tokens.getOrNull(colMinStock)?.trim()?.toDoubleOrNull() ?: 0.0 else 0.0
@@ -660,7 +714,8 @@ class ProductViewModel @Inject constructor(
                             rawCategory = tokens.getOrNull(2)?.trim()?.ifBlank { "General" } ?: "General"
                             rawPurchase = tokens.getOrNull(3)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                             rawSale = tokens.getOrNull(4)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
-                            rawUnit = com.kadaikutty.pos.feature.stock.domain.normalizeUnitType(tokens.getOrNull(5))
+                            rawUnitText = tokens.getOrNull(5)
+                            rawUnit = com.kadaikutty.pos.feature.stock.domain.normalizeUnitType(rawUnitText)
                             rawBarcode = cleanBarcode(tokens.getOrNull(6))
                             rawMinStock = tokens.getOrNull(7)?.trim()?.toDoubleOrNull() ?: 0.0
                             rawOpening = tokens.getOrNull(8)?.trim()?.replace(",", "")?.toDoubleOrNull() ?: 0.0
@@ -669,7 +724,8 @@ class ProductViewModel @Inject constructor(
                             rawName = tokens[0].replace("\uFEFF", "").replace("\u200B", "").trim()
                             rawBarcode = cleanBarcode(tokens.getOrNull(1))
                             rawCategory = tokens.getOrNull(2)?.trim()?.ifBlank { "General" } ?: "General"
-                            rawUnit = com.kadaikutty.pos.feature.stock.domain.normalizeUnitType(tokens.getOrNull(3))
+                            rawUnitText = tokens.getOrNull(3)
+                            rawUnit = com.kadaikutty.pos.feature.stock.domain.normalizeUnitType(rawUnitText)
                             rawPurchase = tokens.getOrNull(4)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                             rawSale = tokens.getOrNull(5)?.trim()?.replace("₹", "")?.replace(",", "")?.toDoubleOrNull() ?: 0.0
                             rawMinStock = tokens.getOrNull(6)?.trim()?.toDoubleOrNull() ?: 0.0
@@ -711,12 +767,21 @@ class ProductViewModel @Inject constructor(
                         val existingProduct = (if (normBarcode != null) existingBarcodeMap[normBarcode] else null) ?: existingNameMap[normName]
 
                         if (existingProduct != null) {
+                            // A blank unit keeps the product's own unit (it used to fall back to PIECE), and a
+                            // product with stock history never changes unit: 25000 g of rice would otherwise be
+                            // re-read as 25000 pieces and every later sale priced x1000. Same rule as updateProduct.
+                            val fileUnit = if (rawUnitText.isNullOrBlank()) existingProduct.unitType else rawUnit
+                            val importUnit = if (fileUnit != existingProduct.unitType &&
+                                database.saleDao().movementCount(companyId, existingProduct.id) > 0) {
+                                unitKeptCount++
+                                existingProduct.unitType
+                            } else fileUnit
                             val updatedProduct = existingProduct.copy(
                                 name = rawName,
                                 categoryId = targetCatId ?: generalCatId,
                                 purchasePriceMinorUnits = if (purchasePricePaise > 0) purchasePricePaise else existingProduct.purchasePriceMinorUnits,
                                 salePriceMinorUnits = if (salePricePaise > 0) salePricePaise else existingProduct.salePriceMinorUnits,
-                                unitType = rawUnit,
+                                unitType = importUnit,
                                 barcode = normBarcode ?: existingProduct.barcode,
                                 minStockLevel = if (rawMinStock > 0) rawMinStock else existingProduct.minStockLevel,
                                 updatedAtEpochMs = System.currentTimeMillis()
@@ -726,7 +791,7 @@ class ProductViewModel @Inject constructor(
                             if (normName.isNotBlank()) existingNameMap[normName] = updatedProduct
                             updatedCount++
                             if (salePricePaise <= 0 && updatedProduct.salePriceMinorUnits <= 0) zeroPriceCount++
-                            val opening = com.kadaikutty.pos.feature.stock.domain.openingStockToStorageUnits(rawOpening, rawUnit)
+                            val opening = com.kadaikutty.pos.feature.stock.domain.openingStockToStorageUnits(rawOpening, importUnit)
                             if (opening > 0L) {
                                 if (!canSetStock) openingGivenButNotAllowed = true
                                 // Only fills a product that has never had stock. A shop that re-imports an old
@@ -803,6 +868,7 @@ class ProductViewModel @Inject constructor(
                         errorMessage = null,
                         stockSetCount = stockSetCount,
                         stockKeptCount = stockKeptCount,
+                        unitKeptCount = unitKeptCount,
                         unstockedWithMinCount = unstockedWithMinCount,
                         openingGivenButNotAllowed = openingGivenButNotAllowed,
                         zeroPriceCount = zeroPriceCount,
@@ -1003,6 +1069,8 @@ data class ProductImportSummary(
     val stockSetCount: Int = 0,
     /** Existing products that already had stock history, so their quantity was left alone. */
     val stockKeptCount: Int = 0,
+    /** Existing products whose file row asked for a different unit, left unchanged because they have stock history. */
+    val unitKeptCount: Int = 0,
     /** New products with a minimum level but no opening stock: they show as low stock until stocked. */
     val unstockedWithMinCount: Int = 0,
     /** The file had opening stock but the signed-in user may not set stock (administrators only). */

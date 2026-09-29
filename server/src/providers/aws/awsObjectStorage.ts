@@ -98,6 +98,38 @@ export class AwsObjectStorage implements ObjectStorage {
     } catch (error) { throw mapAwsError(error, 'S3 backup deletion'); }
   }
 
+  private productImageKey(companyId: string, productId: string): string {
+    return `tenants/${companyId}/products/${productId}.jpg`;
+  }
+
+  /**
+   * The product-images bucket is public-read (see AppReleasesBucket in the CloudFormation
+   * template, which this mirrors) so the URL handed back here can be stored in the product's
+   * synced `imageUrl` and loaded from any device indefinitely - unlike a presigned GET, it never
+   * expires, which matters because that URL is persisted, not used once.
+   */
+  async createProductImageUploadUrl(companyId: string, productId: string, contentType: string): Promise<{ uploadUrl: string; publicUrl: string; requiredHeaders?: Record<string, string> }> {
+    const key = this.productImageKey(companyId, productId);
+    try {
+      const command = new PutObjectCommand({ Bucket: this.config.productImagesBucket, Key: key, ContentType: contentType });
+      const uploadUrl = await this.signer(this.s3, command, { expiresIn: this.config.presignedUrlSeconds });
+      const publicUrl = `https://${this.config.productImagesBucket}.s3.${this.config.region}.amazonaws.com/${key}`;
+      return { uploadUrl, publicUrl, requiredHeaders: { 'Content-Type': contentType } };
+    } catch (error) { throw mapAwsError(error, 'S3 product image upload intent'); }
+  }
+
+  /** Only used by the local provider's direct-proxy path; AWS mode uploads straight to S3. */
+  async writeProductImageContent(): Promise<void> { throw new AppError(405, 'PRODUCT_IMAGE_DIRECT_UPLOAD_DISABLED', 'Use the presigned S3 upload URL in AWS mode'); }
+
+  async readProductImageContent(companyId: string, productId: string): Promise<Buffer> {
+    try {
+      const response = await this.s3.send(new GetObjectCommand({ Bucket: this.config.productImagesBucket, Key: this.productImageKey(companyId, productId) }));
+      const bytes = await response.Body?.transformToByteArray();
+      if (!bytes) throw new AppError(404, 'PRODUCT_IMAGE_NOT_FOUND', 'Product photo was not found');
+      return Buffer.from(bytes);
+    } catch (error) { throw mapAwsError(error, 'S3 product image read'); }
+  }
+
   private async requireBackup(companyId: string, backupId: string): Promise<BackupRecord> {
     try {
       const response = await this.dynamo.send(new GetCommand({ TableName: this.config.tableName, Key: { pk: pk(companyId), sk: sk(backupId) }, ConsistentRead: true }));

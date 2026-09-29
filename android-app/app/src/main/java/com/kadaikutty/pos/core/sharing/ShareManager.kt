@@ -232,19 +232,15 @@ class ShareManager(private val context: Context) {
         for (item in items) {
             y += 22f
             
+            // Name and unit as saved on the bill, not the product's current ones: a later rename or
+            // unit change must not rewrite an old invoice (1.500 kg reprinting as "1500 Pcs").
             val product = productsMap[item.productId]
-            val productName = product?.name ?: "Unknown Product"
-            val unitType = product?.unitType ?: "PIECE"
-            
-            val qtyStr = if (unitType == "KG") {
-                String.format(Locale.US, "%.3f Kg", item.quantity / 1000.0)
-            } else if (unitType == "LITER") {
-                String.format(Locale.US, "%.3f Ltr", item.quantity / 1000.0)
-            } else {
-                "${item.quantity} Pcs"
-            }
-            
-            val rateStr = Money(item.unitPriceMinorUnits).toString()
+            val productName = item.productName ?: product?.name ?: "Unknown Product"
+            val unitType = item.unitType ?: product?.unitType ?: "PIECE"
+
+            val qtyStr = com.kadaikutty.pos.feature.stock.domain.formatQuantity(item.quantity, unitType)
+            val perUnit = if (com.kadaikutty.pos.feature.stock.domain.isThousandthsUnit(unitType)) "/${com.kadaikutty.pos.feature.stock.domain.unitShortLabel(unitType)}" else ""
+            val rateStr = Money(item.unitPriceMinorUnits).toString() + perUnit
             val totalStr = Money(item.lineTotalMinorUnits).toString()
             
             paint.textAlign = Paint.Align.LEFT
@@ -267,21 +263,22 @@ class ShareManager(private val context: Context) {
         y += 25f
         paint.textAlign = Paint.Align.RIGHT
         
+        // No CGST/SGST split: products carry no GST rate or HSN, and back-calculating a flat 18% from
+        // every bill printed wrong tax on 0% / 5% goods. Amounts are shown as charged, tax inclusive.
         val hasGst = gstNumber.isNotBlank()
         val grandTotalMinor = sale.totalMinorUnits
-        val subtotalMinor = if (hasGst) (grandTotalMinor * 100 / 118) else grandTotalMinor
-        val cgstMinor = if (hasGst) ((grandTotalMinor - subtotalMinor) / 2) else 0L
-        val sgstMinor = if (hasGst) (grandTotalMinor - subtotalMinor - cgstMinor) else 0L
+        val subtotalMinor = items.sumOf { it.lineTotalMinorUnits }
+        val discountMinor = sale.discountMinorUnits
         
         val itemCount = items.size
         var totalQtyPieces = 0L
         var totalQtyKg = 0.0
         var totalQtyLiters = 0.0
         for (item in items) {
-            val p = productsMap[item.productId]
-            if (p?.unitType == "KG") {
+            val unit = item.unitType ?: productsMap[item.productId]?.unitType
+            if (unit == "KG") {
                 totalQtyKg += (item.quantity / 1000.0)
-            } else if (p?.unitType == "LITER") {
+            } else if (unit == "LITER") {
                 totalQtyLiters += (item.quantity / 1000.0)
             } else {
                 totalQtyPieces += item.quantity
@@ -310,18 +307,14 @@ class ShareManager(private val context: Context) {
         // Draw amounts on the right
         paint.textAlign = Paint.Align.RIGHT
         paint.textSize = 11f
-        if (hasGst) {
+        if (discountMinor > 0L) {
             canvas.drawText("Subtotal: ", 450f, y, paint)
             canvas.drawText(Money(subtotalMinor).toString(), 550f, y, paint)
-            
+
             y += 20f
-            canvas.drawText("CGST (9%): ", 450f, y, paint)
-            canvas.drawText(Money(cgstMinor).toString(), 550f, y, paint)
-            
-            y += 20f
-            canvas.drawText("SGST (9%): ", 450f, y, paint)
-            canvas.drawText(Money(sgstMinor).toString(), 550f, y, paint)
-            
+            canvas.drawText("Discount: ", 450f, y, paint)
+            canvas.drawText("- " + Money(discountMinor).toString(), 550f, y, paint)
+
             y += 25f
         }
         
@@ -329,6 +322,12 @@ class ShareManager(private val context: Context) {
         paint.textSize = 13f
         canvas.drawText("Grand Total: ", 450f, y, paint)
         canvas.drawText(Money(grandTotalMinor).toString(), 550f, y, paint)
+        if (hasGst) {
+            y += 16f
+            paint.isFakeBoldText = false
+            paint.textSize = 9f
+            canvas.drawText("(Inclusive of all taxes)", 550f, y, paint)
+        }
         
         // 6. Terms & Footer
         y += 40f

@@ -572,6 +572,7 @@ class ConflictResolver(
             "Product" -> base.put("name", nameHint ?: "Restored product").put("categoryId", "")
                 .put("purchasePriceMinorUnits", 0L).put("salePriceMinorUnits", 0L)
                 .put("unitType", unitHint ?: "PIECE").put("barcode", JSONObject.NULL).put("minStockLevel", 0.0)
+                .put("imageUrl", JSONObject.NULL)
             "Customer" -> base.put("name", nameHint ?: "Restored customer").put("phone", JSONObject.NULL).put("address", JSONObject.NULL).put("creditLimitMinorUnits", 0L)
             "Supplier" -> base.put("name", nameHint ?: "Restored supplier").put("phone", JSONObject.NULL).put("address", JSONObject.NULL)
             else -> base.put("name", nameHint ?: "Restored record")

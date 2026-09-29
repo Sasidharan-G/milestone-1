@@ -73,5 +73,32 @@ export class LocalObjectStorage implements ObjectStorage {
   private filePath(backup: BackupRecord): string {
     return path.join(this.rootDirectory, backup.companyId, `${backup.backupId}.backup`);
   }
+
+  private productImagePath(companyId: string, productId: string): string {
+    return path.join(this.rootDirectory, 'product-images', companyId, `${productId}.jpg`);
+  }
+
+  async createProductImageUploadUrl(companyId: string, productId: string): Promise<{ uploadUrl: string; publicUrl: string }> {
+    return {
+      uploadUrl: `/api/v1/products/${productId}/image-content`,
+      publicUrl: `/api/v1/products/${productId}/image`
+    };
+  }
+
+  async writeProductImageContent(companyId: string, productId: string, content: Buffer): Promise<void> {
+    const filePath = this.productImagePath(companyId, productId);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const temporary = `${filePath}.${process.pid}.tmp`;
+    await fs.writeFile(temporary, content, { mode: 0o600 });
+    await fs.rename(temporary, filePath);
+  }
+
+  async readProductImageContent(companyId: string, productId: string): Promise<Buffer> {
+    try {
+      return await fs.readFile(this.productImagePath(companyId, productId));
+    } catch {
+      throw new AppError(404, 'PRODUCT_IMAGE_NOT_FOUND', 'Product photo was not found');
+    }
+  }
 }
 

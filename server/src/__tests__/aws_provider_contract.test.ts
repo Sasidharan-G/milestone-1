@@ -76,7 +76,7 @@ class FakeDocumentClient {
 
 const config: AwsProviderConfig = {
   region: 'ap-south-1', userPoolId: 'ap-south-1_test', userPoolClientId: 'client', tableName: 'table',
-  backupBucket: 'bucket', phoneCountryCode: '+91', presignedUrlSeconds: 300, masterPinSecretArn: 'master-pin-secret'
+  backupBucket: 'bucket', productImagesBucket: 'product-images-bucket', phoneCountryCode: '+91', presignedUrlSeconds: 300, masterPinSecretArn: 'master-pin-secret'
 };
 
 test('AWS DynamoDB sync preserves tenant, idempotency, version, and cursor contracts', async () => {
@@ -272,6 +272,7 @@ test('AWS provider registry fails fast on missing MSG91 configuration without fa
     process.env.AWS_COGNITO_CLIENT_ID = 'client-1';
     process.env.AWS_DYNAMODB_TABLE = 'table-1';
     process.env.AWS_S3_BACKUP_BUCKET = 'bucket-1';
+    process.env.AWS_S3_PRODUCT_IMAGES_BUCKET = 'product-images-bucket-1';
     process.env.AWS_MASTER_PIN_SECRET_ARN = 'arn:aws:secretsmanager:ap-southeast-2:123456789012:secret:master-pin-1';
     delete process.env.SMS_PROVIDER;
     delete process.env.MSG91_WIDGET_ID;

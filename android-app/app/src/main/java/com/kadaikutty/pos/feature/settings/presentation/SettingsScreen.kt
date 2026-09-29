@@ -48,13 +48,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 
-enum class SettingsCategory(val title: String, val icon: ImageVector) {
-    SHOP_PROFILE("Store Profile", Icons.Default.AccountBox),
-    PRINTER("Hardware & Printer", Icons.Default.Build),
-    CLOUD_BACKUP("Cloud Synchronization", Icons.Default.Refresh),
-    STAFF("User Management", Icons.Default.AccountCircle),
-    DISPLAY("Display & Interface", Icons.Default.Settings),
-    MAINTENANCE("Database & Security", Icons.Default.Lock)
+enum class SettingsCategory(val title: String, @androidx.annotation.DrawableRes val icon: Int) {
+    SHOP_PROFILE("Store Profile", com.kadaikutty.pos.R.drawable.ic3d_store_profile),
+    PRINTER("Hardware & Printer", com.kadaikutty.pos.R.drawable.ic3d_hardware_printer),
+    CLOUD_BACKUP("Cloud Synchronization", com.kadaikutty.pos.R.drawable.ic3d_cloud_sync),
+    STAFF("User Management", com.kadaikutty.pos.R.drawable.ic3d_user_management),
+    DISPLAY("Display & Interface", com.kadaikutty.pos.R.drawable.ic3d_display_interface),
+    MAINTENANCE("Database & Security", com.kadaikutty.pos.R.drawable.ic3d_database_security)
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -225,7 +225,7 @@ fun SettingsScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF0C1018),
+                    containerColor = Color(0xFF1E3A8A),
                     titleContentColor = Color.White,
                     navigationIconContentColor = Color.White
                 )
@@ -2071,20 +2071,11 @@ fun SettingsScreen(
                                         horizontalAlignment = Alignment.CenterHorizontally,
                                         verticalArrangement = Arrangement.Center
                                     ) {
-                                        Surface(
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = MaterialTheme.colorScheme.primaryContainer,
-                                            modifier = Modifier.size(44.dp)
-                                        ) {
-                                            Box(contentAlignment = Alignment.Center) {
-                                                Icon(
-                                                    imageVector = cat.icon,
-                                                    contentDescription = null,
-                                                    tint = MaterialTheme.colorScheme.primary,
-                                                    modifier = Modifier.size(24.dp)
-                                                )
-                                            }
-                                        }
+                                        Image(
+                                            painter = androidx.compose.ui.res.painterResource(cat.icon),
+                                            contentDescription = null,
+                                            modifier = Modifier.size(56.dp)
+                                        )
                                         Spacer(modifier = Modifier.height(8.dp))
                                         Text(
                                             text = cat.title,
@@ -2104,6 +2095,7 @@ fun SettingsScreen(
                             }
                         }
                     }
+                    com.kadaikutty.pos.core.ui.BrandFooter(modifier = Modifier.padding(top = 24.dp))
                 } else {
                     when (activeCategory) {
                         SettingsCategory.SHOP_PROFILE -> {

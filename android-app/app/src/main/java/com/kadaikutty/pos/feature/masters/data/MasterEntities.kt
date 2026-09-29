@@ -31,6 +31,9 @@ data class ProductEntity(
     val unitType: String = "PIECE",
     val barcode: String? = null,
     val minStockLevel: Double = 0.0,
+    /** S3 URL once uploaded (see ProductImageUploadWorker). Null until then; the freshly-picked
+     *  photo lives at the device-local convention path `filesDir/product_images/{id}.jpg` first. */
+    val imageUrl: String? = null,
     val createdAtEpochMs: Long,
     val updatedAtEpochMs: Long,
     val syncStatus: SyncStatus

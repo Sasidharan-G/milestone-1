@@ -6,6 +6,7 @@ export interface AwsProviderConfig {
   userPoolClientId: string;
   tableName: string;
   backupBucket: string;
+  productImagesBucket: string;
   phoneCountryCode: string;
   presignedUrlSeconds: number;
   masterPinSecretArn: string;
@@ -23,6 +24,7 @@ export const loadAwsProviderConfig = (): AwsProviderConfig => ({
   userPoolClientId: required('AWS_COGNITO_CLIENT_ID'),
   tableName: required('AWS_DYNAMODB_TABLE'),
   backupBucket: required('AWS_S3_BACKUP_BUCKET'),
+  productImagesBucket: required('AWS_S3_PRODUCT_IMAGES_BUCKET'),
   phoneCountryCode: process.env.AWS_COGNITO_PHONE_COUNTRY_CODE?.trim() || '+91',
   presignedUrlSeconds: Math.min(900, Math.max(60, Number(process.env.AWS_PRESIGNED_URL_SECONDS || 300))),
   masterPinSecretArn: required('AWS_MASTER_PIN_SECRET_ARN')

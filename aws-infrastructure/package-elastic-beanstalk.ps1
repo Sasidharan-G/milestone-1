@@ -13,7 +13,9 @@ $stagingDirectory = Join-Path ([System.IO.Path]::GetTempPath()) ("kadaikutty-pos
 try {
     Push-Location $serverDirectory
     npm.cmd ci
+    if ($LASTEXITCODE -ne 0) { throw "npm ci failed with exit code $LASTEXITCODE" }
     npm.cmd test
+    if ($LASTEXITCODE -ne 0) { throw "npm test failed with exit code $LASTEXITCODE" }
     Pop-Location
 
     New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null

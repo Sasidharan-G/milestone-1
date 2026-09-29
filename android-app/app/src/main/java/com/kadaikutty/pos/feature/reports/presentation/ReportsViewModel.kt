@@ -139,7 +139,9 @@ class ReportsViewModel @Inject constructor(
                 
                 var totalCogs = 0L
                 for (item in profitRaw) {
-                    val cost = costingStrategy.getProductCost(item.productId, item.totalQty)
+                    // Same rule as the Profit report: the cost saved on each sale line first, so the dashboard
+                    // and the report agree after purchase prices change.
+                    val cost = item.recordedCost?.let { com.kadaikutty.pos.core.common.Money(it) } ?: costingStrategy.getProductCost(item.productId, item.totalQty)
                     totalCogs += cost.minorUnits
                 }
 
@@ -228,8 +230,8 @@ class ReportsViewModel @Inject constructor(
         val items = rawItems.map { item ->
             val product = database.masterDao().getProductById(companyId, item.productId)
             BillDetailItem(
-                productName = product?.name ?: "Item #${item.productId.take(6)}",
-                unitType = product?.unitType ?: "PIECE",
+                productName = item.productName ?: product?.name ?: "Item #${item.productId.take(6)}",
+                unitType = item.unitType ?: product?.unitType ?: "PIECE",
                 quantity = item.quantity,
                 unitPriceMinorUnits = item.unitPriceMinorUnits,
                 lineTotalMinorUnits = item.lineTotalMinorUnits

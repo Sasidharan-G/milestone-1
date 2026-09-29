@@ -782,14 +782,11 @@ class BillingViewModel @Inject constructor(
             }
 
             val printItems = items.map { item ->
+                // Unit and name as saved on the bill, so a later product edit can't change a reprint.
                 val p = productsMap[item.productId]
-                val qtyStr = if (p?.unitType == "KG" || p?.unitType == "LITER") {
-                    String.format(java.util.Locale.US, "%.3f", item.quantity / 1000f)
-                } else {
-                    item.quantity.toString()
-                }
+                val qtyStr = com.kadaikutty.pos.feature.stock.domain.storageUnitsToTyped(item.quantity, item.unitType ?: p?.unitType)
                 com.kadaikutty.pos.core.printer.domain.BillItem(
-                    name = p?.name ?: "Unknown",
+                    name = item.productName ?: p?.name ?: "Unknown",
                     quantityText = qtyStr,
                     price = Money(item.unitPriceMinorUnits).toString(),
                     total = Money(item.lineTotalMinorUnits).toString()

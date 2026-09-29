@@ -5,6 +5,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import com.kadaikutty.pos.core.ui.CameraBarcodeScannerDialog
 import com.kadaikutty.pos.core.ui.LocalLayoutMode
+import com.kadaikutty.pos.core.presentation.components.ProductPhotoField
+import com.kadaikutty.pos.core.common.ProductImageStore
+import kotlinx.coroutines.launch
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -62,9 +65,10 @@ fun MasterScreens(
     supplierVm: SupplierViewModel,
     expenseVm: ExpenseViewModel,
     settingsVm: com.kadaikutty.pos.feature.settings.presentation.SettingsViewModel,
+    initialTab: Int = 0,
     onBack: () -> Unit = {}
 ) {
-    var activeTab by remember { mutableIntStateOf(0) }
+    var activeTab by remember { mutableIntStateOf(initialTab) }
     val userSession by settingsVm.activeSession.collectAsState()
 
     Scaffold(
@@ -453,6 +457,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var expandedProductId by remember { mutableStateOf<String?>(null) }
     var showBarcodeScanner by remember { mutableStateOf(value = false) }
     var isSubmitting by remember { mutableStateOf(false) }
+    var pendingImageFile by remember { mutableStateOf<java.io.File?>(null) }
+    val imageScope = rememberCoroutineScope()
 
     if (showBarcodeScanner) {
         CameraBarcodeScannerDialog(
@@ -552,6 +558,9 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                         }
                         if (s.stockSetCount > 0) {
                             Text("Opening Stock Set: ${s.stockSetCount} items", color = Color(0xFF10B981), fontWeight = FontWeight.Bold)
+                        }
+                        if (s.unitKeptCount > 0) {
+                            Text("${s.unitKeptCount} existing items kept their unit (Kg / Pcs...) because they already have sales or stock entries.", color = Color(0xFFF59E0B), fontSize = 13.sp)
                         }
                         if (s.stockKeptCount > 0) {
                             Text("${s.stockKeptCount} existing items already had stock, so their quantity was left unchanged.", color = Color(0xFF3B82F6), fontSize = 13.sp)
@@ -697,6 +706,32 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                     ) {
                         Column(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Create Product", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                ProductPhotoField(
+                                    imageModel = pendingImageFile,
+                                    onPickedFromGallery = { uri ->
+                                        imageScope.launch {
+                                            val temp = ProductImageStore.newTempFile(context)
+                                            if (ProductImageStore.compressInto(context, uri, temp)) pendingImageFile = temp
+                                        }
+                                    },
+                                    onCapturedFromCamera = { uri ->
+                                        imageScope.launch {
+                                            val temp = ProductImageStore.newTempFile(context)
+                                            if (ProductImageStore.compressInto(context, uri, temp)) pendingImageFile = temp
+                                        }
+                                    },
+                                    onRemove = { pendingImageFile = null }
+                                )
+                                Text(
+                                    "A photo makes the item easy to spot while billing (optional)",
+                                    fontSize = 12.sp,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+
                             OutlinedTextField(
                                 value = name,
                                 onValueChange = { name = InputRules.name(it) },
@@ -849,7 +884,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         val saleVal = CheckoutMath.rupeesToMinorUnits(salePrice.toDoubleOrNull() ?: 0.0)
                                         val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
                                         val openingStockVal = openingStock.toDoubleOrNull() ?: 0.0
-                                        viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, onSuccess = {
+                                        viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, pendingImageFile?.absolutePath, onSuccess = {
                                             isSubmitting = false
                                             name = ""
                                             purchasePrice = ""
@@ -857,6 +892,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                             barcode = ""
                                             minStockLevel = ""
                                             openingStock = ""
+                                            pendingImageFile = null
                                             message = "Product added successfully"
                                             android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                         }, onError = {
@@ -940,6 +976,13 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     horizontalArrangement = Arrangement.SpaceBetween,
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
+                                    val thumbModel = remember(product.id, product.imageUrl) {
+                                        ProductImageStore.localFile(context, product.id).takeIf { it.exists() } ?: product.imageUrl
+                                    }
+                                    com.kadaikutty.pos.core.presentation.components.ProductThumbnail(
+                                        imageModel = thumbModel,
+                                        modifier = Modifier.padding(end = 10.dp)
+                                    )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                         Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
@@ -1051,6 +1094,32 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                     ) {
                     Column(modifier = Modifier.padding(16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         Text("Create Product", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            ProductPhotoField(
+                                imageModel = pendingImageFile,
+                                onPickedFromGallery = { uri ->
+                                    imageScope.launch {
+                                        val temp = ProductImageStore.newTempFile(context)
+                                        if (ProductImageStore.compressInto(context, uri, temp)) pendingImageFile = temp
+                                    }
+                                },
+                                onCapturedFromCamera = { uri ->
+                                    imageScope.launch {
+                                        val temp = ProductImageStore.newTempFile(context)
+                                        if (ProductImageStore.compressInto(context, uri, temp)) pendingImageFile = temp
+                                    }
+                                },
+                                onRemove = { pendingImageFile = null }
+                            )
+                            Text(
+                                "A photo makes the item easy to spot while billing (optional)",
+                                fontSize = 12.sp,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.weight(1f)
+                            )
+                        }
+
                         OutlinedTextField(
                             value = name,
                             onValueChange = { name = InputRules.name(it) },
@@ -1188,7 +1257,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     val saleVal = CheckoutMath.rupeesToMinorUnits(salePrice.toDoubleOrNull() ?: 0.0)
                                     val minStockVal = minStockLevel.toDoubleOrNull() ?: 0.0
                                     val openingStockVal = openingStock.toDoubleOrNull() ?: 0.0
-                                    viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, onSuccess = {
+                                    viewModel.addProduct(trimmed, selectedCategoryId, purVal, saleVal, unitType, barcode.ifBlank { null }, minStockVal, openingStockVal, pendingImageFile?.absolutePath, onSuccess = {
                                         isSubmitting = false
                                         name = ""
                                         purchasePrice = ""
@@ -1197,6 +1266,7 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                         barcode = ""
                                         minStockLevel = ""
                                         openingStock = ""
+                                        pendingImageFile = null
                                         message = "Product added successfully"
                                         android.widget.Toast.makeText(context, "Product added successfully", android.widget.Toast.LENGTH_SHORT).show()
                                     }, onError = {
@@ -1267,6 +1337,13 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
                                     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                                 ) {
                                     Row(modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                                        val thumbModel = remember(product.id, product.imageUrl) {
+                                            ProductImageStore.localFile(context, product.id).takeIf { it.exists() } ?: product.imageUrl
+                                        }
+                                        com.kadaikutty.pos.core.presentation.components.ProductThumbnail(
+                                            imageModel = thumbModel,
+                                            modifier = Modifier.padding(end = 10.dp)
+                                        )
                                         Column(modifier = Modifier.weight(1f)) {
                                             Text(product.name, fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
                                             Text(catName, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.85f))
@@ -3428,6 +3505,12 @@ fun ProductEditDialog(
     var isSubmitting by remember { mutableStateOf(false) }
     var showBarcodeScanner by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
+    // Bumped after a photo change so the thumbnail below re-reads the file that was just
+    // written/removed - the file's own mtime is not something `remember` can key off directly.
+    var imageVersion by remember { mutableStateOf(0) }
+    val imageModel = remember(product.id, product.imageUrl, imageVersion) {
+        ProductImageStore.localFile(context, product.id).takeIf { it.exists() } ?: product.imageUrl
+    }
 
     if (showBarcodeScanner) {
         CameraBarcodeScannerDialog(
@@ -3440,7 +3523,7 @@ fun ProductEditDialog(
             onDismiss = { showBarcodeScanner = false }
         )
     }
-    
+
     AlertDialog(
         onDismissRequest = {
             if (!isSubmitting) onDismiss()
@@ -3451,6 +3534,25 @@ fun ProductEditDialog(
                 modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                ProductPhotoField(
+                    imageModel = imageModel,
+                    onPickedFromGallery = { uri ->
+                        viewModel.setProductImage(product, uri, onSuccess = { imageVersion++ }, onError = {
+                            android.widget.Toast.makeText(context, it.message ?: "Could not save photo", android.widget.Toast.LENGTH_SHORT).show()
+                        })
+                    },
+                    onCapturedFromCamera = { uri ->
+                        viewModel.setProductImage(product, uri, onSuccess = { imageVersion++ }, onError = {
+                            android.widget.Toast.makeText(context, it.message ?: "Could not save photo", android.widget.Toast.LENGTH_SHORT).show()
+                        })
+                    },
+                    onRemove = {
+                        viewModel.removeProductImage(product, onSuccess = { imageVersion++ }, onError = {
+                            android.widget.Toast.makeText(context, it.message ?: "Could not remove photo", android.widget.Toast.LENGTH_SHORT).show()
+                        })
+                    }
+                )
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = InputRules.name(it) },
@@ -3937,7 +4039,9 @@ fun StockAdjustmentDialog(
     viewModel: ProductViewModel,
     onDismiss: () -> Unit
 ) {
-    var newStockText by remember { mutableStateOf(currentStock.toString()) }
+    // KG/LITER stock is stored in g/ml but counted and typed in kg/L - "25" means 25 kg, not 25 g.
+    val scaledUnit = com.kadaikutty.pos.feature.stock.domain.isThousandthsUnit(product.unitType)
+    var newStockText by remember { mutableStateOf(com.kadaikutty.pos.feature.stock.domain.storageUnitsToTyped(currentStock, product.unitType)) }
     var selectedReason by remember { mutableStateOf("Damaged / Expired") }
     var customReason by remember { mutableStateOf("") }
     var error by remember { mutableStateOf("") }
@@ -3953,16 +4057,16 @@ fun StockAdjustmentDialog(
         title = {
             Column {
                 Text("Adjust Stock - ${product.name}", fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                Text("Current Inventory: $currentStock ${product.unitType}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                Text("Current Inventory: ${com.kadaikutty.pos.feature.stock.domain.formatQuantity(currentStock, product.unitType)}", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
                 OutlinedTextField(
                     value = newStockText,
-                    onValueChange = { newStockText = InputRules.quantity(it, allowDecimals = true) },
-                    label = { Text("New Physical Stock Count") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    onValueChange = { newStockText = InputRules.quantity(it, allowDecimals = scaledUnit) },
+                    label = { Text("New Physical Stock (${com.kadaikutty.pos.feature.stock.domain.unitShortLabel(product.unitType)})") },
+                    keyboardOptions = KeyboardOptions(keyboardType = if (scaledUnit) KeyboardType.Decimal else KeyboardType.Number),
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(12.dp),
                     enabled = !isSubmitting
@@ -4000,9 +4104,9 @@ fun StockAdjustmentDialog(
                 enabled = !isSubmitting,
                 onClick = {
                     if (isSubmitting) return@Button
-                    val newCount = newStockText.toLongOrNull()
-                    if (newCount == null || newCount < 0) {
-                        error = "Please enter a valid non-negative count"
+                    val newCount = com.kadaikutty.pos.feature.stock.domain.typedQuantityToStorageUnits(newStockText, product.unitType)
+                    if (newCount == null) {
+                        error = if (scaledUnit) "Enter the stock in ${com.kadaikutty.pos.feature.stock.domain.unitShortLabel(product.unitType)}, up to 3 decimals (e.g. 20.5)" else "Please enter a valid non-negative count"
                     } else {
                         isSubmitting = true
                         val finalReason = if (customReason.isNotBlank()) "$selectedReason - $customReason" else selectedReason
@@ -4012,7 +4116,7 @@ fun StockAdjustmentDialog(
                             reason = finalReason,
                             onSuccess = {
                                 isSubmitting = false
-                                android.widget.Toast.makeText(context, "Stock adjusted to $newCount successfully", android.widget.Toast.LENGTH_SHORT).show()
+                                android.widget.Toast.makeText(context, "Stock adjusted to ${com.kadaikutty.pos.feature.stock.domain.formatQuantity(newCount, product.unitType)}", android.widget.Toast.LENGTH_SHORT).show()
                                 onDismiss()
                             },
                             onError = {

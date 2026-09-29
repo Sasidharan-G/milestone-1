@@ -40,6 +40,21 @@ data class LicenseEntity(
             return if (diff > 0) (diff / (1000 * 60 * 60 * 24)) + 1 else 0L
         }
 
+    /** "23h" under two days (whole days would round a 1-day grant up to "2d"), else "364d". */
+    val remainingLabel: String
+        get() {
+            val hours = remainingHours
+            return if (hours < 48) "${hours}h" else "${hours / 24}d"
+        }
+
+    /** Plan name from what was actually granted, e.g. "1-DAY", "30-DAY", "1-YEAR", "1-YEAR +30D". */
+    val planLabel: String
+        get() = when (licenseType) {
+            "YEARLY" -> "$yearsGranted-YEAR" + if (daysGranted > 0) " +${daysGranted}D" else ""
+            "CUSTOM_DAYS", "CUSTOM" -> "$daysGranted-DAY"
+            else -> "PAID"
+        }
+
     val isExpiringSoon: Boolean
         get() = !isExpired && remainingDays in 1..7
 }

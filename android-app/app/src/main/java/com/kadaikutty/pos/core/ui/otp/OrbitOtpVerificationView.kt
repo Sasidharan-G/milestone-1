@@ -507,7 +507,7 @@ fun OrbitOtpVerificationView(
                 shape = RoundedCornerShape(percent = 50),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = Color.White,
-                    contentColor = Color(0xFF0C1018),
+                    contentColor = Color(0xFF1E3A8A),
                     disabledContainerColor = Color.White.copy(alpha = 0.3f),
                     disabledContentColor = Color.White.copy(alpha = 0.45f)
                 ),
@@ -522,7 +522,7 @@ fun OrbitOtpVerificationView(
                 if (isLoading) {
                     CircularProgressIndicator(
                         modifier = Modifier.size(24.dp),
-                        color = Color(0xFF0C1018),
+                        color = Color(0xFF1E3A8A),
                         strokeWidth = 2.5.dp
                     )
                 } else {

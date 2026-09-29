@@ -230,6 +230,112 @@ Resources:
             Condition:
               Bool: { 'aws:SecureTransport': 'false' }
 
+  # ------------------------------------------------------ App distribution
+  # Public, read-only APK hosting so a client can be handed a direct download link. Deliberately a
+  # separate bucket from BackupBucket, which holds private tenant data behind a full public-access
+  # block — the two must never share a bucket. ObjectOwnership BucketOwnerEnforced disables ACLs
+  # entirely (AWS's current recommendation), so public read is granted only by the bucket policy
+  # below, never by an object ACL a future upload could forget to set.
+  AppReleasesBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub '${ProjectName}-app-releases-${AWS::AccountId}-${AWS::Region}-${Environment}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+        - { Key: Environment, Value: !Ref Environment }
+
+  AppReleasesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref AppReleasesBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${AppReleasesBucket.Arn}/*'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt AppReleasesBucket.Arn
+              - !Sub '${AppReleasesBucket.Arn}/*'
+            Condition:
+              Bool: { 'aws:SecureTransport': 'false' }
+
+  # ------------------------------------------------------ Product photos
+  # Public, read-only product photo hosting, same reasoning as AppReleasesBucket above: a product
+  # photo is not sensitive tenant data (it is a picture of an item on a shelf), so it is served back
+  # as a plain, permanent public URL rather than a presigned GET that would expire while the URL
+  # sits stored in a product's synced record. Only the upload side is gated, by a short-lived
+  # presigned PUT the backend issues per product.
+  ProductImagesBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      # "photos", not "product-images": the full name (project-region-account-env) must fit S3's
+      # 63-character bucket-name limit, and "production" already uses most of the budget.
+      BucketName: !Sub '${ProjectName}-photos-${AWS::AccountId}-${AWS::Region}-${Environment}'
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: false
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: false
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      LifecycleConfiguration:
+        Rules:
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 2
+      Tags:
+        - { Key: Project, Value: !Ref ProjectName }
+        - { Key: Environment, Value: !Ref Environment }
+
+  ProductImagesBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ProductImagesBucket
+      PolicyDocument:
+        Statement:
+          - Sid: PublicReadGetObject
+            Effect: Allow
+            Principal: '*'
+            Action: 's3:GetObject'
+            Resource: !Sub '${ProductImagesBucket.Arn}/*'
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource:
+              - !GetAtt ProductImagesBucket.Arn
+              - !Sub '${ProductImagesBucket.Arn}/*'
+            Condition:
+              Bool: { 'aws:SecureTransport': 'false' }
+
   # ---------------------------------------------------------------- Secrets
   MasterPinSecret:
     Type: AWS::SecretsManager::Secret
@@ -331,6 +437,8 @@ Resources:
                 Resource:
                   - !GetAtt BackupBucket.Arn
                   - !Sub '${BackupBucket.Arn}/*'
+                  - !GetAtt ProductImagesBucket.Arn
+                  - !Sub '${ProductImagesBucket.Arn}/*'
               - Sid: Secrets
                 Effect: Allow
                 Action:
@@ -454,6 +562,7 @@ Resources:
               - { Name: AWS_COGNITO_PHONE_COUNTRY_CODE, Value: '+91' }
               - { Name: AWS_DYNAMODB_TABLE, Value: !Ref DataTable }
               - { Name: AWS_S3_BACKUP_BUCKET, Value: !Ref BackupBucket }
+              - { Name: AWS_S3_PRODUCT_IMAGES_BUCKET, Value: !Ref ProductImagesBucket }
               - { Name: AWS_PRESIGNED_URL_SECONDS, Value: '300' }
               - { Name: AWS_MASTER_PIN_SECRET_ARN, Value: !Ref MasterPinSecret }
             RuntimeEnvironmentSecrets:
@@ -505,6 +614,12 @@ Outputs:
     Value: !Ref DataTable
   AwsS3BackupBucket:
     Value: !Ref BackupBucket
+  AwsS3ProductImagesBucket:
+    Value: !Ref ProductImagesBucket
+  AppReleasesBucketName:
+    Value: !Ref AppReleasesBucket
+  AppReleasesBaseUrl:
+    Value: !Sub 'https://${AppReleasesBucket}.s3.${AWS::Region}.amazonaws.com'
   AwsMasterPinSecretArn:
     Value: !Ref MasterPinSecret
   AppSecretsArn:

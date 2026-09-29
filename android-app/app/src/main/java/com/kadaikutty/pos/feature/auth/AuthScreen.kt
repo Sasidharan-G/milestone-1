@@ -56,7 +56,7 @@ fun AuthScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF0C1018)), // Deep Charcoal
+            .background(Color(0xFF1E3A8A)), // Brand navy
         contentAlignment = Alignment.Center
     ) {
         // Pattern background
@@ -89,7 +89,7 @@ fun AuthScreen(
                 ),
             shape = RoundedCornerShape(24.dp),
             colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF0C1018) // Solid charcoal to block pattern inside the card
+                containerColor = Color(0xFF1E3A8A) // Solid navy to block pattern inside the card
             ),
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
         ) {
