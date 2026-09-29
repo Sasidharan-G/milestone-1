@@ -437,3 +437,13 @@ val migration26To27 = object : Migration(26, 27) {
         db.execSQL("ALTER TABLE `products` ADD COLUMN `imageUrl` TEXT")
     }
 }
+
+/**
+ * Cancelling a bill used to delete it outright, so the invoice and its number vanished. It is now
+ * kept and marked VOID (its stock and credit rows are still reversed). Existing bills are ACTIVE.
+ */
+val migration27To28 = object : Migration(27, 28) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `sales` ADD COLUMN `status` TEXT NOT NULL DEFAULT 'ACTIVE'")
+    }
+}

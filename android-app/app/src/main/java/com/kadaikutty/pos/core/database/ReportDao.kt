@@ -36,7 +36,7 @@ interface ReportDao {
             END as customerName
         FROM sales s
         LEFT JOIN customers c ON s.customerId = c.id AND c.companyId = :companyId
-        WHERE s.companyId = :companyId
+        WHERE s.companyId = :companyId AND s.status != 'VOID'
           AND (:fromEpochMs IS NULL OR s.createdAtEpochMs >= :fromEpochMs)
           AND (:toEpochMs IS NULL OR s.createdAtEpochMs <= :toEpochMs)
         ORDER BY s.createdAtEpochMs DESC
@@ -93,7 +93,7 @@ interface ReportDao {
             ))) as totalRevenue,
             CASE WHEN COUNT(si.costTotalMinorUnits) = COUNT(*) THEN SUM(si.costTotalMinorUnits) ELSE NULL END as recordedCost
         FROM sale_items si
-        INNER JOIN sales s ON si.saleId = s.id AND s.companyId = :companyId
+        INNER JOIN sales s ON si.saleId = s.id AND s.companyId = :companyId AND s.status != 'VOID'
         INNER JOIN products p ON si.productId = p.id AND p.companyId = :companyId
         WHERE si.companyId = :companyId
           AND (:fromEpochMs IS NULL OR s.createdAtEpochMs >= :fromEpochMs)
@@ -134,7 +134,7 @@ interface ReportDao {
     """)
     suspend fun getExpensesReport(companyId: String, fromEpochMs: Long?, toEpochMs: Long?): List<ExpenseReportRow>
 
-    @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE companyId = :companyId AND (:fromEpochMs IS NULL OR createdAtEpochMs >= :fromEpochMs) AND (:toEpochMs IS NULL OR createdAtEpochMs <= :toEpochMs)")
+    @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE companyId = :companyId AND status != 'VOID' AND (:fromEpochMs IS NULL OR createdAtEpochMs >= :fromEpochMs) AND (:toEpochMs IS NULL OR createdAtEpochMs <= :toEpochMs)")
     suspend fun getTotalSalesSum(companyId: String, fromEpochMs: Long?, toEpochMs: Long?): Long?
 
     @Query("SELECT SUM(totalMinorUnits) FROM purchases WHERE companyId = :companyId AND (:fromEpochMs IS NULL OR createdAtEpochMs >= :fromEpochMs) AND (:toEpochMs IS NULL OR createdAtEpochMs <= :toEpochMs)")

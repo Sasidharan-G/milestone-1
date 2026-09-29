@@ -847,8 +847,8 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
             val s = deletingSale!!
             AlertDialog(
                 onDismissRequest = { deletingSale = null },
-                title = { Text("Delete Bill", fontWeight = FontWeight.Bold) },
-                text = { Text("Are you sure you want to delete Bill #${s.billNumber}? This will restore all sold items back into the inventory stock.") },
+                title = { Text("Cancel Bill", fontWeight = FontWeight.Bold) },
+                text = { Text("Cancel Bill #${s.billNumber}? Its items go back into stock and any credit on it is removed. The bill stays in history marked CANCELLED.") },
                 confirmButton = {
                     Button(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
@@ -856,13 +856,13 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                             val targetSale = deletingSale ?: return@Button
                             deletingSale = null
                             viewModel.deleteSale(targetSale.id, targetSale.billNumber, onSuccess = {
-                                message = "Bill #${targetSale.billNumber} deleted and stock restored"
+                                message = "Bill #${targetSale.billNumber} cancelled and stock restored"
                             }, onError = {
-                                message = "Failed to delete: ${it.message}"
+                                message = "Failed to cancel: ${it.message}"
                             })
                         }
                     ) {
-                        Text("Delete & Restore Stock")
+                        Text("Cancel Bill & Restore Stock")
                     }
                 },
                 dismissButton = {
@@ -908,10 +908,26 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                         ) {
                             Column(modifier = Modifier.padding(14.dp).fillMaxWidth()) {
                                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                                    Text("Bill #${sale.billNumber}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                    val isVoid = sale.status == com.kadaikutty.pos.feature.billing.data.SaleStatus.VOID
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("Bill #${sale.billNumber}", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium)
+                                        if (isVoid) {
+                                            Surface(color = MaterialTheme.colorScheme.errorContainer, shape = MaterialTheme.shapes.extraSmall) {
+                                                Text("CANCELLED", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp))
+                                            }
+                                        }
+                                    }
                                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                        Text(Money(sale.totalMinorUnits).toString(), fontWeight = FontWeight.Bold, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                                        
+                                        Text(
+                                            Money(sale.totalMinorUnits).toString(),
+                                            fontWeight = FontWeight.Bold,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            color = if (isVoid) MaterialTheme.colorScheme.outline else MaterialTheme.colorScheme.primary,
+                                            textDecoration = if (isVoid) androidx.compose.ui.text.style.TextDecoration.LineThrough else null
+                                        )
+
+                                        // A cancelled bill is kept for the record only: no edit, no second cancel.
+                                        if (!isVoid) {
                                         // Edit Button
                                         IconButton(
                                             onClick = {
@@ -937,10 +953,11 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                                         ) {
                                             Icon(
                                                 imageVector = Icons.Default.Delete,
-                                                contentDescription = "Delete",
+                                                contentDescription = "Cancel bill",
                                                 modifier = Modifier.size(16.dp),
                                                 tint = MaterialTheme.colorScheme.error
                                             )
+                                        }
                                         }
 
                                         // Share Button

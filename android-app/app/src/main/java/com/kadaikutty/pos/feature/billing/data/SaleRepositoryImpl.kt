@@ -49,6 +49,7 @@ class SaleRepositoryImpl(
             val receiptKey = "sale:${draft.requestId}"
             database.localOperationDao().get(company, receiptKey)?.let { return@withTransaction it }
             val old = draft.editingSaleId?.let { saleDao.getSaleById(company, it) ?: error("Original bill no longer exists") }
+            require(old?.status != SaleStatus.VOID) { "This bill was cancelled and can no longer be edited" }
             if (old != null) {
                 require(session.role == "ADMIN" || session.role == "SUPER_ADMIN") { "Only an administrator can edit completed bills" }
                 require(saleDao.creditsFor(company, old.id).none { it.amountMinorUnits < 0 }) { "Bills containing previous-due collections cannot be edited. Use cancellation and a new bill." }
@@ -141,13 +142,16 @@ class SaleRepositoryImpl(
                 ?: saleDao.getSaleByBillNumber(session.companyId, billNumber)
                 ?: error("Bill no longer exists")
             val id = sale.id
+            require(sale.status != SaleStatus.VOID) { "Bill ${sale.billNumber} is already cancelled" }
+            // Voided, not deleted: the bill, its lines and its number stay for the record (audit,
+            // GST), while its stock and credit rows are reversed exactly as a delete did.
             saleDao.movementsFor(session.companyId, id).forEach { syncManager.enqueueStockMovement(it, "DELETE") }
             saleDao.creditsFor(session.companyId, id).forEach { syncManager.enqueueCustomerCredit(it, "DELETE") }
-            saleDao.deleteSaleCascade(session.companyId, id, sale.billNumber)
-            syncManager.enqueueSale(sale, emptyList(), "DELETE")
-            // Stock or credit rows for this bill may still arrive from other devices; the sync
-            // sweep removes them while this marker exists.
-            database.localOperationDao().put(LocalOperationEntity(session.companyId, "${com.kadaikutty.pos.core.sync.ConflictResolver.DOC_TOMBSTONE_PREFIX}Sale:${sale.id}", System.currentTimeMillis().toString()))
+            saleDao.deleteSaleStockMovements(session.companyId, id)
+            saleDao.deleteCustomerCreditsByReason(session.companyId, id)
+            val voided = sale.copy(status = SaleStatus.VOID, revision = sale.revision + 1, syncStatus = SyncStatus.LOCAL_ONLY)
+            saleDao.updateSale(voided)
+            syncManager.enqueueSale(voided, saleDao.getSaleItemsList(session.companyId, id), "UPDATE")
             database.auditLogDao().insertAuditLog(AuditLogEntity(newRecordId(), session.companyId,
                 "BILL_CANCEL", sale.billNumber, sale.totalMinorUnits, reason.ifBlank { "Bill cancelled" }, session.userId, session.displayName, System.currentTimeMillis()))
         }

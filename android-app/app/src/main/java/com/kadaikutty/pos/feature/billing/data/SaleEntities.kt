@@ -21,8 +21,15 @@ data class SaleEntity(
     val paidUpiMinorUnits: Long = 0L,
     val creditAppliedMinorUnits: Long = 0L,
     val discountMinorUnits: Long = 0L,
-    @androidx.room.ColumnInfo(defaultValue = "0") val revision: Long = 0L
+    @androidx.room.ColumnInfo(defaultValue = "0") val revision: Long = 0L,
+    /** ACTIVE, or VOID once cancelled: the bill stays for the record but counts nowhere. */
+    @androidx.room.ColumnInfo(defaultValue = "'ACTIVE'") val status: String = SaleStatus.ACTIVE
 )
+
+object SaleStatus {
+    const val ACTIVE = "ACTIVE"
+    const val VOID = "VOID"
+}
 
 @Entity(
     tableName = "sale_items",

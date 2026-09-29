@@ -181,6 +181,7 @@ class SyncManager(
             "paidUpiMinorUnits" to sale.paidUpiMinorUnits,
             "creditAppliedMinorUnits" to sale.creditAppliedMinorUnits,
             "discountMinorUnits" to sale.discountMinorUnits,
+            "status" to sale.status,
             "syncStatus" to "SYNCED",
             "_schemaVersion" to 1,
             "items" to itemsList

@@ -54,19 +54,19 @@ import kotlinx.coroutines.flow.Flow
     )
     fun searchSalesPaged(companyId: String, query: String, fromEpochMs: Long, toEpochMs: Long): PagingSource<Int, SaleEntity>
     
-    @Query("SELECT COUNT(*) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs")
+    @Query("SELECT COUNT(*) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs AND status != 'VOID'")
     fun getSalesCountSince(companyId: String, sinceEpochMs: Long): Flow<Int>
     
-    @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs")
+    @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs AND status != 'VOID'")
     fun getSalesTotalSince(companyId: String, sinceEpochMs: Long): Flow<Long?>
 
-    @Query("SELECT COUNT(*) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :fromEpochMs AND createdAtEpochMs < :toEpochMs")
+    @Query("SELECT COUNT(*) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :fromEpochMs AND createdAtEpochMs < :toEpochMs AND status != 'VOID'")
     fun getSalesCountBetween(companyId: String, fromEpochMs: Long, toEpochMs: Long): Flow<Int>
 
-    @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :fromEpochMs AND createdAtEpochMs < :toEpochMs")
+    @Query("SELECT SUM(totalMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs >= :fromEpochMs AND createdAtEpochMs < :toEpochMs AND status != 'VOID'")
     fun getSalesTotalBetween(companyId: String, fromEpochMs: Long, toEpochMs: Long): Flow<Long?>
     
-    @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC LIMIT :limit")
+    @Query("SELECT * FROM sales WHERE companyId = :companyId AND status != 'VOID' ORDER BY createdAtEpochMs DESC LIMIT :limit")
     fun getRecentSales(companyId: String, limit: Int): Flow<List<SaleEntity>>
     @Query("SELECT * FROM sale_items WHERE companyId = :companyId AND saleId = :saleId")
     fun getSaleItems(companyId: String, saleId: String): Flow<List<SaleItemEntity>>
@@ -89,7 +89,7 @@ import kotlinx.coroutines.flow.Flow
     @Query("SELECT billNumber FROM sales WHERE companyId = :companyId")
     suspend fun getAllBillNumbers(companyId: String): List<String>
 
-    @Query("SELECT SUM(paidCashMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs > :sinceEpochMs")
+    @Query("SELECT SUM(paidCashMinorUnits) FROM sales WHERE companyId = :companyId AND createdAtEpochMs > :sinceEpochMs AND status != 'VOID'")
     suspend fun getCashSalesSumSince(companyId: String, sinceEpochMs: Long): Long?
 
     @Query("DELETE FROM sales WHERE companyId = :companyId AND id = :saleId")

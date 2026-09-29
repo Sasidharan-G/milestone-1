@@ -288,6 +288,9 @@ class ConflictResolver(
     suspend fun repairDocumentChildren(companyId: String): Int = database.withTransaction {
         var skipped = 0
         for (sale in database.saleDao().getSales(companyId).first()) {
+            // A void bill has had its stock and credit rows reversed on purpose; rebuilding them
+            // from its lines would put the stock and the customer's due back.
+            if (sale.status == com.kadaikutty.pos.feature.billing.data.SaleStatus.VOID) continue
             val lines = database.saleDao().getSaleItemsList(companyId, sale.id).groupBy { it.productId }.mapValues { (_, l) -> -l.sumOf { it.quantity } }
             if (repairDocument(companyId, "Sale", sale.id, sale.revision, sale.createdAtEpochMs, "SALE", lines, sale.creditAppliedMinorUnits, "Bill ${sale.billNumber}") == null) skipped++
         }

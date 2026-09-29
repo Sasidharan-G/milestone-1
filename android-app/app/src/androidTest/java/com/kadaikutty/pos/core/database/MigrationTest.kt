@@ -44,13 +44,28 @@ class MigrationTest {
     fun everyExportedVersionMigratesToTheCurrentSchema() {
         val all = arrayOf(
             migration18To19, migration19To20, migration20To21, migration21To22, migration22To23,
-            migration23To24, migration24To25, migration25To26
+            migration23To24, migration24To25, migration25To26, migration26To27, migration27To28
         )
-        for (start in 18..25) {
+        for (start in 18..27) {
             val name = "migration-chain-$start"
             helper.createDatabase(name, start).close()
-            helper.runMigrationsAndValidate(name, 26, true, *all).close()
+            helper.runMigrationsAndValidate(name, 28, true, *all).close()
         }
+    }
+
+    @Test
+    fun migrate27To28KeepsBillsAndMarksThemActive() {
+        val old = helper.createDatabase("migration-27-28", 27)
+        old.execSQL("INSERT INTO sales (id, companyId, billNumber, totalMinorUnits, createdAtEpochMs, syncStatus, customerId, paymentMode, paidCashMinorUnits, paidUpiMinorUnits, creditAppliedMinorUnits, discountMinorUnits, revision) VALUES ('s1', 'shop', 'B-1', 5000, 1, 'SYNCED', NULL, 'CASH', 5000, 0, 0, 0, 0)")
+        old.close()
+        val upgraded = helper.runMigrationsAndValidate("migration-27-28", 28, true, migration27To28)
+        upgraded.query("SELECT billNumber, totalMinorUnits, status FROM sales WHERE id = 's1'").use {
+            assertTrue(it.moveToFirst())
+            org.junit.Assert.assertEquals("B-1", it.getString(0))
+            org.junit.Assert.assertEquals(5000L, it.getLong(1))
+            org.junit.Assert.assertEquals("ACTIVE", it.getString(2))
+        }
+        upgraded.close()
     }
 
     @Test
