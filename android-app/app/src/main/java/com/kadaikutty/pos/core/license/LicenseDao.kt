@@ -16,20 +16,8 @@ interface LicenseDao {
     suspend fun getLicense(companyId: String): LicenseEntity?
 
     @Query("SELECT * FROM company_licenses LIMIT 1")
-    fun getActiveLicenseFlow(): Flow<LicenseEntity?>
-
-    @Query("SELECT * FROM company_licenses LIMIT 1")
     suspend fun getActiveLicense(): LicenseEntity?
-
-    @Query("SELECT * FROM company_licenses")
-    suspend fun getAllLicenses(): List<LicenseEntity>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun saveLicense(license: LicenseEntity)
-
-    @Update
-    suspend fun updateLicense(license: LicenseEntity)
-
-    @Query("DELETE FROM company_licenses WHERE companyId = :companyId")
-    suspend fun deleteLicense(companyId: String)
 }

@@ -22,20 +22,13 @@ import kotlinx.coroutines.flow.Flow
     suspend fun movementCount(companyId: String, productId: String): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSale(sale: SaleEntity)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSales(items: List<SaleEntity>)
-    @Query("DELETE FROM sales WHERE companyId = :companyId") suspend fun deleteSalesByCompany(companyId: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertItems(items: List<SaleItemEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStockMovements(movements: List<StockMovementEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertCustomerCredit(credit: com.kadaikutty.pos.feature.masters.data.CustomerCreditEntity)
-    @Query("DELETE FROM sale_items WHERE companyId = :companyId") suspend fun deleteSaleItemsByCompany(companyId: String)
-    @Query("DELETE FROM stock_movements WHERE companyId = :companyId") suspend fun deleteStockMovementsByCompany(companyId: String)
     @Query("SELECT * FROM stock_movements WHERE companyId = :companyId") suspend fun allStockMovements(companyId: String): List<StockMovementEntity>
 
     @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
     fun getSales(companyId: String): Flow<List<SaleEntity>>
-    
-    @Query("SELECT * FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC")
-    fun getSalesPaged(companyId: String): PagingSource<Int, SaleEntity>
 
     /**
      * Sales History with its search and date filter. [query] matches the bill number, customer
@@ -71,9 +64,6 @@ import kotlinx.coroutines.flow.Flow
     @Query("SELECT * FROM sale_items WHERE companyId = :companyId AND saleId = :saleId")
     fun getSaleItems(companyId: String, saleId: String): Flow<List<SaleItemEntity>>
 
-    @Query("SELECT * FROM sales WHERE companyId = :companyId AND customerId = :customerId ORDER BY createdAtEpochMs DESC")
-    fun getSalesForCustomer(companyId: String, customerId: String): Flow<List<SaleEntity>>
-
     @Query("SELECT * FROM sales WHERE companyId = :companyId AND (billNumber = :billNumber OR id = :billNumber) LIMIT 1")
     suspend fun getSaleByBillNumber(companyId: String, billNumber: String): SaleEntity?
 
@@ -82,9 +72,6 @@ import kotlinx.coroutines.flow.Flow
 
     @Query("SELECT * FROM sale_items WHERE companyId = :companyId AND saleId = :saleId")
     suspend fun getSaleItemsList(companyId: String, saleId: String): List<SaleItemEntity>
-
-    @Query("SELECT billNumber FROM sales WHERE companyId = :companyId ORDER BY createdAtEpochMs DESC LIMIT 1")
-    suspend fun getLatestBillNumber(companyId: String): String?
 
     @Query("SELECT billNumber FROM sales WHERE companyId = :companyId")
     suspend fun getAllBillNumbers(companyId: String): List<String>

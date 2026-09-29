@@ -48,12 +48,10 @@ class SyncManagerTest {
         override suspend fun pending(companyId: String, limit: Int): List<SyncQueueEntity> = emptyList()
         override fun unresolved(companyId: String, limit: Int): Flow<List<SyncQueueEntity>> = flowOf(emptyList())
         override suspend fun updateStatus(id: String, status: SyncStatus, updatedAtEpochMs: Long, error: String?) {}
-        override suspend fun updateLastSyncedAt(id: String, lastSyncedAt: Long) {}
         override suspend fun updateAttemptCount(id: String, attemptCount: Int) {}
         override suspend fun retryFailed(companyId: String, updatedAtEpochMs: Long, maxAttempts: Int) {}
         override fun pendingCount(companyId: String): Flow<Int> = flowOf(0)
         override fun oldestPendingCreatedAt(companyId: String): Flow<Long?> = flowOf(null)
-        override suspend fun clearByCompany(companyId: String) {}
         override suspend fun migrateTenantData(oldCompanyId: String, newCompanyId: String) {}
         override suspend fun requeueConflicts(companyId: String, now: Long) {}
         override suspend fun getById(id: String): SyncQueueEntity? = null

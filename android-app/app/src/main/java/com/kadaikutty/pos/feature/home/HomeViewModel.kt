@@ -29,12 +29,9 @@ data class HomeDashboardUiState(
     val monthlySalesMinorUnits: Long = 0L,
     val monthlyInvoicesCount: Int = 0,
     val lowStockCount: Int = 0,
-    val customerCreditDueMinorUnits: Long = 0L,
-    val todayPurchasesMinorUnits: Long = 0L,
     val recentSales: List<SaleEntity> = emptyList(),
     val pendingSyncCount: Int = 0,
-    val isSyncing: Boolean = false,
-    val lastSyncMessage: String = "Cloud Backup Active"
+    val isSyncing: Boolean = false
 )
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -144,26 +141,19 @@ class HomeViewModel @Inject constructor(
                 ) { today, yesterday, weekly, monthly -> listOf(today, yesterday, weekly, monthly) }
 
                 val stockFlow = database.purchaseDao().getStockBalances(companyId)
-                val creditsFlow = database.masterDao().getTotalCustomerCreditsReceivable(companyId)
-                val purchasesTotalFlow = database.purchaseDao().getPurchasesTotalSince(companyId, startOfToday)
                 val pendingFlow = database.syncQueueDao().pendingCount(companyId)
                 val recentSalesFlow = database.saleDao().getRecentSales(companyId, 5)
 
-                val periodAndPurchasesFlow = combine(periodStatsFlow, purchasesTotalFlow) { periods, pTotal -> periods to (pTotal ?: 0L) }
-
                 val aggregatedFlow = combine(
-                    periodAndPurchasesFlow,
+                    periodStatsFlow,
                     stockFlow,
-                    creditsFlow,
                     pendingFlow,
                     recentSalesFlow
-                ) { periodsAndPurchases, stockList, customerCredits, pendingCount, recent ->
-                    val (periods, purchasesTotal) = periodsAndPurchases
+                ) { periods, stockList, pendingCount, recent ->
                     val (todayCount, todayTotal) = periods[0]
                     val (yesterdayCount, yesterdayTotal) = periods[1]
                     val (weeklyCount, weeklyTotal) = periods[2]
                     val (monthlyCount, monthlyTotal) = periods[3]
-                    val customerDue = customerCredits ?: 0L
                     HomeDashboardUiState(
                         todaySalesMinorUnits = todayTotal,
                         todayInvoicesCount = todayCount,
@@ -174,27 +164,16 @@ class HomeViewModel @Inject constructor(
                         monthlySalesMinorUnits = monthlyTotal,
                         monthlyInvoicesCount = monthlyCount,
                         lowStockCount = stockList.count { com.kadaikutty.pos.feature.stock.domain.isLowStock(it.currentStock, it.minStockLevel, it.unitType) },
-                        customerCreditDueMinorUnits = customerDue,
-                        todayPurchasesMinorUnits = purchasesTotal,
                         recentSales = recent,
                         pendingSyncCount = pendingCount,
-                        isSyncing = false, // Default, overwritten by combine below
-                        lastSyncMessage = "" // Default, overwritten by combine below
+                        isSyncing = false // Default, overwritten by combine below
                     )
                 }
 
                 val isOnline = session != null && !session.accessToken.isNullOrBlank()
                 aggregatedFlow.combine(syncScheduler.isSyncingFlow) { state, isSyncing ->
                     val actualSyncing = isOnline && isSyncing
-                    state.copy(
-                        isSyncing = actualSyncing,
-                        lastSyncMessage = when {
-                            !isOnline -> "Not signed in"
-                            actualSyncing -> "Sync in progress..."
-                            state.pendingSyncCount == 0 -> "All data backed up to cloud"
-                            else -> "${state.pendingSyncCount} items ready to sync"
-                        }
-                    )
+                    state.copy(isSyncing = actualSyncing)
                 }
             }
         }

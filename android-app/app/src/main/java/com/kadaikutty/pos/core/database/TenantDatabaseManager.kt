@@ -112,8 +112,4 @@ class TenantDatabaseManager @Inject constructor(
         }
     }
 
-    fun closeAll() {
-        databaseCache.values.forEach { runCatching { it.close() } }
-        databaseCache.clear()
-    }
 }

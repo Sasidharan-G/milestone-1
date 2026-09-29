@@ -70,21 +70,6 @@ object SecurityShield {
     }
 
     /**
-     * Blocks traffic from Active VPN or Proxy configurations.
-     */
-    fun isVpnOrProxyActive(context: Context): Boolean {
-        val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
-        val activeNetwork = cm?.activeNetwork ?: return false
-        val caps = cm.getNetworkCapabilities(activeNetwork) ?: return false
-        
-        val isVpn = caps.hasTransport(NetworkCapabilities.TRANSPORT_VPN)
-        val hasProxy = System.getProperty("http.proxyHost") != null || 
-                       System.getProperty("https.proxyHost") != null
-                        
-        return isVpn || hasProxy
-    }
-
-    /**
      * Validates package authenticity by matching runtime certificate SHA-256 hash.
      */
     fun verifyBinaryIntegrity(context: Context): Boolean {
@@ -192,21 +177,6 @@ object SecurityShield {
                 }
             }
         } catch (_: Exception) {}
-    }
-
-    /**
-     * Wipes KeyStore keys in case of explicit confirmed Settings action only.
-     */
-    fun wipeKeystoreKeys() {
-        try {
-            val keyStore = KeyStore.getInstance("AndroidKeyStore")
-            keyStore.load(null)
-            if (keyStore.containsAlias(KEY_ALIAS)) {
-                keyStore.deleteEntry(KEY_ALIAS)
-            }
-        } catch (e: Exception) {
-            // Ignored in wipe
-        }
     }
 
     /**

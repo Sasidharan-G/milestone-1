@@ -22,13 +22,9 @@ interface PurchaseDao {
     suspend fun linkedCreditCount(companyId: String, id: String): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertPurchase(purchase: PurchaseEntity)
-    @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertPurchases(items: List<PurchaseEntity>)
-    @Query("DELETE FROM purchases WHERE companyId = :companyId") suspend fun deletePurchasesByCompany(companyId: String)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertItems(items: List<PurchaseItemEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertStockMovements(movements: List<StockMovementEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSupplierCredit(credit: com.kadaikutty.pos.feature.masters.data.SupplierCreditEntity)
-    
-    @Query("DELETE FROM purchase_items WHERE companyId = :companyId") suspend fun deletePurchaseItemsByCompany(companyId: String)
 
     @Query("""
         SELECT 
@@ -66,9 +62,6 @@ interface PurchaseDao {
         "ORDER BY p.createdAtEpochMs DESC"
     )
     fun searchPurchases(companyId: String, query: String, fromEpochMs: Long, toEpochMs: Long): Flow<List<PurchaseEntity>>
-
-    @Query("SELECT SUM(totalMinorUnits) FROM purchases WHERE companyId = :companyId AND createdAtEpochMs >= :sinceEpochMs")
-    fun getPurchasesTotalSince(companyId: String, sinceEpochMs: Long): Flow<Long?>
 
     @Query("SELECT * FROM purchase_items WHERE companyId = :companyId AND purchaseId = :purchaseId")
     fun getPurchaseItems(companyId: String, purchaseId: String): Flow<List<PurchaseItemEntity>>

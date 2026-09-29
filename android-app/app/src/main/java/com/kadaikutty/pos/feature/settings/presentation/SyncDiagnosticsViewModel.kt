@@ -47,7 +47,6 @@ class SyncDiagnosticsViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     private val _isDirectSyncing = MutableStateFlow(false)
-    val isDirectSyncing: StateFlow<Boolean> = _isDirectSyncing
 
     val isSyncing: StateFlow<Boolean> = combine(
         _isDirectSyncing,
@@ -119,15 +118,6 @@ class SyncDiagnosticsViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             sessionStore.activeSession.first()?.let { database.syncConflictDao().clear(it.companyId) }
         }
-    }
-
-    private fun updateEntitySyncStatus(database: BillingDatabase, entityType: String, id: String, status: String) {
-        val table = when (entityType) {
-            "Category" -> "categories"; "Product" -> "products"; "Customer" -> "customers"; "Supplier" -> "suppliers"
-            "Expense" -> "expenses"; "Sale" -> "sales"; "Purchase" -> "purchases"; "CustomerCredit" -> "customer_credits"
-            "SupplierCredit" -> "supplier_credits"; "StockMovement" -> "stock_movements"; else -> null
-        } ?: return
-        runCatching { database.openHelper.writableDatabase.execSQL("UPDATE $table SET syncStatus = ? WHERE id = ?", arrayOf(status, id)) }
     }
 
     fun retryItem(item: SyncDeadLetterEntity) {

@@ -887,9 +887,6 @@ fun ShopLicenseAdminCard(
     onWhatsApp: (String) -> Unit
 ) {
     val format = remember { SimpleDateFormat("dd MMM yyyy", Locale.US) }
-    val startDateStr = remember(license.activatedAtEpochMs) {
-        if (license.activatedAtEpochMs > 0) format.format(Date(license.activatedAtEpochMs)) else "Not Activated"
-    }
     val expiryDateStr = remember(license.validUntilEpochMs) {
         if (license.validUntilEpochMs > 0) format.format(Date(license.validUntilEpochMs)) else "Not Set"
     }

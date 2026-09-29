@@ -62,21 +62,6 @@ class BackendApiClient @Inject constructor(
         return request("POST", "backups/${intent.getString("backupId")}/complete", token, JSONObject())
     }
 
-    suspend fun uploadBackupFile(token: String, file: java.io.File, fileName: String, schemaVersion: Int): JSONObject {
-        val checksum = java.security.MessageDigest.getInstance("SHA-256").let { digest ->
-            file.inputStream().use { input ->
-                val buf = ByteArray(8192)
-                var read: Int
-                while (input.read(buf).also { read = it } > 0) { digest.update(buf, 0, read) }
-            }
-            digest.digest().joinToString("") { "%02x".format(it) }
-        }
-        val intent = request("POST", "backups/upload-intent", token, JSONObject()
-            .put("fileName", fileName).put("sizeBytes", file.length()).put("checksumSha256", checksum).put("schemaVersion", schemaVersion))
-        putFileBinary(token, intent.getString("uploadUrl"), intent.optJSONObject("requiredHeaders"), file)
-        return request("POST", "backups/${intent.getString("backupId")}/complete", token, JSONObject())
-    }
-
     suspend fun requestProductImageUploadUrl(token: String, productId: String, contentType: String): JSONObject =
         request("POST", "products/$productId/image-upload-url", token, JSONObject().put("contentType", contentType))
 

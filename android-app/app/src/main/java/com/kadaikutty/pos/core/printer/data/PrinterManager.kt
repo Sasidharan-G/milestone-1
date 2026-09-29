@@ -55,8 +55,6 @@ class PrinterManager(
         }
     }
 
-    fun getActiveType(): PrinterType? = activeType
-
     suspend fun connect(deviceId: String): PrinterResult {
         val driver = activeDriver
             ?: return PrinterResult.Failure(PrinterError.DeviceNotFound("No active printer driver selected"))

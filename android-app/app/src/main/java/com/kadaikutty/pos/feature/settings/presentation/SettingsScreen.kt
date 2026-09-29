@@ -207,7 +207,6 @@ fun SettingsScreen(
     }
 
     val brandingShopName by viewModel.shopName.collectAsState()
-    val brandingLogoPath by viewModel.shopLogoPath.collectAsState()
 
     Scaffold(
         topBar = {
@@ -1862,82 +1861,19 @@ fun SettingsScreen(
                         }
 
                         if (inputShopLogoPath.isNotEmpty() && bitmap != null) {
-                            Text("Logo & App Icon Preview Mockup", fontWeight = FontWeight.SemiBold, fontSize = 14.sp, color = MaterialTheme.colorScheme.primary)
-                            
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                    Text("Original", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                    Spacer(Modifier.height(4.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .size(72.dp)
-                                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                            .padding(4.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Image(
-                                            bitmap = bitmap.asImageBitmap(),
-                                            contentDescription = "Original logo preview",
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
+                            // The logo is printed on shared PDF bills (ShareManager); it does not change the
+                            // app's launcher icon, so the old "App Icon" mockup here was misleading.
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(72.dp)
+                                        .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                                        .padding(4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Shop logo preview", modifier = Modifier.fillMaxSize())
                                 }
-
-                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                    Text("Compressed", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                    Spacer(Modifier.height(4.dp))
-                                    Box(
-                                        modifier = Modifier
-                                            .size(72.dp)
-                                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
-                                            .padding(4.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Image(
-                                            bitmap = bitmap.asImageBitmap(),
-                                            contentDescription = "Compressed logo preview",
-                                            modifier = Modifier.fillMaxSize()
-                                        )
-                                    }
-                                }
-
-                                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.weight(1f)) {
-                                    Text("App Icon", fontSize = 11.sp, color = MaterialTheme.colorScheme.outline)
-                                    Spacer(Modifier.height(4.dp))
-                                    Card(
-                                        modifier = Modifier.size(72.dp),
-                                        shape = RoundedCornerShape(16.dp),
-                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                                        elevation = CardDefaults.cardElevation(defaultElevation = 6.dp)
-                                    ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxSize()
-                                                .padding(8.dp),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Image(
-                                                bitmap = bitmap.asImageBitmap(),
-                                                contentDescription = "App launcher icon mockup",
-                                                modifier = Modifier.fillMaxSize()
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-
-                            TextButton(
-                                onClick = {
-                                    inputShopLogoPath = ""
-                                    hasPendingShopDetailEdits = true
-                                },
-                                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                            ) {
-                                Text("Remove Logo")
+                                Text("Shown at the top of bills you share as PDF.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
 

@@ -5,7 +5,6 @@ sealed interface PrinterError {
     data class ConnectionFailed(override val message: String) : PrinterError
     data class WriteFailed(override val message: String) : PrinterError
     data class DeviceNotFound(override val message: String) : PrinterError
-    data class InvalidDocument(override val message: String) : PrinterError
 }
 
 sealed interface PrinterResult {

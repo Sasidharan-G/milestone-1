@@ -10,8 +10,6 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface UserDao {
-    @Query("SELECT * FROM users")
-    fun getAllUsersFlow(): Flow<List<UserEntity>>
 
     @Query("SELECT * FROM users WHERE companyId = :companyId")
     fun getUsersFlowByCompany(companyId: String): Flow<List<UserEntity>>
@@ -27,9 +25,6 @@ interface UserDao {
 
     @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
     suspend fun getUserById(id: String): UserEntity?
-
-    @Query("SELECT * FROM users WHERE id = :id LIMIT 1")
-    fun getUserByIdFlow(id: String): Flow<UserEntity?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertUser(user: UserEntity)

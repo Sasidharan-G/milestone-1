@@ -27,9 +27,6 @@ interface SyncQueueDao {
     @Query("SELECT * FROM sync_queue WHERE companyId = :companyId AND status != 'SYNCED' ORDER BY createdAtEpochMs DESC, id DESC LIMIT :limit")
     fun unresolved(companyId: String, limit: Int): Flow<List<SyncQueueEntity>>
 
-    @Query("UPDATE sync_queue SET lastSyncedAtEpochMs = :lastSyncedAt WHERE id = :id")
-    suspend fun updateLastSyncedAt(id: String, lastSyncedAt: Long)
-
     @Query("UPDATE sync_queue SET attemptCount = :attemptCount WHERE id = :id")
     suspend fun updateAttemptCount(id: String, attemptCount: Int)
 
@@ -43,9 +40,6 @@ interface SyncQueueDao {
 
     @Query("SELECT MIN(createdAtEpochMs) FROM sync_queue WHERE companyId = :companyId AND status != 'SYNCED'")
     fun oldestPendingCreatedAt(companyId: String): Flow<Long?>
-
-    @Query("DELETE FROM sync_queue WHERE companyId = :companyId")
-    suspend fun clearByCompany(companyId: String)
 
     /**
      * Conflicts left behind by builds that could not resolve them. Sent again, the server replays

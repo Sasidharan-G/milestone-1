@@ -31,8 +31,6 @@ object ProductImageStore {
     fun localFile(context: Context, productId: String): File =
         File(context.filesDir, "$DIRECTORY/$productId.jpg")
 
-    fun hasLocalImage(context: Context, productId: String): Boolean = localFile(context, productId).exists()
-
     /** A scratch file for a photo not yet attached to a saved product (the create-product flow). */
     fun newTempFile(context: Context): File {
         val dir = File(context.cacheDir, DIRECTORY)

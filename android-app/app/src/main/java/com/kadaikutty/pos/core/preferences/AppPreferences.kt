@@ -136,7 +136,6 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     }
 
     private val installationDeviceIdKey = stringPreferencesKey("installation_device_id")
-    val installationDeviceId: Flow<String?> = dataStore.data.map { it[installationDeviceIdKey] }
 
     suspend fun getOrCreateInstallationDeviceId(): String {
         var id = ""

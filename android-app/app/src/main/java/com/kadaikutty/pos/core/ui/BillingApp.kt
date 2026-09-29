@@ -120,7 +120,7 @@ fun BillingApp() {
     // simply mid-renewal never sees two different lock screens fighting for the same problem.
 
     if (isLoggedIn == null || isLicenseLoading) {
-        // Same charcoal as the launch splash, so the white status bar icons stay readable while loading.
+        // Same dark brand colour as the launch splash, so the white status bar icons stay readable while loading.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -385,7 +385,6 @@ fun BillingApp() {
                     val custVm: CustomerViewModel = hiltViewModel()
                     val suppVm: SupplierViewModel = hiltViewModel()
                     val expVm: ExpenseViewModel = hiltViewModel()
-                    val settingsVm: SettingsViewModel = hiltViewModel()
 
                     MasterScreens(
                         categoryVm = catVm,
@@ -393,7 +392,6 @@ fun BillingApp() {
                         customerVm = custVm,
                         supplierVm = suppVm,
                         expenseVm = expVm,
-                        settingsVm = settingsVm,
                         initialTab = backStackEntry.arguments?.getInt("tab") ?: 0,
                         onBack = { navController.popBackStack() }
                     )
@@ -652,9 +650,9 @@ fun HomeScreen(
 
             Box(modifier = Modifier.fillMaxWidth()) {
                 // Behind the status bar the header would sit under the phone's white
-                // signal/wifi/battery icons and hide them; a charcoal strip keeps them readable.
+                // signal/wifi/battery icons and hide them; a dark-blue strip keeps them readable.
                 Box(modifier = Modifier.fillMaxWidth().height(topInset).background(Color(0xFF1E3A8A)))
-                // 1. Charcoal banner with bottom-rounded corners
+                // 1. Dark-blue banner with bottom-rounded corners
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -685,9 +683,8 @@ fun HomeScreen(
                         Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
                     }) {
                         val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
-                        // These three icons sit on the fixed charcoal header, not a themed surface -
-                        // MaterialTheme.colorScheme.primary is that exact same charcoal in light mode,
-                        // which made the icons nearly invisible there. White reads on the header in
+                        // These three icons sit on the fixed dark-blue header, not a themed surface -
+                        // a primary-tinted icon would all but vanish into it. White reads on the header in
                         // both themes, the same way the shop-name text above it is fixed white too.
                         Icon(
                             imageVector = if (dashboardState.pendingSyncCount == 0 && !dashboardState.isSyncing) Icons.Default.CloudDone else Icons.Default.Sync,

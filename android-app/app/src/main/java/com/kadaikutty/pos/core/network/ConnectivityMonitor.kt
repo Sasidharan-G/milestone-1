@@ -72,11 +72,6 @@ class ConnectivityMonitor @Inject constructor(
         }
     }
 
-    /** Re-checks now instead of waiting for the next tick, e.g. after a request failed. */
-    fun recheck() {
-        scope.launch { if (hasValidatedNetwork(context)) setOnline(pingHealth()) else setOnline(false) }
-    }
-
     private suspend fun setOnline(value: Boolean) {
         val wasOnline = _isOnline.value
         _isOnline.value = value

@@ -53,7 +53,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                 context.contentResolver.openOutputStream(uri)?.use { output ->
                     output.write(documentBytes)
                 }
-                android.widget.Toast.makeText(context, "Excel CSV exported successfully!", android.widget.Toast.LENGTH_SHORT).show()
+                android.widget.Toast.makeText(context, "CSV exported successfully!", android.widget.Toast.LENGTH_SHORT).show()
             } catch (e: Exception) {
                 android.widget.Toast.makeText(context, "Export failed: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
             }
@@ -255,7 +255,7 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                             android.widget.Toast.makeText(context, "Export error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
                         }
                     }) {
-                        Icon(Icons.Default.ArrowDropDown, contentDescription = "Export Excel", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.Default.Download, contentDescription = "Export CSV", tint = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             )

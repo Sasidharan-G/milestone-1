@@ -91,9 +91,6 @@ object InputRules {
         return if (EMAIL.matches(trimmed)) null else "Enter a valid email address"
     }
 
-    fun checkPin(value: String, length: Int = PIN_LENGTH, label: String = "PIN"): String? =
-        if (value.length == length && value.all(Char::isDigit)) null else "$label must be exactly $length digits"
-
     /** An amount of rupees. [allowZero] for things like an opening balance that may be nothing. */
     fun checkMoney(value: String, label: String = "Amount", required: Boolean = true, allowZero: Boolean = false): String? {
         val trimmed = value.trim()
@@ -109,13 +106,6 @@ object InputRules {
     fun checkQuantity(value: String, label: String = "Quantity"): String? {
         val amount = value.trim().toBigDecimalOrNull() ?: return "$label is required"
         return if (amount.signum() > 0) null else "$label must be more than zero"
-    }
-
-    fun checkWholeNumber(value: String, label: String, min: Long, max: Long, required: Boolean = true): String? {
-        val trimmed = value.trim()
-        if (trimmed.isEmpty()) return if (required) "$label is required" else null
-        val number = trimmed.toLongOrNull() ?: return "$label must be a whole number"
-        return if (number in min..max) null else "$label must be between $min and $max"
     }
 
     /** First failing message among [checks], or null when all pass. */

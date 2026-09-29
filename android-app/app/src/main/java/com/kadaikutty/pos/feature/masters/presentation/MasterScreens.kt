@@ -64,12 +64,10 @@ fun MasterScreens(
     customerVm: CustomerViewModel,
     supplierVm: SupplierViewModel,
     expenseVm: ExpenseViewModel,
-    settingsVm: com.kadaikutty.pos.feature.settings.presentation.SettingsViewModel,
     initialTab: Int = 0,
     onBack: () -> Unit = {}
 ) {
     var activeTab by remember { mutableIntStateOf(initialTab) }
-    val userSession by settingsVm.activeSession.collectAsState()
 
     Scaffold(
         topBar = {
@@ -90,7 +88,7 @@ fun MasterScreens(
                 .background(MaterialTheme.colorScheme.background)
                 .padding(paddingValues)
         ) {
-            // 2x3 Matrix Grid Header for the 5 Master Data Attributes with Unique Semantic Icons
+            // Scrollable tab row for the six master lists (ids are also the Masters route's ?tab= values)
             val masterTabs = listOf(
                 Triple(0, "Categories", Icons.Default.Category),
                 Triple(1, "Products", Icons.Default.Inventory2),

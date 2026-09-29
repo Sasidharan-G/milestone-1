@@ -29,7 +29,4 @@ interface AuditLogDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertAuditLog(log: AuditLogEntity)
-
-    @Query("DELETE FROM audit_logs WHERE companyId = :companyId")
-    suspend fun clearAuditLogs(companyId: String)
 }
