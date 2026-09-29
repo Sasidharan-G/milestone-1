@@ -63,6 +63,47 @@ export const rejectionReason = (operation: SyncOperation): { code: string; messa
   if (Buffer.byteLength(JSON.stringify(operation.payload || {}), 'utf8') > MAX_PAYLOAD_BYTES) {
     return { code: 'SYNC_RECORD_TOO_LARGE', message: 'Sync record exceeds the safe item size' };
   }
+  return documentAmountsReason(operation);
+};
+
+const MAX_AMOUNT = 100_000_000_000;
+const MAX_QUANTITY = 1_000_000_000;
+const isWhole = (value: unknown, min: number, max: number): boolean =>
+  typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
+
+/**
+ * Bounds every honest bill or purchase satisfies, whichever app build wrote it: whole paise and
+ * quantities in range, no line worth more than its price x quantity, and a total that is not
+ * negative and not above its lines. The exact rounding is the app's business (older builds rounded
+ * differently, and their bills are re-sent during repair), so it is not recomputed here; this stops
+ * a malformed or tampered document - a negative total, a line inflated past its goods - from
+ * reaching every other device.
+ */
+export const documentAmountsReason = (operation: SyncOperation): { code: string; message: string } | null => {
+  if (operation.entityType !== 'Sale' && operation.entityType !== 'Purchase') return null;
+  if (operation.operation === 'DELETE' || operation.operation === 'PARTIAL_UPDATE') return null;
+  const payload = (operation.payload || {}) as Record<string, unknown>;
+  const invalid = (message: string) => ({ code: 'SYNC_DOCUMENT_AMOUNTS_INVALID', message });
+  const items = payload.items;
+  if (items === undefined) return null;
+  if (!Array.isArray(items)) return invalid('Document items must be a list');
+  const priceKey = operation.entityType === 'Sale' ? 'unitPriceMinorUnits' : 'unitValueMinorUnits';
+  let linesTotal = 0;
+  for (const raw of items) {
+    const item = (raw || {}) as Record<string, unknown>;
+    if (!isWhole(item.quantity, 1, MAX_QUANTITY)) return invalid('Each line needs a quantity of at least 1');
+    if (!isWhole(item[priceKey], 0, MAX_AMOUNT)) return invalid('Each line needs a valid price');
+    if (!isWhole(item.lineTotalMinorUnits, 0, MAX_AMOUNT)) return invalid('Each line needs a valid total');
+    const divisor = item.unitType === 'KG' || item.unitType === 'LITER' ? 1000 : 1;
+    const gross = Math.ceil(((item[priceKey] as number) * (item.quantity as number)) / divisor);
+    if ((item.lineTotalMinorUnits as number) > gross + 1) return invalid('A line is worth more than its price times quantity');
+    linesTotal += item.lineTotalMinorUnits as number;
+  }
+  if (!isWhole(payload.totalMinorUnits, 0, MAX_AMOUNT)) return invalid('Document total must be a non-negative amount');
+  if (payload.discountMinorUnits !== undefined && payload.discountMinorUnits !== null && !isWhole(payload.discountMinorUnits, 0, MAX_AMOUNT)) {
+    return invalid('Discount must be a non-negative amount');
+  }
+  if (items.length > 0 && (payload.totalMinorUnits as number) > linesTotal) return invalid('Document total is more than its lines add up to');
   return null;
 };
 

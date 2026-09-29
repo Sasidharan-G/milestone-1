@@ -6,7 +6,7 @@ import path from 'node:path';
 import { AtomicJsonStore } from '../providers/local/atomicJsonStore';
 import { LocalDataStore } from '../providers/local/localDataStore';
 import { CloudRecord, SyncOperation } from '../providers/contracts';
-import { decideSyncOperation, permissionDenial, replayStoredResult } from '../providers/sync/syncRules';
+import { decideSyncOperation, documentAmountsReason, permissionDenial, replayStoredResult } from '../providers/sync/syncRules';
 
 const record = (overrides: Partial<CloudRecord> = {}): CloudRecord => ({
   companyId: 'c', entityType: 'Product', entityId: 'p', version: 3, schemaVersion: 1,
@@ -120,4 +120,21 @@ test('a denied write is answered on its own, stores nothing and does not block t
   assert.equal(sale.status, 'APPLIED');
   const page = await store.pullSync(companyId, '', 50);
   assert.equal(page.records.find(r => r.entityType === 'Product')?.payload.salePriceMinorUnits, 1000);
+});
+
+test('bill and purchase amounts: honest documents pass, malformed ones are refused', () => {
+  const sale = (payload: Record<string, unknown>) => ({ operationId: 'op-1', entityType: 'Sale', entityId: 's1', operation: 'INSERT', payload } as any);
+  const line = { quantity: 1500, unitPriceMinorUnits: 5200, lineTotalMinorUnits: 7800, unitType: 'KG' };
+  // 1.5 kg at Rs 52/kg = Rs 78, less a Rs 3 bill discount.
+  assert.equal(documentAmountsReason(sale({ items: [line], totalMinorUnits: 7500, discountMinorUnits: 300 })), null);
+  // Whole-unit line, floor rounding from an older build still passes.
+  assert.equal(documentAmountsReason(sale({ items: [{ quantity: 3, unitPriceMinorUnits: 3333, lineTotalMinorUnits: 9999, unitType: 'PIECE' }], totalMinorUnits: 9999 })), null);
+  assert.notEqual(documentAmountsReason(sale({ items: [line], totalMinorUnits: -1 })), null);
+  assert.notEqual(documentAmountsReason(sale({ items: [line], totalMinorUnits: 9000 })), null);
+  assert.notEqual(documentAmountsReason(sale({ items: [{ ...line, lineTotalMinorUnits: 7_800_000 }], totalMinorUnits: 7800 })), null);
+  assert.notEqual(documentAmountsReason(sale({ items: [{ ...line, quantity: 0 }], totalMinorUnits: 0 })), null);
+  // Deletes and documents without lines are left to the other rules.
+  assert.equal(documentAmountsReason({ ...sale({}), operation: 'DELETE' }), null);
+  const purchase = { operationId: 'op-2', entityType: 'Purchase', entityId: 'p1', operation: 'INSERT', payload: { items: [{ quantity: 25000, unitValueMinorUnits: 4000, lineTotalMinorUnits: 100000, unitType: 'KG' }], totalMinorUnits: 100000 } } as any;
+  assert.equal(documentAmountsReason(purchase), null);
 });

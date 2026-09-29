@@ -92,8 +92,25 @@ app.use('/api/v1/products', productRoutes);
 // Web pages Google Play requires in the store listing (privacy policy, how to delete an account).
 app.use(publicPages);
 
+// Liveness for the load balancer: cheap and never touches the database, so a brief DynamoDB blip
+// does not make Elastic Beanstalk recycle healthy instances.
 app.get('/health', (_req, res) => {
   res.status(200).json({ status: 'ok', mode: providers().mode, timestamp: new Date().toISOString() });
+});
+
+// Readiness for monitoring and alarms: one small read from the data store, bounded by a timeout.
+app.get('/health/ready', async (_req, res) => {
+  const started = Date.now();
+  try {
+    await Promise.race([
+      providers().dataStore.getMasterConfig(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('data store timed out')), 3000))
+    ]);
+    res.status(200).json({ status: 'ok', dataStore: 'ok', latencyMs: Date.now() - started });
+  } catch (error) {
+    console.error(JSON.stringify({ level: 'error', event: 'readiness_failed', message: (error as Error).message }));
+    res.status(503).json({ status: 'degraded', dataStore: 'unreachable', latencyMs: Date.now() - started });
+  }
 });
 
 app.use(notFoundHandler);

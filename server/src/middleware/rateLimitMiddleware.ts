@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { normalizePhone } from '../controllers/otpController';
 import { AppError, errorBody } from '../core/errors';
+import { takeDurableSlot, usesDurableRateLimit } from './durableRateLimit';
 
 interface RateLimitRecord {
   count: number;
@@ -115,6 +116,22 @@ const getClientIp = (req: Request): string => {
   return req.ip || req.socket.remoteAddress || 'unknown';
 };
 
+/**
+ * After the in-memory checks pass: in AWS mode also take a slot from each durable bucket, so the
+ * limit holds across instances and deploys; elsewhere continue straight away (keeps tests and
+ * local development synchronous and off the data store).
+ */
+const thenDurable = (req: Request, res: Response, next: NextFunction, message: string,
+  buckets: Array<{ scope: string; key: string; windowMs: number; max: number }>) => {
+  if (!usesDurableRateLimit()) return next();
+  (async () => {
+    for (const b of buckets) {
+      if (!await takeDurableSlot(b.scope, b.key, b.windowMs, b.max)) return tooMany(res, req, message, Math.ceil(b.windowMs / 1000));
+    }
+    next();
+  })().catch(next);
+};
+
 export const limitOtpSend = (req: Request, res: Response, next: NextFunction) => {
   const phone = normalizePhone(req.body?.mobileNumber || '');
   const ip = getClientIp(req);
@@ -126,7 +143,10 @@ export const limitOtpSend = (req: Request, res: Response, next: NextFunction) =>
   if (!fromIp.allowed) return tooMany(res, req, 'Too many verification codes requested from this network. Please try again later.', fromIp.retryAfterSeconds);
   const overall = otpSendGlobalLimiter.check('otp_send_global');
   if (!overall.allowed) return tooMany(res, req, 'Verification codes are temporarily unavailable. Please try again later.', overall.retryAfterSeconds);
-  next();
+  thenDurable(req, res, next, 'Too many OTP requests. Please wait before retrying.', [
+    { scope: 'otp-send', key, windowMs: 10 * 60 * 1000, max: 5 },
+    { scope: 'otp-send-ip', key: ip, windowMs: 60 * 60 * 1000, max: Number(process.env.OTP_MAX_PER_IP_HOUR) || 20 }
+  ]);
 };
 
 export const limitOtpVerify = (req: Request, res: Response, next: NextFunction) => {
@@ -154,7 +174,9 @@ export const limitLogin = (req: Request, res: Response, next: NextFunction) => {
   const key = phone.length >= 10 ? `login_${phone}` : `login_ip_${getClientIp(req)}`;
   const result = loginLimiter.check(key);
   if (!result.allowed) return tooMany(res, req, 'Too many sign-in attempts. Please try again later.', result.retryAfterSeconds);
-  next();
+  thenDurable(req, res, next, 'Too many sign-in attempts. Please try again later.', [
+    { scope: 'login', key, windowMs: 10 * 60 * 1000, max: 10 }
+  ]);
 };
 
 // 6. Master login: a tight per-source bucket plus a global ceiling. With only the global bucket
@@ -168,5 +190,8 @@ export const limitMasterLogin = (req: Request, res: Response, next: NextFunction
   if (!fromIp.allowed) return tooMany(res, req, 'Too many master sign-in attempts. Please try again later.', fromIp.retryAfterSeconds);
   const overall = masterLoginGlobalLimiter.check('master_login_global');
   if (!overall.allowed) return tooMany(res, req, 'Too many master sign-in attempts. Please try again later.', overall.retryAfterSeconds);
-  next();
+  thenDurable(req, res, next, 'Too many master sign-in attempts. Please try again later.', [
+    { scope: 'master-login-ip', key: getClientIp(req), windowMs: 15 * 60 * 1000, max: 5 },
+    { scope: 'master-login', key: 'global', windowMs: 15 * 60 * 1000, max: 60 }
+  ]);
 };
