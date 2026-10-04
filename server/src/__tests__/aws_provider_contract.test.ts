@@ -252,6 +252,46 @@ test('AWS S3 upload URL from the real presigner signs the checksum as a header a
   assert.deepEqual(Object.keys(intent.requiredHeaders), ['Content-Type', 'x-amz-checksum-sha256']);
 });
 
+test('AWS S3 shop logo is kept privately under the tenant prefix, read back, and a missing logo is a clean 404', async () => {
+  const sent: any[] = [];
+  const stored = new Map<string, Buffer>();
+  const s3 = { send: async (command: any) => {
+    sent.push(command);
+    const name = command.constructor.name;
+    const key = command.input.Key;
+    if (name === 'PutObjectCommand') { stored.set(key, command.input.Body); return {}; }
+    if (name === 'GetObjectCommand') {
+      const body = stored.get(key);
+      if (!body) { const missing: any = new Error('The specified key does not exist.'); missing.name = 'NoSuchKey'; missing.$metadata = { httpStatusCode: 404 }; throw missing; }
+      return { Body: { transformToByteArray: async () => new Uint8Array(body) } };
+    }
+    if (name === 'DeleteObjectCommand') { stored.delete(key); return {}; }
+    throw new Error(`unexpected ${name}`);
+  } };
+  const storage = new AwsObjectStorage(s3 as any, new FakeDocumentClient() as any, config);
+  const logo = Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2, 3]);
+
+  const key = await storage.writeShopLogo('company-a', logo, 'image/png');
+  assert.equal(key, 'tenants/company-a/branding/shop-logo');
+  assert.equal(sent[0].input.Bucket, 'bucket', 'the private backup bucket, never the public photos bucket');
+  assert.equal(sent[0].input.ContentType, 'image/png');
+  assert.deepEqual(await storage.readShopLogo('company-a'), logo);
+
+  // Another tenant's key is a different object: nothing leaks across shops.
+  await assert.rejects(() => storage.readShopLogo('company-b'), (error: any) => error.status === 404 && error.code === 'SHOP_LOGO_NOT_FOUND');
+
+  await storage.deleteShopLogo('company-a');
+  await assert.rejects(() => storage.readShopLogo('company-a'), (error: any) => error.code === 'SHOP_LOGO_NOT_FOUND');
+  await storage.deleteShopLogo('company-a'); // removing it twice is fine
+});
+
+test('AWS S3 shop logo reports a real S3 failure as a retryable provider error, not as "no logo"', async () => {
+  const denied = { send: async () => { const error: any = new Error('Access Denied'); error.name = 'AccessDenied'; error.$metadata = { httpStatusCode: 403 }; throw error; } };
+  const storage = new AwsObjectStorage(denied as any, new FakeDocumentClient() as any, config);
+  await assert.rejects(() => storage.readShopLogo('company-a'), (error: any) => error.status === 502 && error.code === 'AWS_PROVIDER_ERROR');
+  await assert.rejects(() => storage.writeShopLogo('company-a', Buffer.from([1]), 'image/png'), (error: any) => error.status === 502);
+});
+
 test('AWS session store isolates registered device sessions by tenant and user', async () => {
   const client = new FakeDocumentClient();
   const sessions = new AwsSessionStore(client as any, config.tableName);

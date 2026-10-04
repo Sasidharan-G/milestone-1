@@ -237,6 +237,7 @@ fun BillingApp() {
                         viewModel = vm,
                         session = session,
                         shopName = shopName,
+                        isOnline = isOnline,
                         onNavigateTo = { route -> navController.navigate(route.path) },
                         onOpenMasters = { tab -> navController.navigate("${AppRoute.Masters.path}?tab=$tab") },
                         onLogout = {
@@ -466,7 +467,7 @@ fun BillingApp() {
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             Text("Your KadaiKutty POS License expires in ${currentLicense!!.remainingDays} days!", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.error)
-                            Text("To avoid billing disruptions and maintain your uninterrupted POS operations, please contact the Master Admin to renew your 1-Year license.", color = Color.Black.copy(alpha = 0.8f))
+                            Text("To avoid billing disruptions and maintain your uninterrupted POS operations, please contact the Master Admin to renew your 1-Year license.", color = MaterialTheme.colorScheme.onPrimaryContainer)
                         }
                     },
                     confirmButton = {
@@ -544,6 +545,7 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     session: Session?,
     shopName: String,
+    isOnline: Boolean,
     onNavigateTo: (AppRoute) -> Unit,
     onOpenMasters: (tab: Int) -> Unit,
     onLogout: () -> Unit,
@@ -603,7 +605,7 @@ fun HomeScreen(
             containerColor = MaterialTheme.colorScheme.primaryContainer,
             tonalElevation = 8.dp, // Light shadow
             title = { Text("Confirm Logout", color = MaterialTheme.colorScheme.onPrimaryContainer) },
-            text = { Text("Are you sure you want to logout? Unsynced data will be preserved in cloud queue.", color = Color.Black.copy(alpha = 0.7f)) },
+            text = { Text("Are you sure you want to logout? Unsynced data will be preserved in cloud queue.", color = MaterialTheme.colorScheme.onPrimaryContainer) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -666,6 +668,12 @@ fun HomeScreen(
                         fontWeight = FontWeight.Bold,
                         fontSize = 26.sp,
                         color = Color.White,
+                        // A long shop name wrapping to a 2nd line would grow this header past what
+                        // the KPI row's fixed 28dp "tuck up" below assumes, letting the KPI cards'
+                        // touch target creep into the sync/close-shift/settings icons above them.
+                        // Capping to one line keeps the header height - and that assumption - fixed.
+                        maxLines = 1,
+                        overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 } // close brand-header Column
@@ -678,10 +686,23 @@ fun HomeScreen(
                     horizontalArrangement = Arrangement.spacedBy(0.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = {
-                        viewModel.triggerCloudSync()
-                        Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
-                    }) {
+                    IconButton(
+                        // Without this, a second tap while a sync is already running calls
+                        // triggerCloudSync() again; HomeViewModel enqueues it with REPLACE, so the
+                        // impatient tap cancels the in-flight sync and restarts it instead of letting
+                        // it finish.
+                        enabled = !dashboardState.isSyncing,
+                        onClick = {
+                            if (isOnline) {
+                                viewModel.triggerCloudSync()
+                                Toast.makeText(context, "Cloud sync triggered...", Toast.LENGTH_SHORT).show()
+                            } else {
+                                // The sync job only runs once connectivity returns (it's enqueued
+                                // network-constrained) - saying "triggered" here would be misleading.
+                                Toast.makeText(context, "You're offline. Sync will resume once you're back online.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    ) {
                         val syncIconModifier = if (dashboardState.isSyncing) Modifier.rotate(rotationAngle) else Modifier
                         // These three icons sit on the fixed dark-blue header, not a themed surface -
                         // a primary-tinted icon would all but vanish into it. White reads on the header in

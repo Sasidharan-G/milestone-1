@@ -27,6 +27,7 @@ export async function eraseCompany(req: Request, companyId: string, actor: Actor
   const io = req.app.get('io');
   const backups = await providers().objectStorage.list(companyId);
   await Promise.all(backups.map(backup => providers().objectStorage.delete(companyId, backup.backupId)));
+  await providers().objectStorage.deleteShopLogo(companyId);
   for (const user of companyUsers) {
     const revoked = await providers().sessionStore.revokeAllSessions(companyId, user.userId);
     for (const session of revoked) emitToUser(io, user.userId, 'session_revoked', { sessionId: session.sessionId, reason: 'ACCOUNT_DELETED' });

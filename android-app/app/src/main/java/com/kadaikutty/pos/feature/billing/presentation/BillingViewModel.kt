@@ -20,6 +20,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import com.kadaikutty.pos.core.sharing.BillShareKind
 import com.kadaikutty.pos.core.sharing.ShareManager
 import com.kadaikutty.pos.core.preferences.AppPreferences
 import kotlinx.coroutines.flow.first
@@ -540,6 +541,14 @@ class BillingViewModel @Inject constructor(
                     expectedRevision = editingRevision,
                     previousDue = settlePreviousCreditMinorUnits
                 )
+                // An edited bill that is still exactly the saved one is not saved again.
+                editingSaleId?.let { id ->
+                    val saved = saleDao.getSaleById(session.companyId, id)
+                    if (saved != null && BillEditCheck.unchanged(saved, saleDao.getSaleItemsList(session.companyId, id), draft)) {
+                        onError(Exception("No changes made"))
+                        return@launch
+                    }
+                }
                 saveDraftJob?.cancel()
                 saveDraftJob?.join()
                 when (val result = saleRepository.save(draft)) {
@@ -608,14 +617,26 @@ class BillingViewModel @Inject constructor(
                     onError(Exception("Stock illa / insufficient stock: ${insufficientStock.joinToString(", ")}"))
                     return@launch
                 }
+                val remainingLines = _lines.value.filterNot { it.productId in selectedProductIds }
+                // globalDiscount is the discount for the WHOLE cart, but this batch only pays for
+                // selectedLines - applying it in full here (as this used to) would give the first
+                // split batch the entire discount and leave the rest of the cart at full price.
+                // Split it proportionally by each side's subtotal so the total discount actually
+                // charged across every split batch still adds up to what the cashier entered.
+                val selectedSubtotal = selectedLines.fold(0L) { total, line -> total + line.lineTotal.minorUnits }
+                val remainingSubtotal = remainingLines.fold(0L) { total, line -> total + line.lineTotal.minorUnits }
+                val thisBatchDiscount = com.kadaikutty.pos.core.common.CheckoutMath.splitBatchDiscount(
+                    globalDiscount.minorUnits, selectedSubtotal, remainingSubtotal, remainingLines.isNotEmpty()
+                )
+                val remainingDiscount = globalDiscount.minorUnits - thisBatchDiscount
                 val draft = SaleDraft(
-                    lines = selectedLines, 
-                    customerId = _selectedCustomerId.value, 
-                    paymentMode = paymentMode, 
-                    paidCash = paidCash, 
-                    paidUpi = paidUpi, 
+                    lines = selectedLines,
+                    customerId = _selectedCustomerId.value,
+                    paymentMode = paymentMode,
+                    paidCash = paidCash,
+                    paidUpi = paidUpi,
                     creditApplied = creditApplied,
-                    globalDiscount = globalDiscount,
+                    globalDiscount = Money(thisBatchDiscount),
                     requestId = checkoutId,
                     editingSaleId = editingSaleId,
                     expectedRevision = editingRevision,
@@ -638,9 +659,11 @@ class BillingViewModel @Inject constructor(
                             )
                         ) }
 
-                        _discountInput.value = ""
+                        // Carry the unused portion of the discount forward to whatever's left in the
+                        // cart, instead of clearing it - those lines haven't been paid for yet.
+                        _discountInput.value = if (remainingDiscount == 0L) "" else java.math.BigDecimal.valueOf(remainingDiscount, 2).toPlainString()
                         checkoutId = draft.nextCartRequestId
-                        _lines.value = _lines.value.filterNot { it.productId in selectedProductIds }
+                        _lines.value = remainingLines
                         saveDraftToDb()
                         onSuccess(billNum)
                     }
@@ -730,28 +753,36 @@ class BillingViewModel @Inject constructor(
             val shopLogoPath = appPreferences.shopLogoPath.first()
             val cashierName = session.displayName
 
-            val pdfBytes = if (appPreferences.shareBillFormat.first() == "RECEIPT") {
-                shareManager.generateReceiptPdf(buildReceiptDocument(companyId, sale))
-            } else shareManager.generatePdfInvoice(
-                sale = sale,
-                items = items,
-                productsMap = productsMap,
-                customerName = customerName,
-                shopName = shopName,
-                ownerName = ownerName,
-                gstNumber = gstNumber,
-                shopAddress = shopAddress,
-                shopPhone = shopPhone,
-                shopEmail = shopEmail,
-                cashierName = cashierName,
-                shopLogoPath = shopLogoPath
-            )
-            
-            val filename = "invoice_${sale.billNumber.replace("-", "_")}.pdf"
+            // The receipt-size format goes out as a picture with the logo on top; the A4 invoice as a PDF.
+            val shareKind = BillShareKind.forFormat(appPreferences.shareBillFormat.first())
+            val fileBytes = when (shareKind) {
+                BillShareKind.IMAGE -> {
+                    val receipt = buildReceiptDocument(companyId, sale)
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                        shareManager.generateReceiptImage(receipt, shopLogoPath)
+                    }
+                }
+                BillShareKind.PDF -> shareManager.generatePdfInvoice(
+                    sale = sale,
+                    items = items,
+                    productsMap = productsMap,
+                    customerName = customerName,
+                    shopName = shopName,
+                    ownerName = ownerName,
+                    gstNumber = gstNumber,
+                    shopAddress = shopAddress,
+                    shopPhone = shopPhone,
+                    shopEmail = shopEmail,
+                    cashierName = cashierName,
+                    shopLogoPath = shopLogoPath
+                )
+            }
+
+            val filename = "invoice_${sale.billNumber.replace("-", "_")}.${shareKind.extension}"
             if (isWhatsapp) {
-                shareManager.shareFile(pdfBytes, filename, "application/pdf", ShareManager.PACKAGE_WHATSAPP)
+                shareManager.shareFile(fileBytes, filename, shareKind.mimeType, ShareManager.PACKAGE_WHATSAPP)
             } else {
-                shareManager.shareFile(pdfBytes, filename, "application/pdf", null)
+                shareManager.shareFile(fileBytes, filename, shareKind.mimeType, null)
             }
         }
     }
@@ -765,7 +796,7 @@ class BillingViewModel @Inject constructor(
     }
 
     /** The thermal receipt for [sale]; the same content is used for a receipt-size shared PDF. */
-    private suspend fun buildReceiptDocument(companyId: String, sale: com.kadaikutty.pos.feature.billing.data.SaleEntity): com.kadaikutty.pos.core.printer.domain.PrintDocument {
+    private suspend fun buildReceiptDocument(companyId: String, sale: com.kadaikutty.pos.feature.billing.data.SaleEntity, forPrint: Boolean = false): com.kadaikutty.pos.core.printer.domain.PrintDocument {
         val items = saleDao.getSaleItems(companyId, sale.id).first()
         val productsMap = masterDao.products(companyId, "").first().associateBy { it.id }
         val shopName = appPreferences.shopName.first().ifBlank { "Store" }
@@ -813,7 +844,9 @@ class BillingViewModel @Inject constructor(
             gstNumber = appPreferences.gstNumber.first(),
             paymentMode = sale.paymentMode,
             cancelled = sale.status == com.kadaikutty.pos.feature.billing.data.SaleStatus.VOID,
-            gstRows = gstReceiptRows(items)
+            gstRows = gstReceiptRows(items),
+            // Paper gets the logo unless the owner switched that off; a shared receipt picture adds its own.
+            logoPath = if (forPrint && appPreferences.printLogoOnReceipt.first()) appPreferences.shopLogoPath.first() else ""
         )
     }
 
@@ -829,7 +862,7 @@ class BillingViewModel @Inject constructor(
 
             val session = sessionStore.activeSession.first() ?: return@launch
             val sale = saleDao.getSaleByBillNumber(session.companyId, billNumber) ?: return@launch
-            val document = buildReceiptDocument(session.companyId, sale)
+            val document = buildReceiptDocument(session.companyId, sale, forPrint = true)
             val printerType = com.kadaikutty.pos.core.printer.data.PrinterManager.PrinterType
                 .fromSetting(appPreferences.printerType.first())
             val result = printerManager.printJob(printerType, macAddress, document)

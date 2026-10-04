@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.Flow
 
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun insertSupplierCredit(item: SupplierCreditEntity)
     @Query("SELECT * FROM supplier_credits WHERE companyId = :companyId AND supplierId = :supplierId ORDER BY dateEpochMs DESC, id DESC") fun getSupplierCredits(companyId: String, supplierId: String): Flow<List<SupplierCreditEntity>>
+    @Query("SELECT SUM(amountMinorUnits) FROM supplier_credits WHERE companyId = :companyId AND supplierId = :supplierId") fun getSupplierCreditBalance(companyId: String, supplierId: String): Flow<Long?>
     @Query("SELECT SUM(amountMinorUnits) FROM supplier_credits WHERE companyId = :companyId") fun getTotalSupplierCreditsPayable(companyId: String): Flow<Long?>
     @Query("SELECT * FROM supplier_credits WHERE companyId = :companyId") suspend fun getAllSupplierCredits(companyId: String): List<SupplierCreditEntity>
   

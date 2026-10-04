@@ -107,6 +107,11 @@ that point (`aws apigatewayv2 delete-api --api-id u3bmxkaw25`).
 
 ## 4. Deploying a new server build
 
+> **The live stack is now Mumbai (ap-south-1), not Sydney.** For it, run `aws login` and then
+> `powershell -ExecutionPolicy Bypass -File aws-infrastructure\deploy-server.ps1 -VersionLabel <new label>`:
+> it builds the bundle (with the tests), uploads it, switches the environment and checks `/health`.
+> The Sydney-era commands below show the same steps by hand; the bucket, region and URL in them are stale.
+
 ```bash
 cd server && npm run build && npm test          # must be green before packaging
 cd ../aws-infrastructure

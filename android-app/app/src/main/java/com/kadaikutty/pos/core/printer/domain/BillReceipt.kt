@@ -30,7 +30,9 @@ object BillReceipt {
         paymentMode: String = "",
         cancelled: Boolean = false,
         /** Rate-wise GST inside the total, e.g. "GST 5% on ₹100.00" to "₹4.76". */
-        gstRows: List<Pair<String, String>> = emptyList()
+        gstRows: List<Pair<String, String>> = emptyList(),
+        /** Picture file of the shop logo to print above the header; empty prints none. */
+        logoPath: String = ""
     ): PrintDocument = PrintDocument(
         title = shopName,
         headers = listOfNotNull(
@@ -52,7 +54,8 @@ object BillReceipt {
             if (paymentMode.isNotBlank()) add("Paid by" to paymentMode)
         },
         footer = "Thank you for shopping!",
-        paperWidth = paperWidth
+        paperWidth = paperWidth,
+        logoPath = logoPath
     )
 
     /** True for "0.00", "0", "₹0.00" and the like - whatever Money renders a zero as. */

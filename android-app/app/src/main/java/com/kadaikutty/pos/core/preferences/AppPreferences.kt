@@ -38,7 +38,7 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     private val autoPrintReceiptKey = booleanPreferencesKey("auto_print_receipt")
     val autoPrintReceipt: Flow<Boolean> = dataStore.data.map { it[autoPrintReceiptKey] ?: false }
 
-    /** "A4" (full invoice) or "RECEIPT" (the thermal receipt at 58/80 mm) for bills shared as PDF. */
+    /** "A4" (full invoice, shared as a PDF) or "RECEIPT" (the thermal receipt at 58/80/112 mm, shared as a picture). */
     private val shareBillFormatKey = stringPreferencesKey("share_bill_format")
     val shareBillFormat: Flow<String> = dataStore.data.map { it[shareBillFormatKey] ?: "A4" }
 
@@ -51,10 +51,18 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { it[autoPrintReceiptKey] = enabled }
     }
 
+    /** Whether the shop logo is printed at the top of a thermal receipt (shared bills always carry it). On unless switched off. */
+    private val printLogoOnReceiptKey = booleanPreferencesKey("print_logo_on_receipt")
+    val printLogoOnReceipt: Flow<Boolean> = dataStore.data.map { it[printLogoOnReceiptKey] ?: true }
+
+    suspend fun savePrintLogoOnReceipt(enabled: Boolean) {
+        dataStore.edit { it[printLogoOnReceiptKey] = enabled }
+    }
+
     suspend fun savePrinterSettings(type: String, deviceId: String, paperWidth: Int) {
         require(type in listOf("Bluetooth", "Usb", "Network")) { "Select a supported connection" }
         require(deviceId.isNotBlank()) { "Select a printer first" }
-        require(paperWidth in listOf(32, 48)) { "Select 58 mm or 80 mm paper" }
+        require(paperWidth in com.kadaikutty.pos.core.printer.domain.PaperWidth.all) { "Select 58, 80 or 112 mm paper" }
         dataStore.edit {
             it[printerTypeKey] = type
             it[printerDeviceIdKey] = deviceId
@@ -67,6 +75,15 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             }
             it[savedPrintersKey] = array.toString()
         }
+    }
+
+    /**
+     * Just the paper size, for a shop that has no printer set up but still shares receipt pictures:
+     * the picture is cut to this width, and [savePrinterSettings] would refuse without a printer.
+     */
+    suspend fun savePaperWidth(paperWidth: Int) {
+        require(paperWidth in com.kadaikutty.pos.core.printer.domain.PaperWidth.all) { "Select 58, 80 or 112 mm paper" }
+        dataStore.edit { it[printerPaperWidthKey] = paperWidth }
     }
 
     private val layoutModeKey = stringPreferencesKey("layout_mode")
@@ -117,6 +134,29 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
     private val shopLogoPathKey = stringPreferencesKey("shop_logo_path")
     val shopLogoPath: Flow<String> = dataStore.data.map { it[shopLogoPathKey] ?: "" }
 
+    /** The logo file the cloud last received from this phone; a different [shopLogoPath] means a logo still to upload. */
+    private val shopLogoUploadedPathKey = stringPreferencesKey("shop_logo_uploaded_path")
+    val shopLogoUploadedPath: Flow<String> = dataStore.data.map { it[shopLogoUploadedPathKey] ?: "" }
+
+    /** The cloud's logo version (server time) the saved logo file matches. */
+    private val shopLogoVersionKey = longPreferencesKey("shop_logo_version")
+    val shopLogoVersion: Flow<Long> = dataStore.data.map { it[shopLogoVersionKey] ?: 0L }
+
+    suspend fun saveShopLogoSync(path: String, uploadedPath: String, version: Long) {
+        dataStore.edit {
+            it[shopLogoPathKey] = path
+            it[shopLogoUploadedPathKey] = uploadedPath
+            it[shopLogoVersionKey] = version
+        }
+    }
+
+    suspend fun markShopLogoUploaded(path: String, version: Long) {
+        dataStore.edit {
+            it[shopLogoUploadedPathKey] = path
+            it[shopLogoVersionKey] = version
+        }
+    }
+
     suspend fun saveShopName(name: String) {
         dataStore.edit {
             it[shopNameKey] = name
@@ -129,7 +169,8 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
         }
     }
 
-    suspend fun saveShopDetails(name: String, owner: String, gst: String, address: String, phone: String, email: String, logoPath: String) {
+    /** [logoPath] null leaves the logo as it is, so a background refresh can never overwrite a logo chosen or downloaded meanwhile. */
+    suspend fun saveShopDetails(name: String, owner: String, gst: String, address: String, phone: String, email: String, logoPath: String?) {
         dataStore.edit {
             it[shopNameKey] = name
             it[ownerNameKey] = owner
@@ -137,20 +178,49 @@ class AppPreferences(private val dataStore: DataStore<Preferences>) {
             it[shopAddressKey] = address
             it[shopPhoneKey] = phone
             it[shopEmailKey] = email
-            it[shopLogoPathKey] = logoPath
+            if (logoPath != null) it[shopLogoPathKey] = logoPath
         }
     }
 
+    /** The company the saved shop details (name, address, logo...) belong to. */
+    private val shopDetailsCompanyKey = stringPreferencesKey("shop_details_company_id")
+
+    private fun androidx.datastore.preferences.core.MutablePreferences.removeShopDetails() {
+        remove(shopNameKey)
+        remove(ownerNameKey)
+        remove(gstNumberKey)
+        remove(shopAddressKey)
+        remove(shopPhoneKey)
+        remove(shopEmailKey)
+        remove(shopLogoPathKey)
+        remove(shopLogoUploadedPathKey)
+        remove(shopLogoVersionKey)
+        remove(shopDetailsCompanyKey)
+    }
+
     suspend fun clearShopDetails() {
+        dataStore.edit { it.removeShopDetails() }
+    }
+
+    /**
+     * Called when a company signs in (and each time the app starts with one signed in). The shop
+     * details are wiped only if they belong to a *different* company, so one shop's name, GSTIN and
+     * logo can never show on another shop's bills. They used to be wiped on every app start, which
+     * erased the logo each time the app was reopened: the logo lives only on the phone, the server
+     * profile has none to bring back. Details saved before this marker existed are taken as this
+     * company's. Returns true when another company's details were removed.
+     */
+    suspend fun claimShopDetailsFor(companyId: String): Boolean {
+        var removed = false
         dataStore.edit {
-            it.remove(shopNameKey)
-            it.remove(ownerNameKey)
-            it.remove(gstNumberKey)
-            it.remove(shopAddressKey)
-            it.remove(shopPhoneKey)
-            it.remove(shopEmailKey)
-            it.remove(shopLogoPathKey)
+            val owner = it[shopDetailsCompanyKey]
+            if (owner != null && owner != companyId) {
+                it.removeShopDetails()
+                removed = true
+            }
+            it[shopDetailsCompanyKey] = companyId
         }
+        return removed
     }
 
     private val installationDeviceIdKey = stringPreferencesKey("installation_device_id")

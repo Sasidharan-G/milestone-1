@@ -24,7 +24,7 @@ android {
         // the installer only says "problem parsing the package".
         minSdk = 24
         targetSdk = 35
-        versionCode = 38 // Google Play needs this to go up on every upload
+        versionCode = 44 // Google Play needs this to go up on every upload
         // Shown in the brand footer and Android's app info. Bump the minor for a feature release,
         // the patch for fixes; the build number (versionCode) is appended so support can tell builds apart.
         versionName = "1.0.0 ($versionCode)"
@@ -70,7 +70,15 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // Without a keystore (CI) the release build stays unsigned instead of failing, so CI still
             // runs the real R8/minified release path; a local or release build with the keystore signs.
-            if (releaseValue("KADAIKUTTY_KEYSTORE_FILE") != null) signingConfig = signingConfigs.getByName("release")
+            if (releaseValue("KADAIKUTTY_KEYSTORE_FILE") != null) {
+                signingConfig = signingConfigs.getByName("release")
+                // A signed release build is the one that ships; it must not silently fall back to
+                // defaultConfig's emulator/localhost BACKEND_BASE_URL if release.properties/env is
+                // missing the real value - that would ship an APK pointed at localhost with no error.
+                check(releaseValue("BACKEND_BASE_URL") != null) {
+                    "BACKEND_BASE_URL is not set (release.properties or env) for a signed release build."
+                }
+            }
             buildConfigField("String", "SIGNING_CERT_SHA256", "\"$signingCertSha256\"")
         }
         debug {
@@ -181,6 +189,7 @@ dependencies {
     implementation(libs.androidx.work.runtime.ktx)
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.datastore.preferences)
+    implementation("androidx.security:security-crypto:1.1.0-alpha06")
     debugImplementation(libs.okhttp3.logging.interceptor)
     implementation(libs.sentry.android)
     testImplementation(libs.junit)

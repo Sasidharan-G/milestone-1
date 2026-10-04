@@ -51,4 +51,24 @@ class CheckoutValidationTest {
         assertTrue(parts.all { it >= 0 })
     }
     @Test(expected = IllegalArgumentException::class) fun upiOverpaymentRejected() { CheckoutMath.payment(100, 0, 101, false) }
+
+    @Test fun splitBatchDiscountIsProRataWhileItemsRemain() {
+        // 440 cart, 44 discount: a 100 batch takes 10 of it, the remaining 340 keeps 34.
+        assertEquals(1000L, CheckoutMath.splitBatchDiscount(4400, 10000, 34000, itemsRemain = true))
+        assertEquals(3400L, 4400L - CheckoutMath.splitBatchDiscount(4400, 10000, 34000, itemsRemain = true))
+    }
+    @Test fun splitBatchDiscountTakesEverythingWhenNothingRemains() {
+        assertEquals(4400L, CheckoutMath.splitBatchDiscount(4400, 44000, 0, itemsRemain = false))
+    }
+    @Test fun splitBatchDiscountNeverThrowsOnAnEmptyCartTotal() {
+        // allocate() rejects a zero weight sum with a discount; the screen calls this on every redraw, so it must not.
+        assertEquals(0L, CheckoutMath.splitBatchDiscount(500, 0, 0, itemsRemain = true))
+    }
+    @Test fun splitBatchDiscountKeepsEveryPaiseAcrossBatches() {
+        val cart = 12345L
+        val first = CheckoutMath.splitBatchDiscount(777, 4001, cart - 4001, itemsRemain = true)
+        val rest = 777L - first
+        assertEquals(777L, first + rest)
+        assertTrue(first in 0..777)
+    }
 }

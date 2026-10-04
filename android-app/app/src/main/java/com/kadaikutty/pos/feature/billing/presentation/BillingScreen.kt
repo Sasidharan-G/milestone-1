@@ -1,6 +1,7 @@
 package com.kadaikutty.pos.feature.billing.presentation
 
 import com.kadaikutty.pos.core.ui.LocalLayoutMode
+import com.kadaikutty.pos.core.ui.shouldUseSinglePane
 
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
@@ -21,7 +22,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -183,25 +183,133 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
         }
     }
 
-    val activeLines = if (checkoutMode == "SPLIT_CART") lines.filter { splitCartSelectedItems.contains(it.productId) } else lines
-    val activeBillSubtotal = activeLines.fold(Money.Zero) { sum, line -> sum + line.lineTotal }
     val globalDiscountMinorUnits = com.kadaikutty.pos.core.common.CheckoutMath.parseAmount(discountInput) ?: 0L
-    val activeBillTotal = Money(maxOf(0L, activeBillSubtotal.minorUnits - globalDiscountMinorUnits))
+    // The whole draft: what the main screen always shows, whatever a split checkout is doing. It used
+    // to follow the split's ticked items, so a cancelled split left e.g. 100 on a 440 cart.
+    val cartSubtotal = lines.fold(Money.Zero) { sum, line -> sum + line.lineTotal }
+    val cartTotal = Money(maxOf(0L, cartSubtotal.minorUnits - globalDiscountMinorUnits))
+    // What the payment dialog charges: the whole draft, or only the ticked items of a split with the
+    // share of the discount the sale itself will take (CheckoutMath.splitBatchDiscount).
+    val activeBillTotal = if (checkoutMode == "SPLIT_CART") {
+        val picked = lines.filter { splitCartSelectedItems.contains(it.productId) }
+        val pickedSubtotal = picked.fold(0L) { sum, line -> sum + line.lineTotal.minorUnits }
+        val batchDiscount = com.kadaikutty.pos.core.common.CheckoutMath.splitBatchDiscount(
+            globalDiscountMinorUnits, pickedSubtotal, cartSubtotal.minorUnits - pickedSubtotal, picked.size < lines.size
+        )
+        Money(maxOf(0L, pickedSubtotal - batchDiscount))
+    } else cartTotal
     val selectedProduct = products.find { it.id == selectedProductId }
     val currentStockUnits = if (selectedProduct != null) stockMap[selectedProduct.id] ?: 0L else 0L
+
+    // These dialogs sit here, not inside the invoice card: the card is rebuilt whenever the screen
+    // switches between the phone and tablet layout, and a dialog inside it would be destroyed and
+    // reopened on its first page (losing a half-typed split payment) every time that happens.
+    HeldCartsDialog(
+        showDialog = showHeldCartsDialog,
+        heldCarts = heldCarts,
+        onResumeCart = { parkId ->
+            viewModel.resumeHeldCart(parkId)
+            message = "Held bill resumed!"
+        },
+        onDiscardCart = { parkId ->
+            viewModel.discardHeldCart(parkId)
+            message = "Held bill discarded"
+        },
+        onDismiss = { showHeldCartsDialog = false }
+    )
+
+    SplitCartDialog(
+        showDialog = showSplitCartDialog,
+        lines = lines,
+        selectedItems = splitCartSelectedItems,
+        onDismiss = {
+            showSplitCartDialog = false
+            splitCartSelectedItems = emptySet()
+        },
+        onSelectionChange = { productId, isChecked ->
+            if (isChecked) {
+                splitCartSelectedItems += productId
+            } else {
+                splitCartSelectedItems -= productId
+            }
+        },
+        onProceedToPay = {
+            showSplitCartDialog = false
+            checkoutMode = "SPLIT_CART"
+            showPaymentDialog = true
+        }
+    )
+
+    val settleDueAmount = if (includePreviousDueInCheckout && selectedCustomerId != null && selectedCustomerId != "online") maxOf(0L, customerCreditDue) else 0L
+    val finalPayableTotal = activeBillTotal + Money(settleDueAmount)
+
+    PaymentCheckoutDialog(
+        showDialog = showPaymentDialog,
+        checkoutMode = checkoutMode,
+        finalPayableTotal = finalPayableTotal,
+        customerCreditDue = customerCreditDue,
+        selectedCustomerId = selectedCustomerId,
+        includePreviousDueInCheckout = includePreviousDueInCheckout,
+        onIncludePreviousDueChange = { includePreviousDueInCheckout = it },
+        onDismiss = { showPaymentDialog = false },
+        onPerformSave = { pMode, pCash, pUpi, cApplied ->
+            val discountMoney = Money(globalDiscountMinorUnits)
+            if (checkoutMode == "SPLIT_CART") {
+                viewModel.checkoutSelectedItems(
+                    selectedProductIds = splitCartSelectedItems,
+                    paymentMode = pMode,
+                    paidCash = pCash,
+                    paidUpi = pUpi,
+                    creditApplied = cApplied,
+                    globalDiscount = discountMoney,
+                    settlePreviousCreditMinorUnits = settleDueAmount,
+                    onSuccess = { billNum ->
+                        message = "Bill saved successfully: $billNum"
+                        // Not clearing the discount input here: checkoutSelectedItems
+                        // already carries the unspent portion of it forward onto
+                        // whatever's left in the cart after a split checkout.
+                        includePreviousDueInCheckout = false
+                        // The ticked items are gone from the cart; nothing of this split may linger.
+                        splitCartSelectedItems = emptySet()
+                        checkoutMode = "ALL"
+                    },
+                    onError = { message = "Error: ${it.message}" }
+                )
+            } else {
+                viewModel.save(
+                    paymentMode = pMode,
+                    paidCash = pCash,
+                    paidUpi = pUpi,
+                    creditApplied = cApplied,
+                    globalDiscount = discountMoney,
+                    settlePreviousCreditMinorUnits = settleDueAmount,
+                    onSuccess = { billNum ->
+                        message = "Bill saved successfully: $billNum"
+                        viewModel.setDiscountInput("")
+                        includePreviousDueInCheckout = false
+                    },
+                    onError = { message = "Error: ${it.message}" }
+                )
+            }
+        },
+        onError = { errorMsg ->
+            message = errorMsg
+        }
+    )
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(com.kadaikutty.pos.R.string.billing), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                title = { Text(stringResource(com.kadaikutty.pos.R.string.billing), fontWeight = FontWeight.Bold, color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
                 // No actions: the barcode scanner sits beside the Product field, and syncing is on Home
                 // (the old "Live Sync" here only nudged the scheduler and never retried failed items).
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                // Same navy as the Home dashboard header, so every screen's top bar reads as one brand colour.
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1E3A8A))
             )
         }
     ) { paddingValues ->
@@ -653,8 +761,8 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                             singleLine = true
                         )
                         Column(modifier = Modifier.weight(1.2f), horizontalAlignment = Alignment.End) {
-                            Text("Sub: $activeBillSubtotal", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
-                            Text("Total: $activeBillTotal", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                            Text("Sub: $cartSubtotal", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.outline)
+                            Text("Total: $cartTotal", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                         }
                     }
 
@@ -689,7 +797,10 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
 
                         OutlinedButton(
                             onClick = {
-                                if (lines.isEmpty()) message = "Cannot split empty bill" else showSplitCartDialog = true
+                                if (lines.isEmpty()) message = "Cannot split empty bill" else {
+                                    splitCartSelectedItems = emptySet()
+                                    showSplitCartDialog = true
+                                }
                             },
                             modifier = Modifier.weight(0.9f),
                             shape = MaterialTheme.shapes.medium,
@@ -714,90 +825,6 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
                         }
                     }
 
-                    HeldCartsDialog(
-                        showDialog = showHeldCartsDialog,
-                        heldCarts = heldCarts,
-                        onResumeCart = { parkId ->
-                            viewModel.resumeHeldCart(parkId)
-                            message = "Held bill resumed!"
-                        },
-                        onDiscardCart = { parkId ->
-                            viewModel.discardHeldCart(parkId)
-                            message = "Held bill discarded"
-                        },
-                        onDismiss = { showHeldCartsDialog = false }
-                    )
-
-                    SplitCartDialog(
-                        showDialog = showSplitCartDialog,
-                        lines = lines,
-                        selectedItems = splitCartSelectedItems,
-                        onDismiss = { showSplitCartDialog = false },
-                        onSelectionChange = { productId, isChecked ->
-                            if (isChecked) {
-                                splitCartSelectedItems += productId
-                            } else {
-                                splitCartSelectedItems -= productId
-                            }
-                        },
-                        onProceedToPay = {
-                            showSplitCartDialog = false
-                            checkoutMode = "SPLIT_CART"
-                            showPaymentDialog = true
-                        }
-                    )
-
-                    val settleDueAmount = if (includePreviousDueInCheckout && selectedCustomerId != null && selectedCustomerId != "online") maxOf(0L, customerCreditDue) else 0L
-                    val finalPayableTotal = activeBillTotal + Money(settleDueAmount)
-
-                    PaymentCheckoutDialog(
-                        showDialog = showPaymentDialog,
-                        checkoutMode = checkoutMode,
-                        finalPayableTotal = finalPayableTotal,
-                        customerCreditDue = customerCreditDue,
-                        selectedCustomerId = selectedCustomerId,
-                        includePreviousDueInCheckout = includePreviousDueInCheckout,
-                        onIncludePreviousDueChange = { includePreviousDueInCheckout = it },
-                        onDismiss = { showPaymentDialog = false },
-                        onPerformSave = { pMode, pCash, pUpi, cApplied ->
-                            val discountMoney = Money(globalDiscountMinorUnits)
-                            if (checkoutMode == "SPLIT_CART") {
-                                viewModel.checkoutSelectedItems(
-                                    selectedProductIds = splitCartSelectedItems,
-                                    paymentMode = pMode,
-                                    paidCash = pCash,
-                                    paidUpi = pUpi,
-                                    creditApplied = cApplied,
-                                    globalDiscount = discountMoney,
-                                    settlePreviousCreditMinorUnits = settleDueAmount,
-                                    onSuccess = { billNum ->
-                                        message = "Bill saved successfully: $billNum"
-                                        viewModel.setDiscountInput("")
-                                        includePreviousDueInCheckout = false
-                                    },
-                                    onError = { message = "Error: ${it.message}" }
-                                )
-                            } else {
-                                viewModel.save(
-                                    paymentMode = pMode,
-                                    paidCash = pCash,
-                                    paidUpi = pUpi,
-                                    creditApplied = cApplied,
-                                    globalDiscount = discountMoney,
-                                    settlePreviousCreditMinorUnits = settleDueAmount,
-                                    onSuccess = { billNum ->
-                                        message = "Bill saved successfully: $billNum"
-                                        viewModel.setDiscountInput("")
-                                        includePreviousDueInCheckout = false
-                                    },
-                                    onError = { message = "Error: ${it.message}" }
-                                )
-                            }
-                        },
-                        onError = { errorMsg ->
-                            message = errorMsg
-                        }
-                    )
 
                     if (message.isNotBlank()) {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -982,11 +1009,7 @@ fun BillingScreen(viewModel: BillingViewModel, onBack: () -> Unit = {}) {
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            val isPortraitMobile = when (LocalLayoutMode.current) {
-                "Mobile" -> true
-                "Tablet" -> false
-                else -> this.maxWidth < 700.dp && this.maxHeight > this.maxWidth
-            }
+            val isPortraitMobile = shouldUseSinglePane(LocalLayoutMode.current, this.maxWidth)
             
             if (isPortraitMobile) {
                 Column(modifier = Modifier.fillMaxSize()) {

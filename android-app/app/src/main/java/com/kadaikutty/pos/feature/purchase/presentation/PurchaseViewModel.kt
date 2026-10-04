@@ -44,7 +44,16 @@ class PurchaseViewModel @Inject constructor(
     private var editingPurchase: PurchaseEntity? = null
     private val _operationError = MutableStateFlow<String?>(null)
     val operationError = _operationError.asStateFlow()
-    private val errors = kotlinx.coroutines.CoroutineExceptionHandler { _, error -> _operationError.value = error.message }
+    private val errors = kotlinx.coroutines.CoroutineExceptionHandler { _, error -> error.message?.let(::postOperationError) }
+
+    // StateFlow dedupes equal consecutive values, so setting the same error message twice in a row
+    // (e.g. two identical "Line amount exceeds the supported limit" validation failures) only
+    // notifies collectAsState/LaunchedEffect the first time - the second is silently swallowed.
+    // Routing every error through null-then-value guarantees each post is its own emission.
+    private fun postOperationError(message: String) {
+        _operationError.value = null
+        _operationError.value = message
+    }
     private val masterDao = database.masterDao()
     private val purchaseDao = database.purchaseDao()
 
@@ -109,18 +118,18 @@ class PurchaseViewModel @Inject constructor(
 
     fun addLine(productId: String, quantity: Long, unitCost: Money, unitType: String = "PIECE", supplierId: String? = null) {
         if (_isSaving.value) return
-        if (quantity !in 1..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY || unitCost.minorUnits !in 0..com.kadaikutty.pos.core.common.CheckoutMath.MAX_AMOUNT) { _operationError.value = "Enter a valid price and quantity"; return }
+        if (quantity !in 1..com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY || unitCost.minorUnits !in 0..com.kadaikutty.pos.core.common.CheckoutMath.MAX_AMOUNT) { postOperationError("Enter a valid price and quantity"); return }
         val targetSupplierId = supplierId ?: _selectedSupplierId.value
         val current = _lines.value.toMutableList()
         val index = current.indexOfFirst { it.productId == productId && it.supplierId == targetSupplierId }
         if (index >= 0) {
             val line = current[index]
-            if (line.quantity + quantity > com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) { _operationError.value = "Quantity exceeds the supported limit"; return }
+            if (line.quantity + quantity > com.kadaikutty.pos.core.common.CheckoutMath.MAX_QUANTITY) { postOperationError("Quantity exceeds the supported limit"); return }
             current[index] = line.copy(quantity = line.quantity + quantity)
         } else {
             current.add(PurchaseLine(productId, quantity, unitCost, unitType, targetSupplierId))
         }
-        if (runCatching { current.forEach { it.total } }.isFailure) { _operationError.value = "Line amount exceeds the supported limit"; return }
+        if (runCatching { current.forEach { it.total } }.isFailure) { postOperationError("Line amount exceeds the supported limit"); return }
         _lines.value = current
     }
 
@@ -145,7 +154,7 @@ class PurchaseViewModel @Inject constructor(
                 it
             }
         }
-        if (runCatching { updated.forEach { it.total } }.isFailure) { _operationError.value = "Line amount exceeds the supported limit"; return }
+        if (runCatching { updated.forEach { it.total } }.isFailure) { postOperationError("Line amount exceeds the supported limit"); return }
         _lines.value = updated
     }
 
@@ -194,6 +203,13 @@ class PurchaseViewModel @Inject constructor(
                         creditApplied = Money(totals[i] - cashParts[i] - upiParts[i]), requestId = "$checkoutId:${group.key}",
                         editingPurchaseId = editingPurchase?.id, expectedRevision = editingPurchase?.revision)
                 }
+                // An edited purchase that is still exactly the saved one is not saved again.
+                editingPurchase?.let { saved ->
+                    if (drafts.size == 1 && PurchaseEditCheck.unchanged(saved, purchaseRepository.getPurchaseItemsList(saved.id), drafts[0])) {
+                        onError(Exception("No changes made"))
+                        return@launch
+                    }
+                }
                 val createdOrderIds = when (val result = purchaseRepository.saveBatch(drafts)) {
                     is AppResult.Success -> result.value
                     is AppResult.Failure -> { onError(Exception(result.error.userMessage)); return@launch }
@@ -210,16 +226,26 @@ class PurchaseViewModel @Inject constructor(
         }
     }
 
+    // Guards against deletePurchase being invoked twice for the same order before the first call
+    // returns; the dialog closes on the same tap that triggers this today, but that's the caller's
+    // mitigation, not this function's, so it shouldn't be the only thing preventing a double-delete.
+    private val deletingPurchaseIds = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
     fun deletePurchase(
         purchase: PurchaseEntity,
         onSuccess: () -> Unit,
         onError: (Throwable) -> Unit
     ) {
+        if (!deletingPurchaseIds.add(purchase.id)) return
         viewModelScope.launch(errors) {
-            val orderOrInv = purchase.invoiceNumber ?: purchase.orderNumber ?: purchase.id
-            when (val result = purchaseRepository.deletePurchase(purchase.id, orderOrInv)) {
-                is AppResult.Success -> onSuccess()
-                is AppResult.Failure -> onError(Exception(result.error.userMessage))
+            try {
+                val orderOrInv = purchase.invoiceNumber ?: purchase.orderNumber ?: purchase.id
+                when (val result = purchaseRepository.deletePurchase(purchase.id, orderOrInv)) {
+                    is AppResult.Success -> onSuccess()
+                    is AppResult.Failure -> onError(Exception(result.error.userMessage))
+                }
+            } finally {
+                deletingPurchaseIds.remove(purchase.id)
             }
         }
     }

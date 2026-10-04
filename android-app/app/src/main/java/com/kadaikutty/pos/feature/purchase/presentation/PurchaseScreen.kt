@@ -1,6 +1,7 @@
 package com.kadaikutty.pos.feature.purchase.presentation
 
 import com.kadaikutty.pos.core.ui.LocalLayoutMode
+import com.kadaikutty.pos.core.ui.shouldUseSinglePane
 
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -16,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
@@ -59,9 +61,20 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
     var expandedProduct by remember { mutableStateOf(false) }
     var expandedSupplier by remember { mutableStateOf(false) }
     var supplierInvoiceNumber by remember { mutableStateOf("") }
+    // The payment dialog's state lives here, not inside the purchase card: the card is rebuilt when the
+    // screen switches between the phone and tablet layout, which used to close the dialog or send it
+    // back to its first page (losing a half-typed split payment).
+    var showPaymentDialog by remember { mutableStateOf(false) }
+    var isSplitMode by remember { mutableStateOf(false) }
+    var splitCashText by remember { mutableStateOf("") }
+    var splitUpiText by remember { mutableStateOf("") }
     var message by remember { mutableStateOf("") }
+    // Why "Add" did nothing, shown under the Add row. The general [message] sits below the Pay button,
+    // out of sight on a small screen, so a refused Add looked like a dead button.
+    var addError by remember { mutableStateOf("") }
     val operationError by viewModel.operationError.collectAsState()
     LaunchedEffect(operationError) { operationError?.let { message = it } }
+    LaunchedEffect(selectedProductId, selectedSupplierId) { addError = "" }
     var showCameraScanner by remember { mutableStateOf(false) }
     var editingPurchaseLine by remember { mutableStateOf<PurchaseLine?>(null) }
 
@@ -143,7 +156,10 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                 }
             },
             confirmButton = {
+                val initialQty = if (isDec) String.format(Locale.US, "%.3f", line.quantity / 1000.0) else line.quantity.toString()
                 Button(
+                    // Off until the quantity is different from what the line already has.
+                    enabled = inputQty != initialQty,
                     onClick = {
                         val parsedQty = if (isDec) {
                             // BigDecimal, not (qty * 1000).toLong(): the double truncates 1.005 kg to 1004 g.
@@ -180,16 +196,194 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
         }
     }
 
+    if (showPaymentDialog) {
+        val cashVal = CheckoutMath.rupeesToMinorUnits(splitCashText.toDoubleOrNull() ?: 0.0)
+        val upiVal = CheckoutMath.rupeesToMinorUnits(splitUpiText.toDoubleOrNull() ?: 0.0)
+        val paidTotalMinor = cashVal + upiVal
+        val remainingCreditMinor = maxOf(0L, purchaseTotal.minorUnits - paidTotalMinor)
+
+        AlertDialog(
+            // Dismissing (tap-outside/back) while a payment button's onClick has
+            // already started viewModel.save() doesn't cancel that coroutine - it
+            // keeps running and saves the purchase anyway. Block dismissal while a
+            // save is in flight so the dialog closing always means "nothing happened".
+            onDismissRequest = { if (!isSaving) { showPaymentDialog = false; isSplitMode = false } },
+            title = { Text(if (isSplitMode) "Split Supplier Payment" else "Select Payment Mode to Supplier", fontWeight = FontWeight.Bold) },
+            text = {
+                // Scrollable for the same reason as the billing payment dialog: keyboard open on a short phone.
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth().verticalScroll(rememberScrollState())) {
+                    Text("Payable Amount: $purchaseTotal", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
+                    
+                    if (!isSplitMode) {
+                        Button(
+                            onClick = {
+                                val invNum = supplierInvoiceNumber.trim().ifBlank { null }
+                                viewModel.save(
+                                    invoiceNumber = invNum,
+                                    paymentMode = "CASH",
+                                    paidCash = purchaseTotal,
+                                    onSuccess = {
+                                        showPaymentDialog = false
+                                        supplierInvoiceNumber = ""
+                                        message = "Purchase recorded & paid via Cash!"
+                                    },
+                                    onError = { message = "Error: ${it.message}" }
+                                )
+                            },
+                            enabled = !isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Paid via Cash", fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                val invNum = supplierInvoiceNumber.trim().ifBlank { null }
+                                viewModel.save(
+                                    invoiceNumber = invNum,
+                                    paymentMode = "UPI",
+                                    paidUpi = purchaseTotal,
+                                    onSuccess = {
+                                        showPaymentDialog = false
+                                        supplierInvoiceNumber = ""
+                                        message = "Purchase recorded & paid via UPI/Online!"
+                                    },
+                                    onError = { message = "Error: ${it.message}" }
+                                )
+                            },
+                            enabled = !isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Paid via GPay / UPI", fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                val invNum = supplierInvoiceNumber.trim().ifBlank { null }
+                                viewModel.save(
+                                    invoiceNumber = invNum,
+                                    paymentMode = "CREDIT",
+                                    creditApplied = purchaseTotal,
+                                    onSuccess = {
+                                        showPaymentDialog = false
+                                        supplierInvoiceNumber = ""
+                                        message = "Purchase recorded on Credit!"
+                                    },
+                                    onError = { message = "Error: ${it.message}" }
+                                )
+                            },
+                            enabled = !isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Buy on Full Credit", fontWeight = FontWeight.Bold)
+                        }
+
+                        OutlinedButton(
+                            onClick = { isSplitMode = true },
+                            enabled = !isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Split Payment (Cash + UPI + Credit)", fontWeight = FontWeight.Bold)
+                        }
+                    } else {
+                        OutlinedTextField(
+                            value = splitCashText,
+                            onValueChange = { splitCashText = com.kadaikutty.pos.core.common.InputRules.money(it) },
+                            label = { Text("Cash Paid (₹)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        OutlinedTextField(
+                            value = splitUpiText,
+                            onValueChange = { splitUpiText = com.kadaikutty.pos.core.common.InputRules.money(it) },
+                            label = { Text("UPI / Online Paid (₹)") },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.fillMaxWidth()
+                        )
+
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text("Total Paid: ${Money(paidTotalMinor)}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    "Supplier Credit / Debt: ${Money(remainingCreditMinor)}",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (remainingCreditMinor > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                val invNum = supplierInvoiceNumber.trim().ifBlank { null }
+                                viewModel.save(
+                                    invoiceNumber = invNum,
+                                    paymentMode = "SPLIT",
+                                    paidCash = Money(cashVal),
+                                    paidUpi = Money(upiVal),
+                                    creditApplied = Money(remainingCreditMinor),
+                                    onSuccess = {
+                                        showPaymentDialog = false
+                                        isSplitMode = false
+                                        supplierInvoiceNumber = ""
+                                        splitCashText = ""
+                                        splitUpiText = ""
+                                        message = "Split Purchase saved successfully!"
+                                    },
+                                    onError = { message = "Error: ${it.message}" }
+                                )
+                            },
+                            enabled = !isSaving,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Confirm Purchase", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = {
+                TextButton(
+                    enabled = !isSaving,
+                    onClick = {
+                        if (isSplitMode) {
+                            isSplitMode = false
+                        } else {
+                            showPaymentDialog = false
+                        }
+                    }
+                ) {
+                    Text(if (isSplitMode) "Back" else "Cancel")
+                }
+            }
+        )
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(com.kadaikutty.pos.R.string.purchase), fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                title = { Text(stringResource(com.kadaikutty.pos.R.string.purchase), fontWeight = FontWeight.Bold, color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                // Same navy as the Home dashboard header, so every screen's top bar reads as one brand colour.
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1E3A8A))
             )
         }
     ) { paddingValues ->
@@ -229,6 +423,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                 label = { Text("Supplier", fontSize = 11.sp) },
                                 trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedSupplier) },
                                 colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors(),
+                                isError = addError.isNotBlank() && selectedSupplierId.isNullOrBlank(),
                                 shape = RoundedCornerShape(10.dp),
                                 modifier = Modifier.menuAnchor().fillMaxWidth(),
                                 singleLine = true
@@ -404,17 +599,18 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                                 }
                                 val costDouble = costText.toDoubleOrNull()
                                 if (selectedSupplierId.isNullOrBlank()) {
-                                    message = "Validation Error: Please select a supplier first before adding product"
+                                    addError = "Select a supplier first, then add the product."
                                 } else if (selectedProductId.isBlank()) {
-                                    message = "Validation Error: Please select a product first"
+                                    addError = "Select a product first."
                                 } else if (parsedQty == null || parsedQty <= 0) {
-                                    message = "Validation Error: Quantity must be a valid number greater than 0"
+                                    addError = "Quantity must be a number greater than 0."
                                 } else if (costDouble == null || costDouble <= 0.0) {
-                                    message = "Validation Error: Unit cost must be a valid number greater than 0"
+                                    addError = "Cost must be a number greater than 0."
                                 } else {
                                     viewModel.addLine(selectedProductId, parsedQty, Money(CheckoutMath.rupeesToMinorUnits(costDouble)), selectedProduct?.unitType ?: "PIECE", selectedSupplierId)
                                     val suppName = suppliers.find { it.id == selectedSupplierId }?.name ?: "Supplier"
                                     val prodName = selectedProduct?.name ?: "Product"
+                                    addError = ""
                                     selectedProductId = ""
                                     quantityText = "1"
                                     costText = ""
@@ -429,13 +625,17 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                         }
                     }
 
+                    if (addError.isNotBlank()) {
+                        Text(addError, color = MaterialTheme.colorScheme.error, fontSize = 12.sp, fontWeight = FontWeight.Medium)
+                    }
+
                     HorizontalDivider()
 
                     Text("Purchase Items", fontWeight = FontWeight.Bold, fontSize = 14.sp)
                         }
                     }
                     val itemRows: androidx.compose.foundation.lazy.LazyListScope.() -> Unit = {
-                        items(lines) { line ->
+                        items(lines, key = { it.productId }) { line ->
                             val prod = products.find { it.id == line.productId }
                             val prodName = prod?.name ?: "Unknown Product"
                             val lineSuppName = suppliers.find { it.id == line.supplierId }?.name ?: suppliers.find { it.id == selectedSupplierId }?.name ?: "Supplier"
@@ -552,180 +752,6 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                         }
                     }
 
-                    var showPaymentDialog by remember { mutableStateOf(false) }
-                    var isSplitMode by remember { mutableStateOf(false) }
-                    var splitCashText by remember { mutableStateOf("") }
-                    var splitUpiText by remember { mutableStateOf("") }
-
-                    if (showPaymentDialog) {
-                        val cashVal = CheckoutMath.rupeesToMinorUnits(splitCashText.toDoubleOrNull() ?: 0.0)
-                        val upiVal = CheckoutMath.rupeesToMinorUnits(splitUpiText.toDoubleOrNull() ?: 0.0)
-                        val paidTotalMinor = cashVal + upiVal
-                        val remainingCreditMinor = maxOf(0L, purchaseTotal.minorUnits - paidTotalMinor)
-
-                        AlertDialog(
-                            onDismissRequest = { showPaymentDialog = false; isSplitMode = false },
-                            title = { Text(if (isSplitMode) "Split Supplier Payment" else "Select Payment Mode to Supplier", fontWeight = FontWeight.Bold) },
-                            text = {
-                                Column(verticalArrangement = Arrangement.spacedBy(12.dp), modifier = Modifier.fillMaxWidth()) {
-                                    Text("Payable Amount: $purchaseTotal", fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = MaterialTheme.colorScheme.primary)
-                                    
-                                    if (!isSplitMode) {
-                                        Button(
-                                            onClick = {
-                                                val invNum = supplierInvoiceNumber.trim().ifBlank { null }
-                                                viewModel.save(
-                                                    invoiceNumber = invNum,
-                                                    paymentMode = "CASH",
-                                                    paidCash = purchaseTotal,
-                                                    onSuccess = {
-                                                        showPaymentDialog = false
-                                                        supplierInvoiceNumber = ""
-                                                        message = "Purchase recorded & paid via Cash!"
-                                                    },
-                                                    onError = { message = "Error: ${it.message}" }
-                                                )
-                                            },
-                                            enabled = !isSaving,
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(12.dp)
-                                        ) {
-                                            Text("Paid via Cash", fontWeight = FontWeight.Bold)
-                                        }
-
-                                        Button(
-                                            onClick = {
-                                                val invNum = supplierInvoiceNumber.trim().ifBlank { null }
-                                                viewModel.save(
-                                                    invoiceNumber = invNum,
-                                                    paymentMode = "UPI",
-                                                    paidUpi = purchaseTotal,
-                                                    onSuccess = {
-                                                        showPaymentDialog = false
-                                                        supplierInvoiceNumber = ""
-                                                        message = "Purchase recorded & paid via UPI/Online!"
-                                                    },
-                                                    onError = { message = "Error: ${it.message}" }
-                                                )
-                                            },
-                                            enabled = !isSaving,
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary),
-                                            shape = RoundedCornerShape(12.dp)
-                                        ) {
-                                            Text("Paid via GPay / UPI", fontWeight = FontWeight.Bold)
-                                        }
-
-                                        Button(
-                                            onClick = {
-                                                val invNum = supplierInvoiceNumber.trim().ifBlank { null }
-                                                viewModel.save(
-                                                    invoiceNumber = invNum,
-                                                    paymentMode = "CREDIT",
-                                                    creditApplied = purchaseTotal,
-                                                    onSuccess = {
-                                                        showPaymentDialog = false
-                                                        supplierInvoiceNumber = ""
-                                                        message = "Purchase recorded on Credit!"
-                                                    },
-                                                    onError = { message = "Error: ${it.message}" }
-                                                )
-                                            },
-                                            enabled = !isSaving,
-                                            modifier = Modifier.fillMaxWidth(),
-                                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.tertiary),
-                                            shape = RoundedCornerShape(12.dp)
-                                        ) {
-                                            Text("Buy on Full Credit", fontWeight = FontWeight.Bold)
-                                        }
-
-                                        OutlinedButton(
-                                            onClick = { isSplitMode = true },
-                                            enabled = !isSaving,
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(12.dp)
-                                        ) {
-                                            Text("Split Payment (Cash + UPI + Credit)", fontWeight = FontWeight.Bold)
-                                        }
-                                    } else {
-                                        OutlinedTextField(
-                                            value = splitCashText,
-                                            onValueChange = { splitCashText = com.kadaikutty.pos.core.common.InputRules.money(it) },
-                                            label = { Text("Cash Paid (₹)") },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-
-                                        OutlinedTextField(
-                                            value = splitUpiText,
-                                            onValueChange = { splitUpiText = com.kadaikutty.pos.core.common.InputRules.money(it) },
-                                            label = { Text("UPI / Online Paid (₹)") },
-                                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                                            shape = RoundedCornerShape(10.dp),
-                                            modifier = Modifier.fillMaxWidth()
-                                        )
-
-                                        Card(
-                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(8.dp)
-                                        ) {
-                                            Column(modifier = Modifier.padding(10.dp)) {
-                                                Text("Total Paid: ${Money(paidTotalMinor)}", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                                Text(
-                                                    "Supplier Credit / Debt: ${Money(remainingCreditMinor)}",
-                                                    fontSize = 13.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (remainingCreditMinor > 0) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary
-                                                )
-                                            }
-                                        }
-
-                                        Button(
-                                            onClick = {
-                                                val invNum = supplierInvoiceNumber.trim().ifBlank { null }
-                                                viewModel.save(
-                                                    invoiceNumber = invNum,
-                                                    paymentMode = "SPLIT",
-                                                    paidCash = Money(cashVal),
-                                                    paidUpi = Money(upiVal),
-                                                    creditApplied = Money(remainingCreditMinor),
-                                                    onSuccess = {
-                                                        showPaymentDialog = false
-                                                        isSplitMode = false
-                                                        supplierInvoiceNumber = ""
-                                                        splitCashText = ""
-                                                        splitUpiText = ""
-                                                        message = "Split Purchase saved successfully!"
-                                                    },
-                                                    onError = { message = "Error: ${it.message}" }
-                                                )
-                                            },
-                                            enabled = !isSaving,
-                                            modifier = Modifier.fillMaxWidth(),
-                                            shape = RoundedCornerShape(12.dp)
-                                        ) {
-                                            Text("Confirm Purchase", fontWeight = FontWeight.Bold)
-                                        }
-                                    }
-                                }
-                            },
-                            confirmButton = {},
-                            dismissButton = {
-                                TextButton(onClick = { 
-                                    if (isSplitMode) {
-                                        isSplitMode = false
-                                    } else {
-                                        showPaymentDialog = false 
-                                    }
-                                }) {
-                                    Text(if (isSplitMode) "Back" else "Cancel")
-                                }
-                            }
-                        )
-                    }
-
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Total Purchase Value:", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Text(purchaseTotal.toString(), fontWeight = FontWeight.Bold, fontSize = 18.sp, color = MaterialTheme.colorScheme.primary)
@@ -785,16 +811,31 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
         if (deletingPurchase != null) {
             val p = deletingPurchase!!
             val orderTitle = p.invoiceNumber ?: p.orderNumber ?: p.id.take(6)
+            var confirmDeleteWord by remember(p.id) { mutableStateOf("") }
             AlertDialog(
-                onDismissRequest = { deletingPurchase = null },
+                onDismissRequest = { deletingPurchase = null; confirmDeleteWord = "" },
                 title = { Text("Delete Purchase Order", fontWeight = FontWeight.Bold) },
-                text = { Text("Are you sure you want to delete Purchase Order '$orderTitle'? This will automatically deduct inward items from stock inventory and reverse any supplier credit ledger.") },
+                text = {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Text("Are you sure you want to delete Purchase Order '$orderTitle'? This will automatically deduct inward items from stock inventory and reverse any supplier credit ledger.")
+                        OutlinedTextField(
+                            value = confirmDeleteWord,
+                            onValueChange = { confirmDeleteWord = it },
+                            label = { Text("Type DELETE to confirm") },
+                            placeholder = { Text("DELETE") },
+                            singleLine = true,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                },
                 confirmButton = {
                     Button(
                         colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
+                        enabled = confirmDeleteWord == "DELETE",
                         onClick = {
                             val targetPurchase = deletingPurchase ?: return@Button
                             deletingPurchase = null
+                            confirmDeleteWord = ""
                             viewModel.deletePurchase(targetPurchase, onSuccess = {
                                 message = "Purchase order deleted and stock deducted"
                             }, onError = {
@@ -806,7 +847,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
                     }
                 },
                 dismissButton = {
-                    TextButton(onClick = { deletingPurchase = null }) { Text("Cancel") }
+                    TextButton(onClick = { deletingPurchase = null; confirmDeleteWord = "" }) { Text("Cancel") }
                 }
             )
         }
@@ -905,12 +946,7 @@ fun PurchaseScreen(viewModel: PurchaseViewModel, onBack: () -> Unit = {}) {
         }
 
         BoxWithConstraints(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
-            val layoutMode = LocalLayoutMode.current
-            val isPortraitMobile = when (layoutMode) {
-                "Mobile" -> true
-                "Tablet" -> false
-                else -> maxWidth < 700.dp && maxHeight > maxWidth
-            }
+            val isPortraitMobile = shouldUseSinglePane(LocalLayoutMode.current, maxWidth)
             
             if (isPortraitMobile) {
                 Column(modifier = Modifier.fillMaxSize()) {
@@ -961,7 +997,12 @@ fun PurchaseDetailsDialog(
     onDelete: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    val items by viewModel.getPurchaseItemsFlow(purchase.id).collectAsState(initial = emptyList<PurchaseItemEntity>())
+    // remember(purchase.id) keeps this the same Flow instance across recompositions - without it,
+    // getPurchaseItemsFlow(purchase.id) built a brand new Flow every recomposition, so
+    // collectAsState kept cancelling and restarting the purchase_items Room query instead of
+    // collecting one long-lived subscription.
+    val itemsFlow = remember(purchase.id) { viewModel.getPurchaseItemsFlow(purchase.id) }
+    val items by itemsFlow.collectAsState(initial = emptyList<PurchaseItemEntity>())
     val supplier = suppliers.find { it.id == purchase.supplierId }
     val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(Date(purchase.createdAtEpochMs))
     val orderTitle = when {

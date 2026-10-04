@@ -9,6 +9,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.ui.platform.LocalContext
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.BorderStroke
 import android.graphics.BitmapFactory
 import androidx.compose.ui.graphics.asImageBitmap
 import java.io.File
@@ -512,7 +513,7 @@ fun SettingsScreen(
                                     selectedDeviceId = profile.deviceId
                                     selectedPaperWidth = profile.paperWidth
                                 }) {
-                                    Text("${profile.type}: ${profile.deviceId} — ${if (profile.paperWidth == 48) 80 else 58} mm")
+                                    Text("${profile.type}: ${profile.deviceId} — ${com.kadaikutty.pos.core.printer.domain.PaperWidth.millimetres(profile.paperWidth)} mm")
                                 }
                             }
                         }
@@ -539,17 +540,12 @@ fun SettingsScreen(
                             Text("Wi-Fi / LAN (ESC/POS)")
                         }
                         Text("Paper Layout Size:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Row(
-                            horizontalArrangement = Arrangement.spacedBy(16.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = selectedPaperWidth == 32, onClick = { selectedPaperWidth = 32 })
-                                Text("58 mm (32 chars)")
-                            }
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                RadioButton(selected = selectedPaperWidth == 48, onClick = { selectedPaperWidth = 48 })
-                                Text("80 mm (48 chars)")
+                        Column {
+                            com.kadaikutty.pos.core.printer.domain.PaperWidth.all.forEach { columns ->
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    RadioButton(selected = selectedPaperWidth == columns, onClick = { selectedPaperWidth = columns })
+                                    Text("${com.kadaikutty.pos.core.printer.domain.PaperWidth.label(columns)} ($columns chars)")
+                                }
                             }
                         }
 
@@ -586,6 +582,21 @@ fun SettingsScreen(
                                     expanded = expanded,
                                     onDismissRequest = { expanded = false }
                                 ) {
+                                    if (bluetoothDevices.isEmpty()) {
+                                        DropdownMenuItem(
+                                            text = { Text("No paired Bluetooth devices found. Pair the printer in Android Settings first, or tap to re-check permission.", fontSize = 12.sp) },
+                                            onClick = {
+                                                expanded = false
+                                                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                                                    permissionLauncher.launch(
+                                                        arrayOf(Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT)
+                                                    )
+                                                } else {
+                                                    viewModel.loadPairedBluetoothDevices()
+                                                }
+                                            }
+                                        )
+                                    }
                                     bluetoothDevices.forEach { device ->
                                         DropdownMenuItem(
                                             text = { Text("${device.name} (${device.address})") },
@@ -619,23 +630,48 @@ fun SettingsScreen(
                             Switch(checked = autoPrint, onCheckedChange = { viewModel.setAutoPrintReceipt(it) })
                         }
 
+                        val printLogo by viewModel.printLogoOnReceipt.collectAsState()
+                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Print shop logo", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                                Text("Print your logo at the top of every receipt (set it in Store Profile)", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Switch(checked = printLogo, onCheckedChange = { viewModel.setPrintLogoOnReceipt(it) })
+                        }
+
                         val shareFormat by viewModel.shareBillFormat.collectAsState()
-                        Text("Shared bill (PDF) format:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Text("Shared bill format:", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(selected = shareFormat == "A4", onClick = { viewModel.setShareBillFormat("A4") })
-                                Text("A4 invoice")
+                                Text("A4 invoice (PDF)")
                             }
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 RadioButton(selected = shareFormat == "RECEIPT", onClick = { viewModel.setShareBillFormat("RECEIPT") })
-                                Text("Receipt (paper width)")
+                                Text("Receipt (picture)")
                             }
                         }
+                        Text(
+                            "Receipt is shared as a picture with your shop logo, at the paper width chosen above (58 / 80 / 112 mm).",
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
 
+                        // Off until the printer type, printer or paper size differs from what is saved.
+                        val hardwareChanged = selectedType != (printerType ?: "Bluetooth") ||
+                            selectedDeviceId != (printerDeviceId ?: "") || selectedPaperWidth != printerPaperWidth
                         Button(
+                            enabled = hardwareChanged,
                             onClick = {
-                                viewModel.saveSettings(selectedType, selectedDeviceId, selectedPaperWidth)
-                                message = "Hardware preferences saved."
+                                if (selectedDeviceId.isBlank()) {
+                                    // A printer is needed to save the printer itself; the paper size is
+                                    // still kept, because shared receipt pictures are cut to it.
+                                    viewModel.savePaperWidth(selectedPaperWidth)
+                                    message = "Paper size saved. Select a printer to save the printer settings too."
+                                } else {
+                                    viewModel.saveSettings(selectedType, selectedDeviceId, selectedPaperWidth)
+                                    message = "Hardware preferences saved."
+                                }
                             },
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
@@ -721,6 +757,7 @@ fun SettingsScreen(
                 val currentShopPhone by viewModel.shopPhone.collectAsState()
                 val currentShopLogoPath by viewModel.shopLogoPath.collectAsState()
                 val paperWidth by viewModel.printerPaperWidth.collectAsState()
+                val printLogoOnPaper by viewModel.printLogoOnReceipt.collectAsState()
                 var previewPaperSize by remember { mutableStateOf(paperWidth) }
 
                 val logoBitmap = remember(currentShopLogoPath) {
@@ -764,24 +801,17 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                FilterChip(
-                                    selected = previewPaperSize == 32,
-                                    onClick = { previewPaperSize = 32 },
-                                    label = { Text("58mm (Standard)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                                    leadingIcon = if (previewPaperSize == 32) {
-                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                FilterChip(
-                                    selected = previewPaperSize == 48,
-                                    onClick = { previewPaperSize = 48 },
-                                    label = { Text("80mm (Wide)", fontSize = 12.sp, fontWeight = FontWeight.Bold) },
-                                    leadingIcon = if (previewPaperSize == 48) {
-                                        { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
-                                    } else null,
-                                    modifier = Modifier.weight(1f)
-                                )
+                                listOf(32 to "58 mm", 48 to "80 mm", 64 to "112 mm").forEach { (columns, chipLabel) ->
+                                    FilterChip(
+                                        selected = previewPaperSize == columns,
+                                        onClick = { previewPaperSize = columns },
+                                        label = { Text(chipLabel, fontSize = 12.sp, fontWeight = FontWeight.Bold) },
+                                        leadingIcon = if (previewPaperSize == columns) {
+                                            { Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(16.dp)) }
+                                        } else null,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                }
                             }
                         }
 
@@ -795,7 +825,7 @@ fun SettingsScreen(
                         ) {
                             Surface(
                                 modifier = Modifier
-                                    .widthIn(max = if (previewPaperSize == 32) 300.dp else 420.dp)
+                                    .widthIn(max = when (previewPaperSize) { 32 -> 300.dp; 48 -> 420.dp; else -> 560.dp })
                                     .fillMaxWidth(if (previewPaperSize == 32) 0.88f else 1f)
                                     .border(1.dp, MaterialTheme.colorScheme.outline, RoundedCornerShape(8.dp)),
                                 shape = RoundedCornerShape(8.dp),
@@ -809,8 +839,8 @@ fun SettingsScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
-                                    // Shop Logo
-                                    if (logoBitmap != null) {
+                                    // Shop Logo (only when the receipt will really print it)
+                                    if (logoBitmap != null && printLogoOnPaper) {
                                         Image(
                                             bitmap = logoBitmap.asImageBitmap(),
                                             contentDescription = "Receipt Logo",
@@ -1305,7 +1335,8 @@ fun SettingsScreen(
                             Button(
                                 onClick = { liveBackupFolderPicker.launch(null) },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A), contentColor = Color.White)
                             ) {
                                 Text("Enable Auto Backup", fontWeight = FontWeight.Bold)
                             }
@@ -1321,7 +1352,9 @@ fun SettingsScreen(
                                 OutlinedButton(
                                     onClick = { liveBackupFolderPicker.launch(null) },
                                     modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1E3A8A)),
+                                    border = BorderStroke(1.dp, Color(0xFF1E3A8A))
                                 ) {
                                     Text("Change Folder", fontWeight = FontWeight.Bold)
                                 }
@@ -1329,7 +1362,9 @@ fun SettingsScreen(
                                     onClick = { showLiveRestoreDialog = true },
                                     enabled = !isRestoreRunning,
                                     modifier = Modifier.weight(1f),
-                                    shape = RoundedCornerShape(12.dp)
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1E3A8A)),
+                                    border = BorderStroke(1.dp, Color(0xFF1E3A8A))
                                 ) {
                                     Text("Restore This Folder", fontWeight = FontWeight.Bold)
                                 }
@@ -1366,6 +1401,7 @@ fun SettingsScreen(
 
                         OutlinedButton(
                             onClick = { showClearDatabaseDialog = true },
+                            enabled = !isRestoreRunning && !isBackupRunning,
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
@@ -1559,6 +1595,12 @@ fun SettingsScreen(
                         if (showClearDatabaseDialog) {
                             var hasRecentBackupForClear by remember { mutableStateOf<Boolean?>(null) }
                             var isCheckingSafetyBackup by remember { mutableStateOf(false) }
+                            // Delete Account requires typing "DELETE" plus a PIN before its confirm
+                            // button enables; this wipe is just as irreversible but only needed a
+                            // single tap - and its only other gate, biometric auth, silently no-ops
+                            // on a device with none enrolled. Require the same kind of deliberate
+                            // typed confirmation here too.
+                            var confirmClearWord by remember { mutableStateOf("") }
                             val coroutineScope = rememberCoroutineScope()
 
                             fun recheckSafetyBackup() {
@@ -1580,7 +1622,7 @@ fun SettingsScreen(
                             val isBlockedByMissingBackup = clearCloudOption && hasRecentBackupForClear == false
 
                             AlertDialog(
-                                onDismissRequest = { showClearDatabaseDialog = false },
+                                onDismissRequest = { showClearDatabaseDialog = false; confirmClearWord = "" },
                                 title = { Text("Reset Database Records?") },
                                 text = {
                                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1609,6 +1651,14 @@ fun SettingsScreen(
                                                 fontWeight = FontWeight.Medium
                                             )
                                         }
+                                        Text("Type CLEAR to confirm:", fontSize = 13.sp, fontWeight = FontWeight.Medium)
+                                        OutlinedTextField(
+                                            value = confirmClearWord,
+                                            onValueChange = { confirmClearWord = it },
+                                            placeholder = { Text("CLEAR") },
+                                            singleLine = true,
+                                            modifier = Modifier.fillMaxWidth()
+                                        )
                                     }
                                 },
                                 confirmButton = {
@@ -1625,7 +1675,7 @@ fun SettingsScreen(
                                         }
                                     } else {
                                         TextButton(
-                                            enabled = !isCheckingSafetyBackup,
+                                            enabled = !isCheckingSafetyBackup && !isRestoreRunning && confirmClearWord == "CLEAR",
                                             onClick = {
                                                 showClearDatabaseDialog = false
                                                 viewModel.clearAllDatabase(clearCloudOption) { success ->
@@ -1639,7 +1689,7 @@ fun SettingsScreen(
                                     }
                                 },
                                 dismissButton = {
-                                    TextButton(onClick = { showClearDatabaseDialog = false }) {
+                                    TextButton(onClick = { showClearDatabaseDialog = false; confirmClearWord = "" }) {
                                         Text("Cancel")
                                     }
                                 }
@@ -1797,6 +1847,11 @@ fun SettingsScreen(
                     }
                 }
 
+                // Save Shop Details works only when something differs from what is saved (a logo chosen or removed counts).
+                val shopDetailsChanged = inputShopName != currentShopName || inputOwnerName != currentOwnerName ||
+                    inputGstNumber != currentGstNumber || inputShopAddress != currentShopAddress ||
+                    inputShopPhone != currentShopPhone || inputShopEmail != currentShopEmail || inputShopLogoPath != currentShopLogoPath
+
                 val isEmailValid = remember(inputShopEmail) {
                     inputShopEmail.isEmpty() || android.util.Patterns.EMAIL_ADDRESS.matcher(inputShopEmail).matches()
                 }
@@ -1821,7 +1876,7 @@ fun SettingsScreen(
                     ) {
                         Text("Shop Details Customization", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                         Text(
-                            "Configure your shop details, email contact, and brand logo. These details will be printed on all generated PDF invoices.",
+                            "Configure your shop details, email contact and brand logo. They appear on the bills you share and print.",
                             fontSize = 13.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -1906,14 +1961,26 @@ fun SettingsScreen(
                                 Text("Upload Logo")
                             }
 
+                            if (inputShopLogoPath.isNotEmpty()) {
+                                // Taking the logo away is saved with "Save Shop Details", like choosing a new one.
+                                OutlinedButton(
+                                    onClick = {
+                                        inputShopLogoPath = ""
+                                        hasPendingShopDetailEdits = true
+                                    },
+                                    shape = RoundedCornerShape(12.dp)
+                                ) { Text("Remove") }
+                            }
+
                             if (isProcessingImage) {
                                 CircularProgressIndicator(modifier = Modifier.size(24.dp))
                             }
                         }
 
                         if (inputShopLogoPath.isNotEmpty() && bitmap != null) {
-                            // The logo is printed on shared PDF bills (ShareManager); it does not change the
-                            // app's launcher icon, so the old "App Icon" mockup here was misleading.
+                            // The logo goes on shared bills (ShareManager) and on the printed paper bill
+                            // (ReceiptRaster); it does not change the app's launcher icon, so the old
+                            // "App Icon" mockup here was misleading.
                             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                                 Box(
                                     modifier = Modifier
@@ -1924,7 +1991,7 @@ fun SettingsScreen(
                                 ) {
                                     Image(bitmap = bitmap.asImageBitmap(), contentDescription = "Shop logo preview", modifier = Modifier.fillMaxSize())
                                 }
-                                Text("Shown at the top of bills you share as PDF.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text("Shown at the top of your bills: the shared A4 PDF, the receipt picture and the printed paper bill (switch in Printer settings). Saved in the cloud, so it comes back after a reinstall and on your other devices.", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
 
@@ -1945,13 +2012,15 @@ fun SettingsScreen(
                                         if (saved) {
                                             hasPendingShopDetailEdits = false
                                             keyboardController?.hide()
-                                            android.widget.Toast.makeText(context, "Shop details saved and synced to cloud!", android.widget.Toast.LENGTH_SHORT).show()
+                                            // [error] is a warning here (the details saved but the logo is still waiting to reach the cloud).
+                                            android.widget.Toast.makeText(context, error ?: "Shop details saved and synced to cloud!", if (error == null) android.widget.Toast.LENGTH_SHORT else android.widget.Toast.LENGTH_LONG).show()
                                         } else {
                                             android.widget.Toast.makeText(context, error ?: "Shop details could not be synced", android.widget.Toast.LENGTH_LONG).show()
                                         }
                                     }
                                 }
                             },
+                            enabled = shopDetailsChanged,
                             modifier = Modifier.align(Alignment.End),
                             shape = RoundedCornerShape(12.dp)
                         ) {
@@ -2340,6 +2409,16 @@ fun EditUserDialog(
     
     var isActive by remember { mutableStateOf(!initialPerms.contains(Permission.ACCOUNT_INACTIVE)) }
 
+    // Save stays off until something about this staff member is actually different.
+    val initialRole = remember(user.role) { user.role.ifBlank { "CASHIER" } }
+    val changed = displayName.trim() != user.displayName.trim() || newPassword.isNotBlank() || selectedRole != initialRole ||
+        accessBilling != initialPerms.contains(Permission.SALE_CREATE) ||
+        accessMasters != initialPerms.contains(Permission.PRODUCT_VIEW) ||
+        accessPurchases != initialPerms.contains(Permission.PURCHASE_CREATE) ||
+        accessReports != initialPerms.contains(Permission.REPORT_SALES) ||
+        accessSettings != initialPerms.contains(Permission.SETTINGS_VIEW) ||
+        isActive != !initialPerms.contains(Permission.ACCOUNT_INACTIVE)
+
     fun applyRoleDefaults(role: String) {
         selectedRole = role
         when (role) {
@@ -2556,7 +2635,7 @@ fun EditUserDialog(
                     Text(if (isSubmitting) "..." else "Delete")
                 }
                 Button(
-                    enabled = !isSubmitting,
+                    enabled = !isSubmitting && changed,
                     onClick = {
                         if (isSubmitting) return@Button
                         isSubmitting = true
@@ -2634,13 +2713,21 @@ private fun AdaptiveButtonPair(
     primaryText: String, primaryEnabled: Boolean, onPrimary: () -> Unit,
     secondaryText: String, secondaryEnabled: Boolean, onSecondary: () -> Unit
 ) {
+    // Same navy as the Home dashboard header, so Database & Security's action buttons read as one brand colour.
     val primary: @Composable (Modifier) -> Unit = { m ->
-        Button(onClick = onPrimary, enabled = primaryEnabled, modifier = m, shape = RoundedCornerShape(12.dp)) {
+        Button(
+            onClick = onPrimary, enabled = primaryEnabled, modifier = m, shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1E3A8A), contentColor = Color.White)
+        ) {
             Text(primaryText, fontWeight = FontWeight.Bold)
         }
     }
     val secondary: @Composable (Modifier) -> Unit = { m ->
-        OutlinedButton(onClick = onSecondary, enabled = secondaryEnabled, modifier = m, shape = RoundedCornerShape(12.dp)) {
+        OutlinedButton(
+            onClick = onSecondary, enabled = secondaryEnabled, modifier = m, shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF1E3A8A)),
+            border = BorderStroke(1.dp, Color(0xFF1E3A8A))
+        ) {
             Text(secondaryText, fontWeight = FontWeight.Bold)
         }
     }

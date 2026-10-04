@@ -121,6 +121,7 @@ class SettingsViewModelTest {
             tenantDatabaseManager, liveBackupWriter,
             offlineCredentialStore, shareManager, webSocketManager,
             mock(com.kadaikutty.pos.core.network.ConnectivityMonitor::class.java).also { `when`(it.isOnline).thenReturn(MutableStateFlow(true)) },
+            mock(com.kadaikutty.pos.core.branding.ShopLogoSyncer::class.java),
         )
     }
 

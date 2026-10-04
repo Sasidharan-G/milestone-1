@@ -76,13 +76,14 @@ fun MasterScreens(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Master Data Management", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                title = { Text("Master Data Management", fontWeight = FontWeight.Bold, color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary)
+                // Same navy as the Home dashboard header, so every screen's top bar reads as one brand colour.
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1E3A8A))
             )
         }
     ) { paddingValues ->
@@ -181,6 +182,12 @@ fun CategoryTabScreen(viewModel: CategoryViewModel) {
     val categories by viewModel.categories.collectAsState()
     var name by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
+    // This tab's whole composable is disposed/recreated by the AnimatedContent that switches
+    // Masters tabs, so `search` always starts back at "" - but the ViewModel's own searchQuery
+    // isn't tied to that lifecycle and was staying at whatever was last typed, silently filtering
+    // the list against a term the empty search box no longer showed. Resetting it on dispose keeps
+    // the two in sync.
+    DisposableEffect(Unit) { onDispose { viewModel.updateSearch("") } }
     var message by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
 
@@ -457,6 +464,8 @@ fun ProductTabScreen(viewModel: ProductViewModel) {
     var gstRateBps by remember { mutableIntStateOf(0) }
     var hsnCode by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
+    // See CategoryTabScreen's identical DisposableEffect for why this is needed.
+    DisposableEffect(Unit) { onDispose { viewModel.updateSearch("") } }
     var message by remember { mutableStateOf("") }
     var expanded by remember { mutableStateOf(value = false) }
     var expandedProductId by remember { mutableStateOf<String?>(null) }
@@ -1452,6 +1461,8 @@ fun CustomerTabScreen(viewModel: CustomerViewModel) {
     var address by remember { mutableStateOf("") }
     var initialDebtText by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
+    // See CategoryTabScreen's identical DisposableEffect for why this is needed.
+    DisposableEffect(Unit) { onDispose { viewModel.updateSearch("") } }
     var message by remember { mutableStateOf("") }
     var selectedCustomerForCredit by remember { mutableStateOf<CustomerEntity?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -1866,6 +1877,8 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
     var phone by remember { mutableStateOf("") }
     var address by remember { mutableStateOf("") }
     var search by remember { mutableStateOf("") }
+    // See CategoryTabScreen's identical DisposableEffect for why this is needed.
+    DisposableEffect(Unit) { onDispose { viewModel.updateSearch("") } }
     var message by remember { mutableStateOf("") }
     var selectedSupplierForCredit by remember { mutableStateOf<SupplierEntity?>(null) }
     var isSubmitting by remember { mutableStateOf(false) }
@@ -2025,13 +2038,13 @@ fun SupplierTabScreen(viewModel: SupplierViewModel) {
                     }
                 } else {
                     items(suppliers, key = { it.id }) { supplier ->
-                        val balanceFlow = remember(supplier.id) { viewModel.getSupplierBalance(supplier.id) }
-                        val balance by balanceFlow.collectAsState(initial = 0L)
-                        val bal = balance
-                        
+                        // One query per row, not two: balance is the sum of the same credits list
+                        // this row already collects for the overdue check, instead of a second
+                        // independent subscription to getSupplierBalance.
                         val creditsFlow = remember(supplier.id) { viewModel.getSupplierCredits(supplier.id) }
                         val credits by creditsFlow.collectAsState(initial = emptyList())
-                        
+                        val bal = credits.fold(0L) { acc, c -> acc + c.amountMinorUnits }
+
                         val isOverdue = (bal > 0L) && credits.any { (it.amountMinorUnits > 0L) && (it.dueDateEpochMs > 0L) && (it.dueDateEpochMs < System.currentTimeMillis()) }
 
                         Card(
@@ -2619,12 +2632,27 @@ fun CustomerCreditDetailDialog(
     var auditReportText by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf("") }
     var isActionSubmitting by remember { mutableStateOf(false) }
+    var deletingCreditEntry by remember { mutableStateOf<LedgerEntry?>(null) }
 
     if (auditReportText != null) {
         AuditReportDialog(
             title = "Audit Report - ${customer.name}",
             reportText = auditReportText!!,
             onDismiss = { auditReportText = null }
+        )
+    }
+
+    if (deletingCreditEntry != null) {
+        val entryToDelete = deletingCreditEntry!!
+        val entryAmt = if (entryToDelete.debitMinorUnits > 0) entryToDelete.debitMinorUnits else entryToDelete.creditMinorUnits
+        DeleteConfirmationDialog(
+            title = "Reverse Entry",
+            message = "Reverse \"${entryToDelete.description}\" (${Money(entryAmt)})? This permanently changes ${customer.name}'s running balance and cannot be undone.",
+            onConfirm = {
+                deletingCreditEntry = null
+                viewModel.deleteCustomerCredit(entryToDelete.id, onSuccess = {}, onError = { errorMessage = it.message ?: "Failed to delete" })
+            },
+            onDismiss = { deletingCreditEntry = null }
         )
     }
 
@@ -2903,9 +2931,7 @@ fun CustomerCreditDetailDialog(
                                         )
                                         if (!entry.description.startsWith("Bill #")) {
                                             IconButton(
-                                                onClick = {
-                                                    viewModel.deleteCustomerCredit(entry.id, onSuccess = {}, onError = { errorMessage = it.message ?: "Failed to delete" })
-                                                },
+                                                onClick = { deletingCreditEntry = entry },
                                                 modifier = Modifier.size(24.dp)
                                             ) {
                                                 Icon(Icons.Default.Delete, contentDescription = "Reverse Entry", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp))
@@ -2953,6 +2979,21 @@ fun SupplierCreditDetailDialog(
     var auditReportText by remember { mutableStateOf<String?>(null) }
     var errorMessage by remember { mutableStateOf("") }
     var isActionSubmitting by remember { mutableStateOf(false) }
+    var deletingCreditEntry by remember { mutableStateOf<LedgerEntry?>(null) }
+
+    if (deletingCreditEntry != null) {
+        val entryToDelete = deletingCreditEntry!!
+        val entryAmt = if (entryToDelete.debitMinorUnits > 0) entryToDelete.debitMinorUnits else entryToDelete.creditMinorUnits
+        DeleteConfirmationDialog(
+            title = "Reverse Entry",
+            message = "Reverse \"${entryToDelete.description}\" (${Money(entryAmt)})? This permanently changes ${supplier.name}'s running balance and cannot be undone.",
+            onConfirm = {
+                deletingCreditEntry = null
+                viewModel.deleteSupplierCredit(entryToDelete.id, onSuccess = {}, onError = { errorMessage = it.message ?: "Failed to delete" })
+            },
+            onDismiss = { deletingCreditEntry = null }
+        )
+    }
 
     if (auditReportText != null) {
         AuditReportDialog(
@@ -3197,9 +3238,7 @@ fun SupplierCreditDetailDialog(
                                         )
                                         if (!entry.description.startsWith("Purchase") && !entry.description.startsWith("Order #")) {
                                             IconButton(
-                                                onClick = {
-                                                    viewModel.deleteSupplierCredit(entry.id, onSuccess = {}, onError = { errorMessage = it.message ?: "Failed to delete" })
-                                                },
+                                                onClick = { deletingCreditEntry = entry },
                                                 modifier = Modifier.size(24.dp)
                                             ) {
                                                 Icon(Icons.Default.Delete, contentDescription = "Reverse Entry", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(15.dp))
@@ -3504,8 +3543,11 @@ fun CategoryEditDialog(
 ) {
     var name by remember { mutableStateOf(category.name) }
     var error by remember { mutableStateOf("") }
+    var isSubmitting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    
+    // Update stays off until something was actually changed: saving an untouched form only rewrote the record and re-synced it.
+    val changed = name.trim() != category.name.trim()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Edit Category", fontWeight = FontWeight.Bold) },
@@ -3528,15 +3570,19 @@ fun CategoryEditDialog(
                 onClick = {
                     if (name.isBlank()) {
                         error = "Name cannot be empty"
-                    } else {
+                    } else if (!isSubmitting) {
+                        isSubmitting = true
                         viewModel.updateCategory(category, name, onSuccess = {
+                            isSubmitting = false
                             android.widget.Toast.makeText(context, "Category updated successfully", android.widget.Toast.LENGTH_SHORT).show()
                             onDismiss()
                         }, onError = {
+                            isSubmitting = false
                             error = "Error updating category: ${it.message}"
                         })
                     }
                 },
+                enabled = !isSubmitting && changed,
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Text("Update")
@@ -3568,6 +3614,15 @@ fun ProductEditDialog(
     var gstRateBps by remember { mutableIntStateOf(product.gstRateBps) }
     var hsnCode by remember { mutableStateOf(product.hsnCode ?: "") }
     
+    val initialPurchasePrice = remember { String.format(java.util.Locale.US, "%.2f", product.purchasePriceMinorUnits / 100.0) }
+    val initialSalePrice = remember { String.format(java.util.Locale.US, "%.2f", product.salePriceMinorUnits / 100.0) }
+    val initialMinStock = remember { if (product.minStockLevel > 0.0) product.minStockLevel.toString() else "" }
+    // Update stays off until something was actually changed: saving an untouched form only rewrote the record and re-synced it.
+    val changed = name.trim() != product.name.trim() || selectedCategoryId != product.categoryId ||
+        purchasePrice != initialPurchasePrice || salePrice != initialSalePrice || unitType != product.unitType ||
+        barcode.trim() != (product.barcode ?: "").trim() || minStockLevel != initialMinStock ||
+        gstRateBps != product.gstRateBps || hsnCode.trim() != (product.hsnCode ?: "").trim()
+
     var catExpanded by remember { mutableStateOf(false) }
     var unitExpanded by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf("") }
@@ -3749,7 +3804,7 @@ fun ProductEditDialog(
         },
         confirmButton = {
             Button(
-                enabled = !isSubmitting,
+                enabled = !isSubmitting && changed,
                 onClick = {
                     if (isSubmitting) return@Button
                     val pPrice = purchasePrice.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }
@@ -3810,7 +3865,9 @@ fun CustomerEditDialog(
     var error by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    
+    // Update stays off until something was actually changed: saving an untouched form only rewrote the record and re-synced it.
+    val changed = name.trim() != customer.name.trim() || phone.trim() != (customer.phone ?: "").trim() || address.trim() != (customer.address ?: "").trim()
+
     AlertDialog(
         onDismissRequest = {
             if (!isSubmitting) onDismiss()
@@ -3850,7 +3907,7 @@ fun CustomerEditDialog(
         },
         confirmButton = {
             Button(
-                enabled = !isSubmitting,
+                enabled = !isSubmitting && changed,
                 onClick = {
                     if (isSubmitting) return@Button
                     if (name.isBlank()) {
@@ -3902,7 +3959,9 @@ fun SupplierEditDialog(
     var error by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    
+    // Update stays off until something was actually changed: saving an untouched form only rewrote the record and re-synced it.
+    val changed = name.trim() != supplier.name.trim() || phone.trim() != (supplier.phone ?: "").trim() || address.trim() != (supplier.address ?: "").trim()
+
     AlertDialog(
         onDismissRequest = {
             if (!isSubmitting) onDismiss()
@@ -3942,7 +4001,7 @@ fun SupplierEditDialog(
         },
         confirmButton = {
             Button(
-                enabled = !isSubmitting,
+                enabled = !isSubmitting && changed,
                 onClick = {
                     if (isSubmitting) return@Button
                     if (name.isBlank()) {
@@ -3993,7 +4052,10 @@ fun ExpenseEditDialog(
     var error by remember { mutableStateOf("") }
     var isSubmitting by remember { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    
+    val initialAmount = remember { String.format(java.util.Locale.US, "%.2f", expense.amountMinorUnits / 100.0) }
+    // Update stays off until something was actually changed: saving an untouched form only rewrote the record and re-synced it.
+    val changed = amount != initialAmount || description.trim() != expense.description.trim()
+
     AlertDialog(
         onDismissRequest = {
             if (!isSubmitting) onDismiss()
@@ -4025,7 +4087,7 @@ fun ExpenseEditDialog(
         },
         confirmButton = {
             Button(
-                enabled = !isSubmitting,
+                enabled = !isSubmitting && changed,
                 onClick = {
                     if (isSubmitting) return@Button
                     val amt = amount.toDoubleOrNull()?.let { CheckoutMath.rupeesToMinorUnits(it) }

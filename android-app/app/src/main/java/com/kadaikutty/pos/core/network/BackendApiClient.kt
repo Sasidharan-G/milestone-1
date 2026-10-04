@@ -72,6 +72,32 @@ class BackendApiClient @Inject constructor(
         return intent.getString("publicUrl")
     }
 
+    /** Saves the shop logo (PNG or JPEG bytes) in the cloud; returns the reply, whose "shopProfile" carries the new logo version. */
+    suspend fun uploadShopLogo(token: String, picture: ByteArray): JSONObject = withContext(Dispatchers.IO) {
+        val contentType = if (picture.size > 2 && picture[0] == 0xFF.toByte() && picture[1] == 0xD8.toByte()) "image/jpeg" else "image/png"
+        val builder = Request.Builder().url(resolveUrl("api/v1/account/shop-logo"))
+            .header("Authorization", "Bearer ${token.trim()}")
+            .header("Accept", "application/json")
+            .header("X-Request-Id", java.util.UUID.randomUUID().toString())
+        sessionStore.activeSession.first()?.sessionToken?.takeIf { it.isNotBlank() }?.let { builder.header("X-Session-Id", it) }
+        execute(builder.put(picture.toRequestBody(contentType.toMediaType())).build()).use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw parseBinaryError(response.code, body)
+            runCatching { JSONObject(body.ifBlank { "{}" }) }.getOrElse { JSONObject() }
+        }
+    }
+
+    /** The shop's logo from the cloud, or null when it has none saved. */
+    suspend fun downloadShopLogo(token: String): ByteArray? = try {
+        getBinary(token, "api/v1/account/shop-logo")
+    } catch (e: BackendApiException) {
+        // Only the server's own "no logo" answer; a 404 from anything else (an older server without this route) is a failure.
+        if (e.statusCode == 404 && e.code == "SHOP_LOGO_NOT_FOUND") null else throw e
+    }
+
+    /** Removes the shop logo from the cloud; returns the reply with the updated "shopProfile". */
+    suspend fun deleteShopLogo(token: String): JSONObject = request("DELETE", "account/shop-logo", token)
+
     /** Permanently deletes the signed-in owner's shop and all its cloud data. The PIN is asked again on purpose. */
     suspend fun deleteAccount(token: String, pin: String): JSONObject =
         request("DELETE", "account", token, JSONObject().put("confirmation", "DELETE").put("password", pin))
@@ -106,8 +132,9 @@ class BackendApiClient @Inject constructor(
         request("DELETE", "sessions/current", token, JSONObject(), sessionId = sessionId)
     }
 
-    suspend fun sendOtp(mobileNumber: String): JSONObject =
-        request("POST", "otp/send", body = JSONObject().put("mobileNumber", mobileNumber))
+    /** [purpose] "REGISTER" lets the server refuse a number that already has an account before it sends (and pays for) a code. */
+    suspend fun sendOtp(mobileNumber: String, purpose: String? = null): JSONObject =
+        request("POST", "otp/send", body = JSONObject().put("mobileNumber", mobileNumber).also { body -> purpose?.let { body.put("purpose", it) } })
 
     suspend fun verifyOtp(mobileNumber: String, otp: String, requestId: String): JSONObject =
         request("POST", "otp/verify", body = JSONObject()
@@ -362,6 +389,6 @@ class BackendApiClient @Inject constructor(
 
     private fun parseBinaryError(status: Int, body: String?): BackendApiException {
         val error = runCatching { JSONObject(body.orEmpty()).optJSONObject("error") }.getOrNull()
-        return BackendApiException(error?.optString("code") ?: "HTTP_$status", error?.optString("message") ?: "Backup transfer failed", error?.optBoolean("retryable") ?: status in setOf(408, 429, 502, 503, 504), status)
+        return BackendApiException(error?.optString("code") ?: "HTTP_$status", error?.optString("message") ?: "File transfer failed", error?.optBoolean("retryable") ?: status in setOf(408, 429, 502, 503, 504), status)
     }
 }

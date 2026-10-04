@@ -35,6 +35,17 @@ object CheckoutMath {
         require(listOf(total, cash, upi, credit).all { it in 0..MAX_AMOUNT }) { "Invalid payment amount" }
         require(Math.addExact(Math.addExact(cash, upi), credit) == total) { "Payment amounts must equal the payable total" }
     }
+    /**
+     * The share of a whole-cart [cartDiscount] that falls on one batch of a split checkout: pro rata
+     * by subtotal while other items stay in the cart, all of it when this batch is the last. The
+     * payment dialog and the sale itself both use this; if they differed, the dialog would ask for
+     * a different amount than the bill totals and the payment would be rejected.
+     */
+    fun splitBatchDiscount(cartDiscount: Long, batchSubtotal: Long, remainingSubtotal: Long, itemsRemain: Boolean): Long {
+        if (!itemsRemain) return cartDiscount
+        if (batchSubtotal + remainingSubtotal == 0L) return 0L
+        return allocate(cartDiscount, listOf(batchSubtotal, remainingSubtotal)).first()
+    }
     /** Cumulative allocation keeps every paise, including zero-weight lines. */
     fun allocate(amount: Long, weights: List<Long>): List<Long> {
         require(amount >= 0 && weights.all { it >= 0 })

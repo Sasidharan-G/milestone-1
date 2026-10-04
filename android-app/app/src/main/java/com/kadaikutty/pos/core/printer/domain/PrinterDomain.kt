@@ -27,7 +27,9 @@ data class PrintDocument(
     val totals: List<Pair<String, String>>,
     val footer: String,
     val paperWidth: Int = 32,
-    val cutPaper: Boolean = false
+    val cutPaper: Boolean = false,
+    /** The shop logo picture on this phone, printed at the top when set. Empty means no logo. */
+    val logoPath: String = ""
 )
 
 interface PrinterDriver {

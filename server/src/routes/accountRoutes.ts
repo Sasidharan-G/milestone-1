@@ -1,7 +1,8 @@
-import { Response, Router } from 'express';
+import express, { Response, Router } from 'express';
 import crypto, { randomUUID } from 'node:crypto';
 import { AppError } from '../core/errors';
 import { audit } from '../core/audit';
+import { detectImageType } from '../core/imageType';
 import { eraseCompany } from '../core/companyDeletion';
 import { presentLicense } from '../core/license';
 import { emitToCompany, emitToUser, revokeSessionSockets } from '../core/realtime';
@@ -245,6 +246,54 @@ const saveShopProfile = async (req: AuthenticatedRequest, res: Response, legacy 
 };
 
 router.patch('/account/shop-profile', requireAuth, requireActiveLicense, requireShopAdmin, (req, res) => saveShopProfile(req, res));
+
+// The shop logo. It lives in the cloud so it survives a reinstall and shows up on every device of the shop.
+// The owner replaces it with a raw PNG/JPEG body; every device of the shop reads it back.
+const SHOP_LOGO_MAX_BYTES = 2 * 1024 * 1024;
+
+const announceLogoChange = async (req: AuthenticatedRequest, shopProfile: unknown, action: string, details: Record<string, unknown>) => {
+  const companyId = req.user!.companyId;
+  emitToCompany(req.app.get('io'), companyId, 'shop_profile_changed', { shopProfile });
+  await audit(req, req.user!, action, companyId, details);
+};
+
+router.put('/account/shop-logo', requireAuth, requireActiveLicense, requireShopAdmin,
+  express.raw({ type: ['image/png', 'image/jpeg'], limit: SHOP_LOGO_MAX_BYTES }),
+  async (req: AuthenticatedRequest, res) => {
+    try {
+      const content = req.body;
+      if (!Buffer.isBuffer(content) || content.length === 0) throw new AppError(400, 'SHOP_LOGO_REQUIRED', 'Send the logo as a PNG or JPEG picture');
+      if (content.length > SHOP_LOGO_MAX_BYTES) throw new AppError(413, 'SHOP_LOGO_TOO_LARGE', 'The logo must be 2 MB or smaller');
+      const contentType = detectImageType(content);
+      if (!contentType) throw new AppError(400, 'SHOP_LOGO_INVALID', 'The logo must be a PNG or JPEG picture');
+      const companyId = req.user!.companyId;
+      const key = await providers().objectStorage.writeShopLogo(companyId, content, contentType);
+      const shopProfile = await providers().dataStore.updateShopProfile(companyId, { logoObjectKey: key, logoUpdatedAtEpochMs: Date.now(), updatedByUserId: req.user!.userId });
+      await announceLogoChange(req, shopProfile, 'SHOP_LOGO_UPDATED', { bytes: content.length, contentType });
+      return res.json({ success: true, shopProfile });
+    } catch (error) { return sendRouteError(res, req, error); }
+  });
+
+router.get('/account/shop-logo', requireAuth, requireActiveLicense, async (req: AuthenticatedRequest, res) => {
+  try {
+    const content = await providers().objectStorage.readShopLogo(req.user!.companyId);
+    res.type(detectImageType(content) || 'application/octet-stream');
+    res.set('Cache-Control', 'private, no-cache');
+    return res.send(content);
+  } catch (error) { return sendRouteError(res, req, error); }
+});
+
+router.delete('/account/shop-logo', requireAuth, requireActiveLicense, requireShopAdmin, async (req: AuthenticatedRequest, res) => {
+  try {
+    const companyId = req.user!.companyId;
+    await providers().objectStorage.deleteShopLogo(companyId);
+    // The version still moves, so the shop's other devices notice the logo is gone.
+    // An empty key means "no logo" (DynamoDB refuses an undefined attribute, so the field is blanked, not dropped).
+    const shopProfile = await providers().dataStore.updateShopProfile(companyId, { logoObjectKey: '', logoUpdatedAtEpochMs: Date.now(), updatedByUserId: req.user!.userId });
+    await announceLogoChange(req, shopProfile, 'SHOP_LOGO_REMOVED', {});
+    return res.json({ success: true, shopProfile });
+  } catch (error) { return sendRouteError(res, req, error); }
+});
 // Compatibility for older Android builds. It updates the same canonical profile record.
 router.patch('/account/shop-details', requireAuth, requireActiveLicense, requireShopAdmin, (req, res) => saveShopProfile(req, res, true));
 

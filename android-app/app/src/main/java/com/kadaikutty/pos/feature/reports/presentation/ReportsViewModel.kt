@@ -125,75 +125,91 @@ class ReportsViewModel @Inject constructor(
         loadReport()
     }
 
+    private var loadJob: kotlinx.coroutines.Job? = null
+
     fun loadReport() {
-        viewModelScope.launch {
+        // Without this, a fast tab switch (or a table invalidation landing mid-load) starts a
+        // second load while the first is still running; whichever happens to finish last wins,
+        // which isn't necessarily the one for the tab/filter actually on screen. Cancelling the
+        // previous load keeps only the most recent request's result.
+        loadJob?.cancel()
+        loadJob = viewModelScope.launch {
             _isLoading.value = true
             _error.value = null
             try {
                 val session = sessionStore.activeSession.first() ?: throw IllegalStateException("No active session")
                 val companyId = session.companyId
-                
-                // Query live KPI sums
-                val salesSum = database.reportDao().getTotalSalesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
-                val purchasesSum = database.reportDao().getTotalPurchasesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
-                val expensesSum = database.reportDao().getTotalExpensesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
-                val profitRaw = database.reportDao().getProfitReportRaw(companyId, _fromEpochMs.value, _toEpochMs.value)
-                
-                var totalCogs = 0L
-                for (item in profitRaw) {
-                    // Same rule as the Profit report: the cost saved on each sale line first, so the dashboard
-                    // and the report agree after purchase prices change.
-                    val cost = item.recordedCost?.let { com.kadaikutty.pos.core.common.Money(it) } ?: costingStrategy.getProductCost(item.productId, item.totalQty)
-                    totalCogs += cost.minorUnits
-                }
+                val activeType = _selectedType.value
 
-                _totalSalesSum.value = salesSum
-                _purchaseCostSum.value = totalCogs
-                _totalPurchasesSum.value = purchasesSum
-                _expensesSum.value = expensesSum
-                _netProfitSum.value = salesSum - totalCogs - expensesSum
+                // Sales/COGS/Expenses/Net Profit are shown on the Sales & Bills, Profit & Loss and
+                // Purchases tabs - not on Stock Value - so skip the costingStrategy N+1 loop behind
+                // them entirely when Stock Value is the tab actually on screen.
+                if (activeType != ReportType.STOCK) {
+                    val salesSum = database.reportDao().getTotalSalesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
+                    val purchasesSum = database.reportDao().getTotalPurchasesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
+                    val expensesSum = database.reportDao().getTotalExpensesSum(companyId, _fromEpochMs.value, _toEpochMs.value) ?: 0L
+                    val profitRaw = database.reportDao().getProfitReportRaw(companyId, _fromEpochMs.value, _toEpochMs.value)
 
-                // Compute period-filtered stock KPIs
-                val stockData = database.reportDao().getStockReport(companyId, _fromEpochMs.value, _toEpochMs.value)
-                var stockValSum = 0L
-                // Summed per display unit in storage units (g / ml / pcs), formatted at the end.
-                val unitOf: (String) -> String = { u -> if (u == "KG" || u == "LITER") u else "PIECE" }
-                val inSum = linkedMapOf<String, Long>()
-                val outSum = linkedMapOf<String, Long>()
-                val closingSum = linkedMapOf<String, Long>()
-
-                for (item in stockData) {
-                    val isWeighted = item.unitType == "KG" || item.unitType == "LITER"
-                    val u = unitOf(item.unitType)
-                    inSum.merge(u, item.inwardQty, Long::plus)
-                    outSum.merge(u, item.outwardQty, Long::plus)
-                    closingSum.merge(u, item.currentStock, Long::plus)
-
-                    val v = if (isWeighted) {
-                        Math.round((item.purchasePrice * item.currentStock) / 1000.0)
-                    } else {
-                        item.purchasePrice * item.currentStock
+                    var totalCogs = 0L
+                    for (item in profitRaw) {
+                        // Same rule as the Profit report: the cost saved on each sale line first, so the dashboard
+                        // and the report agree after purchase prices change.
+                        val cost = item.recordedCost?.let { com.kadaikutty.pos.core.common.Money(it) } ?: costingStrategy.getProductCost(item.productId, item.totalQty)
+                        totalCogs += cost.minorUnits
                     }
-                    stockValSum += v
+
+                    _totalSalesSum.value = salesSum
+                    _purchaseCostSum.value = totalCogs
+                    _totalPurchasesSum.value = purchasesSum
+                    _expensesSum.value = expensesSum
+                    _netProfitSum.value = salesSum - totalCogs - expensesSum
                 }
 
-                val perUnit: (Map<String, Long>) -> String = { sums ->
-                    sums.filterValues { it != 0L }.entries
-                        .joinToString(" · ") { (u, q) -> com.kadaikutty.pos.feature.stock.domain.formatQuantity(q, u) }
-                        .ifBlank { "0" }
+                // Stock Value's own KPI row - not shown on any other tab, so skip it there.
+                if (activeType == ReportType.STOCK) {
+                    val stockData = database.reportDao().getStockReport(companyId, _fromEpochMs.value, _toEpochMs.value)
+                    var stockValSum = 0L
+                    // Summed per display unit in storage units (g / ml / pcs), formatted at the end.
+                    val unitOf: (String) -> String = { u -> if (u == "KG" || u == "LITER") u else "PIECE" }
+                    val inSum = linkedMapOf<String, Long>()
+                    val outSum = linkedMapOf<String, Long>()
+                    val closingSum = linkedMapOf<String, Long>()
+
+                    for (item in stockData) {
+                        val isWeighted = item.unitType == "KG" || item.unitType == "LITER"
+                        val u = unitOf(item.unitType)
+                        inSum.merge(u, item.inwardQty, Long::plus)
+                        outSum.merge(u, item.outwardQty, Long::plus)
+                        closingSum.merge(u, item.currentStock, Long::plus)
+
+                        val v = if (isWeighted) {
+                            Math.round((item.purchasePrice * item.currentStock) / 1000.0)
+                        } else {
+                            item.purchasePrice * item.currentStock
+                        }
+                        stockValSum += v
+                    }
+
+                    val perUnit: (Map<String, Long>) -> String = { sums ->
+                        sums.filterValues { it != 0L }.entries
+                            .joinToString(" · ") { (u, q) -> com.kadaikutty.pos.feature.stock.domain.formatQuantity(q, u) }
+                            .ifBlank { "0" }
+                    }
+                    _totalStockValue.value = stockValSum
+                    _totalStockInward.value = perUnit(inSum)
+                    _totalStockOutward.value = perUnit(outSum)
+                    _totalStockUnits.value = perUnit(closingSum)
                 }
-                _totalStockValue.value = stockValSum
-                _totalStockInward.value = perUnit(inSum)
-                _totalStockOutward.value = perUnit(outSum)
-                _totalStockUnits.value = perUnit(closingSum)
 
                 val query = ReportQuery(
-                    type = _selectedType.value,
+                    type = activeType,
                     fromEpochMs = _fromEpochMs.value,
                     toEpochMs = _toEpochMs.value
                 )
                 val data = reportService.generate(query)
                 _reportData.value = data
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 _error.value = e.message ?: "Failed to generate report"
                 _reportData.value = null

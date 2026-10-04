@@ -3,6 +3,7 @@ package com.kadaikutty.pos.core.auth
 import com.kadaikutty.pos.core.database.BillingDatabase
 import com.kadaikutty.pos.core.network.BackendApiClient
 import com.kadaikutty.pos.core.network.BackendApiException
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -54,6 +55,42 @@ class OfflineLoginFallbackTest {
         val result = loginFailsWith(IOException("Unable to resolve host"))
         assertTrue(result.canTryOffline)
         verify(credentials, never()).remove(anyString())
+    }
+
+    @Test
+    fun `a number that never signed in here is told so, truthfully, and flagged for the screen to explain`() = runBlocking {
+        `when`(credentials.getCredential("9876543210")).thenReturn(flowOf(null))
+        val backend = mock(BackendApiClient::class.java)
+
+        val result = repository(backend).loginOffline("9876543210", "123456".toCharArray()) as LoginResult.Failure
+
+        assertTrue(result.neverSignedInHere)
+        assertEquals(FIRST_SIGN_IN_NEEDS_INTERNET, result.message)
+        assertTrue("it must not claim there is no internet: ${result.message}", !result.message.contains("No internet", ignoreCase = true))
+    }
+
+    @Test
+    fun `a connection failure is explained in plain words and marked as a connection problem`() = runBlocking {
+        val result = loginFailsWith(java.net.UnknownHostException("Unable to resolve host"))
+        assertTrue(result.connectionProblem)
+        assertTrue("it explains the cause: ${result.message}", result.message.contains("Can't reach the server"))
+        assertTrue(result.canTryOffline)
+    }
+
+    @Test
+    fun `a failure on this phone after the server accepted the sign-in is named and is not a connection problem`() = runBlocking {
+        val result = loginFailsWith(IllegalStateException("disk full"))
+        assertTrue(!result.connectionProblem)
+        assertTrue("it names the failure: ${result.message}", result.message.contains("IllegalStateException") && result.message.contains("disk full"))
+        assertTrue("and never blames the internet: ${result.message}", !result.message.contains("internet", ignoreCase = true))
+        assertTrue(result.canTryOffline)
+    }
+
+    @Test
+    fun `a busy server counts as a connection problem`() = runBlocking {
+        for (status in listOf(429, 502, 503)) {
+            assertTrue(loginFailsWith(BackendApiException("BUSY", "Please try again shortly", true, status)).connectionProblem)
+        }
     }
 
     @Test

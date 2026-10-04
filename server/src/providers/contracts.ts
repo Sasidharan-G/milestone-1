@@ -52,6 +52,8 @@ export interface ShopProfileRecord {
   phone: string;
   email: string;
   logoObjectKey?: string;
+  /** When the logo was last replaced or removed; devices compare it with theirs to know whether to download. */
+  logoUpdatedAtEpochMs?: number;
   version: number;
   updatedAtEpochMs: number;
   updatedByUserId?: string;
@@ -252,4 +254,13 @@ export interface ObjectStorage {
   createProductImageUploadUrl(companyId: string, productId: string, contentType: string): Promise<{ uploadUrl: string; publicUrl: string; requiredHeaders?: Record<string, string> }>;
   writeProductImageContent(companyId: string, productId: string, content: Buffer): Promise<void>;
   readProductImageContent(companyId: string, productId: string): Promise<Buffer>;
+  /**
+   * The shop logo: one small picture per company, replaced by each upload and private to the
+   * company (it is read back through the API, not a public URL). Returns the key it is kept under.
+   */
+  writeShopLogo(companyId: string, content: Buffer, contentType: string): Promise<string>;
+  /** Throws 404 SHOP_LOGO_NOT_FOUND when the company has no logo. */
+  readShopLogo(companyId: string): Promise<Buffer>;
+  /** Removing a logo that is not there is not an error. */
+  deleteShopLogo(companyId: string): Promise<void>;
 }

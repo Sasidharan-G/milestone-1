@@ -100,5 +100,30 @@ export class LocalObjectStorage implements ObjectStorage {
       throw new AppError(404, 'PRODUCT_IMAGE_NOT_FOUND', 'Product photo was not found');
     }
   }
+
+  private shopLogoPath(companyId: string): string {
+    return path.join(this.rootDirectory, 'shop-logos', `${companyId}.img`);
+  }
+
+  async writeShopLogo(companyId: string, content: Buffer): Promise<string> {
+    const filePath = this.shopLogoPath(companyId);
+    await fs.mkdir(path.dirname(filePath), { recursive: true });
+    const temporary = `${filePath}.${process.pid}.tmp`;
+    await fs.writeFile(temporary, content, { mode: 0o600 });
+    await fs.rename(temporary, filePath);
+    return `shop-logos/${companyId}.img`;
+  }
+
+  async readShopLogo(companyId: string): Promise<Buffer> {
+    try {
+      return await fs.readFile(this.shopLogoPath(companyId));
+    } catch {
+      throw new AppError(404, 'SHOP_LOGO_NOT_FOUND', 'This shop has no logo saved');
+    }
+  }
+
+  async deleteShopLogo(companyId: string): Promise<void> {
+    await fs.rm(this.shopLogoPath(companyId), { force: true });
+  }
 }
 

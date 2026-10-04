@@ -4,17 +4,23 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.animation.core.*
 import androidx.compose.ui.res.painterResource
@@ -56,74 +62,172 @@ fun AuthScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF1E3A8A)), // Brand navy
-        contentAlignment = Alignment.Center
+            .background(Color(0xFF0A1B45)), // Deep navy-indigo brand background
+        contentAlignment = Alignment.TopCenter
     ) {
-        // Pattern background
+        // Soft glow blobs, echoing the approved artifact design
+        Box(
+            modifier = Modifier
+                .size(340.dp)
+                .align(Alignment.TopEnd)
+                .offset(x = 90.dp, y = (-140).dp)
+                .background(
+                    Brush.radialGradient(listOf(Color(0xFF1A2F6B), Color.Transparent)),
+                    shape = androidx.compose.foundation.shape.CircleShape
+                )
+        )
+        Box(
+            modifier = Modifier
+                .size(300.dp)
+                .align(Alignment.BottomStart)
+                .offset(x = (-110).dp, y = 110.dp)
+                .background(
+                    Brush.radialGradient(listOf(Color(0xFF132860), Color.Transparent)),
+                    shape = androidx.compose.foundation.shape.CircleShape
+                )
+        )
+        // Faint retail-icon texture (same pattern used across the app), low alpha over the dark ground
         androidx.compose.foundation.Image(
             painter = androidx.compose.ui.res.painterResource(id = com.kadaikutty.pos.R.drawable.shopping_pattern),
             contentDescription = null,
             contentScale = androidx.compose.ui.layout.ContentScale.Crop,
             modifier = Modifier
                 .fillMaxSize()
-                .graphicsLayer { alpha = 0.3f }
+                .graphicsLayer { alpha = 0.12f }
         )
 
-        // Glassmorphism Card
-        Card(
+        // While the keyboard is up the brand header and the footer step aside: the card holds the fields
+        // being typed into, and the header used to keep its full height and squeeze the card to a sliver.
+        @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+        val keyboardOpen = androidx.compose.foundation.layout.WindowInsets.isImeVisible
+        Column(
             modifier = Modifier
                 .statusBarsPadding()
                 .navigationBarsPadding()
                 .fillMaxWidth()
-                .widthIn(max = 420.dp)
-                .padding(16.dp)
-                .graphicsLayer {
-                    rotationY = rotation
-                    cameraDistance = 12f * density
-                }
-                .animateContentSize(animationSpec = tween(durationMillis = 600))
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.2f),
-                    shape = RoundedCornerShape(24.dp)
-                ),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF1E3A8A) // Solid navy to block pattern inside the card
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
+                .padding(horizontal = 24.dp)
+                .padding(top = if (keyboardOpen) 12.dp else 48.dp, bottom = if (keyboardOpen) 8.dp else 20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
+            if (!keyboardOpen) {
+            // Fixed brand header - stays put while the card behind it flips between Sign in / Register.
+            // Uses the real app logo (same as the launcher icon), not the placeholder hand-drawn badge.
+            androidx.compose.foundation.Image(
+                painter = androidx.compose.ui.res.painterResource(id = com.kadaikutty.pos.R.drawable.brand_logo),
+                contentDescription = null,
                 modifier = Modifier
+                    .size(64.dp)
+                    .shadow(elevation = 14.dp, shape = RoundedCornerShape(20.dp), spotColor = Color.Black.copy(alpha = 0.35f))
+                    .clip(RoundedCornerShape(20.dp))
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+            Row {
+                Text("Kadaikutty", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color.White, letterSpacing = (-0.2).sp)
+                Text(" POS", fontSize = 26.sp, fontWeight = FontWeight.Bold, color = Color(0xFFF5A524), letterSpacing = (-0.2).sp)
+            }
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                "BILLING · INVENTORY · REPORTS",
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Medium,
+                letterSpacing = 1.6.sp,
+                color = Color(0xFFB9C4E4)
+            )
+
+            Spacer(modifier = Modifier.height(28.dp))
+            }
+
+            // Flip card: white "Welcome back" panel on the front, the existing navy Register panel on the back
+            Card(
+                modifier = Modifier
+                    // The card takes what is left after the header and the link below it, and scrolls
+                    // inside. Without this the taller Register card used up the whole screen and the
+                    // "Already have an account? Sign In" link under it was pushed out of sight.
+                    .weight(1f, fill = false)
                     .fillMaxWidth()
-                    .padding(16.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                if (rotation <= 90f) {
-                    // Front side: Login
-                    Box(modifier = Modifier.graphicsLayer { alpha = 1f - (rotation / 90f) }) {
-                        LoginScreenContent(
-                            viewModel = loginViewModel,
-                            onLoginSuccess = onLoginSuccess,
-                            onNavigateToRegister = { isRegisterFlipped = true },
-                            onOpenMasterControl = onOpenMasterControl,
-                            triggerAnimation = triggerAnimation
-                        )
+                    .widthIn(max = 400.dp)
+                    .graphicsLayer {
+                        rotationY = rotation
+                        cameraDistance = 12f * density
                     }
-                } else {
-                    // Back side: Register
-                    Box(modifier = Modifier.graphicsLayer {
-                        rotationY = 180f
-                        alpha = (rotation - 90f) / 90f
-                    }) {
-                        RegisterScreenContent(
-                            viewModel = registerViewModel,
-                            onNavigateBackToLogin = { isRegisterFlipped = false },
-                            onRegisterSuccess = onLoginSuccess,
-                            triggerAnimation = triggerAnimation
-                        )
+                    .animateContentSize(animationSpec = tween(durationMillis = 600)),
+                shape = RoundedCornerShape(28.dp),
+                colors = CardDefaults.cardColors(containerColor = Color.White),
+                elevation = CardDefaults.cardElevation(defaultElevation = 14.dp)
+            ) {
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (rotation <= 90f) {
+                        // Front side: Login
+                        Box(modifier = Modifier.graphicsLayer { alpha = 1f - (rotation / 90f) }) {
+                            LoginScreenContent(
+                                viewModel = loginViewModel,
+                                onLoginSuccess = onLoginSuccess,
+                                onNavigateToRegister = { isRegisterFlipped = true },
+                                onOpenMasterControl = onOpenMasterControl,
+                                triggerAnimation = triggerAnimation
+                            )
+                        }
+                    } else {
+                        // Back side: Register - kept as its original navy panel (untouched logic/styling),
+                        // just nested inside the now-white flip card so it still reads as one solid card.
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(Color(0xFF1E3A8A), RoundedCornerShape(28.dp))
+                                .graphicsLayer {
+                                    rotationY = 180f
+                                    alpha = (rotation - 90f) / 90f
+                                }
+                        ) {
+                            RegisterScreenContent(
+                                viewModel = registerViewModel,
+                                onNavigateBackToLogin = { isRegisterFlipped = false },
+                                onRegisterSuccess = onLoginSuccess,
+                                triggerAnimation = triggerAnimation
+                            )
+                        }
                     }
                 }
+            }
+
+            Spacer(modifier = Modifier.height(if (keyboardOpen) 4.dp else 18.dp))
+
+            if (rotation <= 90f) {
+              if (!keyboardOpen) {
+                Row {
+                    Text("New business? ", fontSize = 14.sp, color = Color(0xFFC5CEEA))
+                    Text(
+                        "Register your store",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                        modifier = Modifier.clickable { isRegisterFlipped = true }
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    "v${com.kadaikutty.pos.BuildConfig.VERSION_NAME} · Made in India",
+                    fontSize = 11.sp,
+                    letterSpacing = 1.2.sp,
+                    color = Color(0xFF8E9BC4)
+                )
+              }
+            } else {
+                // Lives here (outside the flipping card) rather than inside RegisterScreenContent -
+                // a link on the rotated back face of the 3D flip card didn't reliably receive touch
+                // input in testing, even though the fields on that same face focused correctly.
+                Text(
+                    "Already have an account? Sign In",
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    textDecoration = androidx.compose.ui.text.style.TextDecoration.Underline,
+                    modifier = Modifier.clickable { isRegisterFlipped = false }
+                )
             }
         }
     }

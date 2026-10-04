@@ -71,7 +71,24 @@ object CoreModule {
         tenantDatabaseManager.getDatabase()
 
     @Provides @Singleton fun preferences(@ApplicationContext context: Context) = AppPreferences(context.billingDataStore)
-    @Provides @Singleton fun sessionStore(@ApplicationContext context: Context) = SessionStore(context.billingDataStore)
+
+    // Session tokens (access/refresh/session) are the only values sensitive enough to need
+    // hardware-backed encryption at rest; everything else in Session stays in plain DataStore.
+    @Provides @Singleton fun secureSessionPrefs(@ApplicationContext context: Context): android.content.SharedPreferences {
+        val masterKey = androidx.security.crypto.MasterKey.Builder(context)
+            .setKeyScheme(androidx.security.crypto.MasterKey.KeyScheme.AES256_GCM)
+            .build()
+        return androidx.security.crypto.EncryptedSharedPreferences.create(
+            context,
+            "secure_session_prefs",
+            masterKey,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+            androidx.security.crypto.EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+        )
+    }
+
+    @Provides @Singleton fun sessionStore(@ApplicationContext context: Context, secureSessionPrefs: android.content.SharedPreferences) =
+        SessionStore(context.billingDataStore, secureSessionPrefs)
     @Provides @Singleton fun offlineCredentialStore(@ApplicationContext context: Context) = com.kadaikutty.pos.core.auth.OfflineCredentialStore(context.billingDataStore)
     @Provides @Singleton fun offlineCredentialVerifier() = com.kadaikutty.pos.core.auth.OfflineCredentialVerifier()
     @Provides @Singleton fun sessionSecurityManager(

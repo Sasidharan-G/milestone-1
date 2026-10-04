@@ -84,10 +84,16 @@ const generateCode = (): string => {
 export const sendOtp = async (req: Request, res: Response) => {
   try {
     resetSecret();
-    const { mobileNumber } = req.body || {};
+    const { mobileNumber, purpose } = req.body || {};
     if (!mobileNumber || typeof mobileNumber !== 'string') throw new AppError(400, 'OTP_MOBILE_REQUIRED', 'Mobile number is required');
     const cleanPhone = normalizePhone(mobileNumber);
     if (!isValidIndianMobile(cleanPhone)) throw new AppError(400, 'OTP_MOBILE_INVALID', 'Please provide a valid 10-digit mobile number');
+
+    // A registration code is only worth sending (and paying for) to a number that can still register.
+    // The app says so with purpose REGISTER; older apps send nothing and behave as before.
+    if (purpose === 'REGISTER' && await providers().dataStore.findUserByPhone(cleanPhone)) {
+      throw new AppError(409, 'ACCOUNT_ALREADY_EXISTS', 'This mobile number is already registered. Sign in instead, or use Forgot PIN.');
+    }
 
     const code = generateCode();
     const sendResult = await providers().smsSender.sendOtp(cleanPhone, code);

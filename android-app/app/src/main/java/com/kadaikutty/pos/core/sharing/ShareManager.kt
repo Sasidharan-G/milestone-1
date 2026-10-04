@@ -31,8 +31,9 @@ class ShareManager(private val context: Context) {
             putExtra(Intent.EXTRA_TEXT, text)
         }
 
-        if (packageId != null && isAppInstalled(packageId)) {
-            intent.setPackage(packageId)
+        val target = installedTarget(packageId)
+        if (target != null) {
+            intent.setPackage(target)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             return true
@@ -63,8 +64,9 @@ class ShareManager(private val context: Context) {
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
 
-        if (packageId != null && isAppInstalled(packageId)) {
-            intent.setPackage(packageId)
+        val target = installedTarget(packageId)
+        if (target != null) {
+            intent.setPackage(target)
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             context.startActivity(intent)
             return true
@@ -79,6 +81,18 @@ class ShareManager(private val context: Context) {
         } catch (e: Exception) {
             false
         }
+    }
+
+    /**
+     * The app a "share to X" button should open directly: [packageId] when it is installed; for
+     * WhatsApp, WhatsApp Business when that is the only one on the phone; otherwise null, which
+     * means "let the person pick from the share list".
+     */
+    private fun installedTarget(packageId: String?): String? = when {
+        packageId == null -> null
+        isAppInstalled(packageId) -> packageId
+        packageId == PACKAGE_WHATSAPP && isAppInstalled(PACKAGE_WHATSAPP_BUSINESS) -> PACKAGE_WHATSAPP_BUSINESS
+        else -> null
     }
 
     private fun isAppInstalled(packageId: String): Boolean {
@@ -103,14 +117,37 @@ class ShareManager(private val context: Context) {
         }
     }
 
+    private data class ReceiptRow(val text: String, val bold: Boolean = false, val center: Boolean = false)
+
+    /** The lines of a thermal receipt wrapped to [columns] characters: one source for the PDF and the picture. */
+    private fun receiptRows(doc: com.kadaikutty.pos.core.printer.domain.PrintDocument, columns: Int): List<ReceiptRow> {
+        val rows = mutableListOf<ReceiptRow>()
+        fun add(text: String, bold: Boolean = false, center: Boolean = false) =
+            com.kadaikutty.pos.core.printer.data.ReceiptLayout.wrap(text, columns).forEach { rows += ReceiptRow(it, bold, center) }
+        add(doc.title, bold = true, center = true)
+        doc.headers.forEach { add(it) }
+        rows += ReceiptRow("-".repeat(columns))
+        doc.lines.forEach { line ->
+            add(line.name, bold = true)
+            com.kadaikutty.pos.core.printer.data.ReceiptLayout.columns("${line.quantityText} x ${line.price}", line.total, columns).forEach { rows += ReceiptRow(it) }
+        }
+        rows += ReceiptRow("-".repeat(columns))
+        doc.totals.forEach { (label, value) ->
+            com.kadaikutty.pos.core.printer.data.ReceiptLayout.columns(label, value, columns).forEach { rows += ReceiptRow(it, bold = true) }
+        }
+        if (doc.footer.isNotBlank()) { rows += ReceiptRow(""); add(doc.footer, center = true) }
+        return rows
+    }
+
     /**
-     * The thermal receipt as a PDF at the paper's own width (58 mm or 80 mm), same lines as the
+     * The thermal receipt as a PDF at the paper's own width (58, 80 or 112 mm), same lines as the
      * printer gets, so a bill shared on WhatsApp or sent to a mobile printer app prints at receipt
      * size instead of an A4 page shrunk to a strip.
      */
     fun generateReceiptPdf(doc: com.kadaikutty.pos.core.printer.domain.PrintDocument): ByteArray {
         val columns = doc.paperWidth.takeIf { it in 24..64 } ?: 32
-        val pageWidth = if (columns >= 48) 227 else 164 // 80 mm / 58 mm in PDF points
+        // The paper's width in PDF points (1/72 inch): 58 mm, 80 mm, 112 mm.
+        val pageWidth = when (com.kadaikutty.pos.core.printer.domain.PaperWidth.millimetres(columns)) { 112 -> 317; 80 -> 227; else -> 164 }
         val margin = 8f
         val mono = android.graphics.Typeface.MONOSPACE
         val paint = Paint().apply { color = Color.BLACK; isAntiAlias = true; typeface = mono }
@@ -119,22 +156,7 @@ class ShareManager(private val context: Context) {
         paint.textSize = 10f * (pageWidth - 2 * margin) / paint.measureText("M".repeat(columns))
         val lineHeight = paint.textSize * 1.35f
 
-        data class Row(val text: String, val bold: Boolean = false, val center: Boolean = false)
-        val rows = mutableListOf<Row>()
-        fun add(text: String, bold: Boolean = false, center: Boolean = false) =
-            com.kadaikutty.pos.core.printer.data.ReceiptLayout.wrap(text, columns).forEach { rows += Row(it, bold, center) }
-        add(doc.title, bold = true, center = true)
-        doc.headers.forEach { add(it) }
-        rows += Row("-".repeat(columns))
-        doc.lines.forEach { line ->
-            add(line.name, bold = true)
-            com.kadaikutty.pos.core.printer.data.ReceiptLayout.columns("${line.quantityText} x ${line.price}", line.total, columns).forEach { rows += Row(it) }
-        }
-        rows += Row("-".repeat(columns))
-        doc.totals.forEach { (label, value) ->
-            com.kadaikutty.pos.core.printer.data.ReceiptLayout.columns(label, value, columns).forEach { rows += Row(it, bold = true) }
-        }
-        if (doc.footer.isNotBlank()) { rows += Row(""); add(doc.footer, center = true) }
+        val rows = receiptRows(doc, columns)
 
         val pageHeight = (margin * 2 + lineHeight * (rows.size + 1)).toInt()
         val pdf = PdfDocument()
@@ -153,6 +175,76 @@ class ShareManager(private val context: Context) {
         pdf.writeTo(out)
         pdf.close()
         return out.toByteArray()
+    }
+
+    /**
+     * The thermal receipt as a picture (PNG) with the shop logo on top, at the paper's own width
+     * (58, 80 or 112 mm). WhatsApp shows a picture inline, which is how a customer expects a small
+     * receipt to arrive; the A4 invoice stays a PDF.
+     */
+    fun generateReceiptImage(doc: com.kadaikutty.pos.core.printer.domain.PrintDocument, shopLogoPath: String = ""): ByteArray {
+        val columns = doc.paperWidth.takeIf { it in 24..64 } ?: 32
+        // About 10 px per millimetre of paper: sharp on a phone screen even after WhatsApp recompresses it.
+        val widthPx = when (com.kadaikutty.pos.core.printer.domain.PaperWidth.millimetres(columns)) { 112 -> 1120; 80 -> 800; else -> 560 }
+        val margin = 24f
+        val paint = Paint().apply { color = Color.BLACK; isAntiAlias = true; typeface = android.graphics.Typeface.MONOSPACE }
+        // Size the monospace font so exactly [columns] characters fill the printable width.
+        paint.textSize = 10f
+        paint.textSize = 10f * (widthPx - 2 * margin) / paint.measureText("M".repeat(columns))
+        val lineHeight = paint.textSize * 1.35f
+        val rows = receiptRows(doc, columns)
+
+        val logo = decodeLogo(shopLogoPath, maxWidthPx = (widthPx * 0.6f).toInt(), maxHeightPx = (widthPx * 0.3f).toInt())
+        val logoBlock = logo?.let { it.height + margin / 2 } ?: 0f
+        val heightPx = Math.ceil((margin * 2 + logoBlock + lineHeight * (rows.size + 1)).toDouble()).toInt()
+
+        val bitmap = android.graphics.Bitmap.createBitmap(widthPx, heightPx, android.graphics.Bitmap.Config.ARGB_8888)
+        try {
+            val canvas = Canvas(bitmap)
+            canvas.drawColor(Color.WHITE)
+            var y = margin
+            if (logo != null) {
+                canvas.drawBitmap(logo, (widthPx - logo.width) / 2f, y, Paint(Paint.FILTER_BITMAP_FLAG))
+                y += logo.height + margin / 2
+                logo.recycle()
+            }
+            y += lineHeight
+            rows.forEach { row ->
+                paint.isFakeBoldText = row.bold
+                val x = if (row.center) (widthPx - paint.measureText(row.text)) / 2f else margin
+                canvas.drawText(row.text, x, y, paint)
+                y += lineHeight
+            }
+            val out = ByteArrayOutputStream()
+            check(bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)) { "Could not encode the receipt picture" }
+            return out.toByteArray()
+        } finally {
+            bitmap.recycle()
+        }
+    }
+
+    /** The logo scaled to fit [maxWidthPx] x [maxHeightPx] (never enlarged), or null when there is none or it cannot be read. */
+    private fun decodeLogo(path: String, maxWidthPx: Int, maxHeightPx: Int): android.graphics.Bitmap? {
+        if (path.isBlank()) return null
+        return try {
+            val file = File(path)
+            if (!file.exists()) return null
+            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeFile(file.absolutePath, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            // Decode no larger than needed: a 12-megapixel photo as a logo must not cost 48 MB of memory.
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= maxWidthPx && bounds.outHeight / (sample * 2) >= maxHeightPx) sample *= 2
+            val decoded = BitmapFactory.decodeFile(file.absolutePath, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+            val scale = Math.min(1f, Math.min(maxWidthPx.toFloat() / decoded.width, maxHeightPx.toFloat() / decoded.height))
+            if (scale >= 1f) decoded else {
+                val scaled = android.graphics.Bitmap.createScaledBitmap(decoded, Math.max(1, (decoded.width * scale).toInt()), Math.max(1, (decoded.height * scale).toInt()), true)
+                if (scaled !== decoded) decoded.recycle()
+                scaled
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     fun generatePdfInvoice(
@@ -460,5 +552,16 @@ class ShareManager(private val context: Context) {
         pdfDocument.close()
         
         return outputStream.toByteArray()
+    }
+}
+
+/** What a shared bill goes out as: the receipt-size format as a picture (logo included), the A4 invoice as a PDF. */
+enum class BillShareKind(val extension: String, val mimeType: String) {
+    PDF("pdf", "application/pdf"),
+    IMAGE("png", "image/png");
+
+    companion object {
+        /** [format] is the saved "share bill format" setting: "A4" or "RECEIPT". */
+        fun forFormat(format: String): BillShareKind = if (format == "RECEIPT") IMAGE else PDF
     }
 }

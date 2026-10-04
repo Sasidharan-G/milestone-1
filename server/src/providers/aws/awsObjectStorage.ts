@@ -130,6 +130,44 @@ export class AwsObjectStorage implements ObjectStorage {
     } catch (error) { throw mapAwsError(error, 'S3 product image read'); }
   }
 
+  private shopLogoKey(companyId: string): string {
+    return `tenants/${companyId}/branding/shop-logo`;
+  }
+
+  /**
+   * The logo goes in the private backup bucket under the tenant's prefix and is read back through
+   * the API, so it is never reachable by a public URL. It is small (the app scales it to 512 px),
+   * so the server passes the bytes through itself instead of issuing presigned URLs.
+   */
+  async writeShopLogo(companyId: string, content: Buffer, contentType: string): Promise<string> {
+    const key = this.shopLogoKey(companyId);
+    try {
+      await this.s3.send(new PutObjectCommand({ Bucket: this.config.backupBucket, Key: key, Body: content, ContentType: contentType, ContentLength: content.length }));
+      return key;
+    } catch (error) { throw mapAwsError(error, 'S3 shop logo write'); }
+  }
+
+  async readShopLogo(companyId: string): Promise<Buffer> {
+    try {
+      const response = await this.s3.send(new GetObjectCommand({ Bucket: this.config.backupBucket, Key: this.shopLogoKey(companyId) }));
+      const bytes = await response.Body?.transformToByteArray();
+      if (!bytes) throw new AppError(404, 'SHOP_LOGO_NOT_FOUND', 'This shop has no logo saved');
+      return Buffer.from(bytes);
+    } catch (error) {
+      const detail = error as { name?: string; $metadata?: { httpStatusCode?: number } };
+      if (detail?.name === 'NoSuchKey' || detail?.name === 'NotFound' || detail?.$metadata?.httpStatusCode === 404) {
+        throw new AppError(404, 'SHOP_LOGO_NOT_FOUND', 'This shop has no logo saved');
+      }
+      throw mapAwsError(error, 'S3 shop logo read');
+    }
+  }
+
+  async deleteShopLogo(companyId: string): Promise<void> {
+    try {
+      await this.s3.send(new DeleteObjectCommand({ Bucket: this.config.backupBucket, Key: this.shopLogoKey(companyId) }));
+    } catch (error) { throw mapAwsError(error, 'S3 shop logo delete'); }
+  }
+
   private async requireBackup(companyId: string, backupId: string): Promise<BackupRecord> {
     try {
       const response = await this.dynamo.send(new GetCommand({ TableName: this.config.tableName, Key: { pk: pk(companyId), sk: sk(backupId) }, ConsistentRead: true }));

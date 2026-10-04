@@ -42,7 +42,8 @@ class PushResultHandlerTest {
         db = Room.inMemoryDatabaseBuilder(context, BillingDatabase::class.java).build()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val prefs = PreferenceDataStoreFactory.create(scope = scope) { File(context.cacheDir, "push-${UUID.randomUUID()}.preferences_pb") }
-        val sessions = SessionStore(prefs)
+        val securePrefs = context.getSharedPreferences("test-secure-${UUID.randomUUID()}", android.content.Context.MODE_PRIVATE)
+        val sessions = SessionStore(prefs, securePrefs)
         sessions.save(Session("owner", "Owner", Permission.ALL_ACTIVE, companyId = company, role = "ADMIN"))
         manager = SyncManager(db, SyncScheduler(context), sessions, scheduleEnabled = false)
         handler = PushResultHandler(db, ConflictResolver(db, manager))

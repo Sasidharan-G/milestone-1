@@ -175,48 +175,6 @@ class ProductViewModel @Inject constructor(
         viewModelScope, SharingStarted.WhileSubscribed(5000), false
     )
 
-    init {
-        viewModelScope.launch {
-            try {
-                val session = sessionStore.activeSession.first()
-                if (session != null && session.companyId.isNotEmpty()) {
-                    deduplicateProducts(session.companyId)
-                }
-            } catch (e: Exception) {
-                android.util.Log.e("ProductViewModel", "Error deduplicating products", e)
-            }
-        }
-    }
-
-    private suspend fun deduplicateProducts(companyId: String) {
-        val products = dao.getAllProducts(companyId)
-        val seenKeys = mutableSetOf<String>()
-        val duplicatesToDelete = mutableListOf<ProductEntity>()
-
-        for (product in products) {
-            val normName = product.name.trim().lowercase()
-            val normBarcode = product.barcode?.trim()?.takeIf { it.isNotBlank() }
-            val key = if (normBarcode != null) "bc:$normBarcode" else "name:$normName"
-
-            if (seenKeys.contains(key) || (normBarcode != null && seenKeys.contains("name:$normName"))) {
-                duplicatesToDelete.add(product)
-            } else {
-                seenKeys.add(key)
-                if (normBarcode != null) {
-                    seenKeys.add("bc:$normBarcode")
-                }
-                seenKeys.add("name:$normName")
-            }
-        }
-
-        if (duplicatesToDelete.isNotEmpty()) {
-            for (dup in duplicatesToDelete) {
-                dao.deleteProduct(dup)
-                syncManager.enqueueProduct(dup, "DELETE")
-            }
-        }
-    }
-
     val lowStockProducts: StateFlow<List<com.kadaikutty.pos.core.database.LowStockRow>> = sessionStore.activeSession
         .flatMapLatest { session ->
             val companyId = session?.companyId ?: ""
@@ -1334,9 +1292,9 @@ class CustomerViewModel @Inject constructor(
         }
     }
 
-    fun getCustomerBalance(customerId: String): Flow<Long> = getCustomerLedger(customerId).map { ledger ->
-        ledger.firstOrNull()?.runningBalance ?: 0L
-    }
+    // Direct SQL SUM via the already-existing getCustomerCreditBalance query, not derived from
+    // getCustomerLedger: the list-row balance doesn't need the full running-balance reconstruction.
+    fun getCustomerBalance(customerId: String): Flow<Long> = getCustomerCreditBalance(customerId).map { it ?: 0L }
 
     fun updateCustomerCreditLimit(customerId: String, limit: Long, onSuccess: () -> Unit, onError: (Throwable) -> Unit) {
         viewModelScope.launch {
@@ -1563,9 +1521,13 @@ class SupplierViewModel @Inject constructor(
         }
     }
     
-    fun getSupplierBalance(supplierId: String): Flow<Long> = getSupplierLedger(supplierId).map { ledger ->
-        ledger.firstOrNull()?.runningBalance ?: 0L
-    }
+    // A direct SQL SUM, not derived from getSupplierLedger: the list-row balance doesn't need the
+    // full per-entry running-balance reconstruction, just the total, so this avoids re-querying and
+    // re-processing every credit row twice per supplier row in the list.
+    fun getSupplierBalance(supplierId: String): Flow<Long> = sessionStore.activeSession.flatMapLatest { session ->
+        val companyId = session?.companyId ?: ""
+        dao.getSupplierCreditBalance(companyId, supplierId)
+    }.map { it ?: 0L }
 }
 
 @HiltViewModel

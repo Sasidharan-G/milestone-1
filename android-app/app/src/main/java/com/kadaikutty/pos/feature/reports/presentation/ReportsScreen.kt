@@ -83,6 +83,10 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
     var deleteReason by remember { mutableStateOf("") }
 
     var showDatePicker by remember { mutableStateOf(false) }
+    // Hoisted out of the date-filter row below so the picker dialog (rendered at the bottom of
+    // this function, outside that row's own composable scope) can read/update it too - needed to
+    // fix the "Custom" chip staying highlighted after a cancelled or empty pick.
+    var activePreset by remember { mutableStateOf("All Time") }
     val dateRangeState = rememberDateRangePickerState()
     var isGridView by remember { mutableStateOf(false) }
     var deletingBillNum by remember { mutableStateOf<String?>(null) }
@@ -226,36 +230,43 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Business Reports", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onPrimary) },
+                title = { Text("Business Reports", fontWeight = FontWeight.Bold, color = Color.White) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = MaterialTheme.colorScheme.onPrimary)
+                        Icon(Icons.Default.ArrowBack, contentDescription = "Back", tint = Color.White)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.primary),
+                // Same navy as the Home dashboard header, so every screen's top bar reads as one brand colour.
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color(0xFF1E3A8A)),
                 actions = {
                     IconButton(onClick = { isGridView = !isGridView }) {
                         Icon(
                             imageVector = if (isGridView) Icons.AutoMirrored.Filled.List else Icons.Default.Menu,
                             contentDescription = "Toggle View",
-                            tint = MaterialTheme.colorScheme.onPrimary
+                            tint = Color.White
                         )
                     }
-                    IconButton(onClick = {
-                        viewModel.shareReportPdf()
-                    }) {
-                        Icon(Icons.Default.Share, contentDescription = "Share PDF", tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                    IconButton(onClick = {
-                        try {
-                            documentBytes = viewModel.exportExcel()
-                            val filename = "${selectedType.name.lowercase()}_report.csv"
-                            excelLauncher.launch(filename)
-                        } catch (e: Exception) {
-                            android.widget.Toast.makeText(context, "Export error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                    // Audit Log has no ReportType of its own (reportTypes only covers the first 4
+                    // tabs), so selectedType/reportData stay pinned to whichever tab was open
+                    // before it - these actions would silently share/export that stale tab's data
+                    // instead of what's on screen. Hide them rather than let that happen.
+                    if (activeReportTab < reportTypes.size) {
+                        IconButton(onClick = {
+                            viewModel.shareReportPdf()
+                        }) {
+                            Icon(Icons.Default.Share, contentDescription = "Share PDF", tint = Color.White)
                         }
-                    }) {
-                        Icon(Icons.Default.Download, contentDescription = "Export CSV", tint = MaterialTheme.colorScheme.onPrimary)
+                        IconButton(onClick = {
+                            try {
+                                documentBytes = viewModel.exportExcel()
+                                val filename = "${selectedType.name.lowercase()}_report.csv"
+                                excelLauncher.launch(filename)
+                            } catch (e: Exception) {
+                                android.widget.Toast.makeText(context, "Export error: ${e.message}", android.widget.Toast.LENGTH_SHORT).show()
+                            }
+                        }) {
+                            Icon(Icons.Default.Download, contentDescription = "Export CSV", tint = Color.White)
+                        }
                     }
                 }
             )
@@ -338,7 +349,6 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                         .background(MaterialTheme.colorScheme.surface)
                         .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
-                    var activePreset by remember { mutableStateOf("All Time") }
                     val presetOptions = listOf("Today", "Yesterday", "This Month", "All Time", "Custom")
                     val presetIndex = presetOptions.indexOf(activePreset)
 
@@ -395,7 +405,13 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                                             interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
                                             indication = null
                                         ) {
-                                            activePreset = preset
+                                            // "Custom" doesn't mark itself active here - it only
+                                            // opens the picker, and nothing about the filter has
+                                            // actually changed yet. It's set once the dialog
+                                            // confirms an actual range (below), so cancelling or
+                                            // confirming an empty range leaves this chip showing
+                                            // whatever preset is genuinely still in effect.
+                                            if (preset != "Custom") activePreset = preset
                                             val cal = java.util.Calendar.getInstance()
                                             when (preset) {
                                                 "Today" -> {
@@ -1340,6 +1356,10 @@ fun ReportsScreen(viewModel: ReportsViewModel, onBack: () -> Unit = {}) {
                 // hours: sales before 05:30 land on the previous day.
                 val start = dateRangeState.selectedStartDateMillis?.let { localDayStart(it) }
                 val end = dateRangeState.selectedEndDateMillis?.let { localDayEnd(it) }
+                // Only a real range earns the "Custom" chip; confirming with nothing picked is the
+                // same filter as "All Time" (setDateFilter(null, null)), so show it as that instead
+                // of leaving "Custom" highlighted over an unbounded range nobody chose.
+                activePreset = if (start != null && end != null) "Custom" else "All Time"
                 viewModel.setDateFilter(start, end)
                 showDatePicker = false
             },

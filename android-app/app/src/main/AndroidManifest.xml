@@ -12,6 +12,13 @@
     <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <uses-feature android:name="android.hardware.camera.autofocus" android:required="false"/>
 
+    <!-- Android 11+ hides other installed apps unless they are named here. Without these two lines the
+         "WhatsApp" buttons could not tell WhatsApp was installed and always opened the full share list. -->
+    <queries>
+        <package android:name="com.whatsapp" />
+        <package android:name="com.whatsapp.w4b" />
+    </queries>
+
     <application
         android:name=".BillingApplication"
         android:allowBackup="false"

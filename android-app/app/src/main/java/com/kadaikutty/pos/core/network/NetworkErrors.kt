@@ -18,7 +18,7 @@ internal fun friendlyNetworkError(e: IOException): BackendApiException {
     if (e is BackendApiException) return e
     val (code, message) = when (e) {
         is UnknownHostException ->
-            "NETWORK_DNS" to "Can't reach the server. Check the internet connection, or try Wi-Fi instead of mobile data (or the other way round). If it keeps failing, set Settings > Private DNS to Off or Automatic."
+            "NETWORK_DNS" to "Can't reach the server. Check the internet connection, or try Wi-Fi instead of mobile data (or the other way round). If it keeps failing, open Settings, search for 'Private DNS' and set it to Off or Automatic."
         is SSLException ->
             "NETWORK_TLS" to "Secure connection failed. Make sure the phone's date and time are correct (set them to Automatic) and try again."
         is InterruptedIOException ->

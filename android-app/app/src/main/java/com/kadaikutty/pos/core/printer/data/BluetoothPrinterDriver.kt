@@ -18,6 +18,8 @@ class BluetoothPrinterDriver(private val context: Context) : PrinterDriver {
 
     companion object {
         private val SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805f9b34fb")
+        private const val CHUNK_BYTES = 1024
+        private const val CHUNK_PAUSE_MS = 6L
     }
 
     private var socket: BluetoothSocket? = null
@@ -65,8 +67,11 @@ class BluetoothPrinterDriver(private val context: Context) : PrinterDriver {
         try {
             val formattedBytes = ReceiptEncoder.encode(document)
             PrinterIoDeadline.run(activeSocket, 60) {
-                for (offset in formattedBytes.indices step 1024) {
-                    activeSocket.outputStream.write(formattedBytes, offset, minOf(1024, formattedBytes.size - offset))
+                for (offset in formattedBytes.indices step CHUNK_BYTES) {
+                    activeSocket.outputStream.write(formattedBytes, offset, minOf(CHUNK_BYTES, formattedBytes.size - offset))
+                    // Cheap Bluetooth printers have a small buffer and drop or garble what arrives faster
+                    // than they can print; a few milliseconds per kilobyte keeps every model in step.
+                    Thread.sleep(CHUNK_PAUSE_MS)
                 }
                 activeSocket.outputStream.flush()
             }

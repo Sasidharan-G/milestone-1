@@ -1,6 +1,11 @@
 package com.kadaikutty.pos.core.presentation.components
 
+import android.Manifest
+import android.content.ActivityNotFoundException
+import android.content.Context
+import android.content.pm.PackageManager
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
@@ -28,6 +33,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +42,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import androidx.core.content.FileProvider
 import coil.compose.AsyncImage
 import java.io.File
@@ -59,7 +66,9 @@ fun ProductPhotoField(
 ) {
     val context = LocalContext.current
     var showChooser by remember { mutableStateOf(false) }
-    var pendingCameraUri by remember { mutableStateOf<Uri?>(null) }
+    // Saved across the app being recreated while the camera app is open: a phone short of memory can
+    // close this app in the background, and the photo that comes back still has to find its file.
+    var pendingCameraUri by rememberSaveable { mutableStateOf<Uri?>(null) }
 
     val galleryLauncher = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { uri ->
         if (uri != null) onPickedFromGallery(uri)
@@ -67,6 +76,12 @@ fun ProductPhotoField(
     val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
         val uri = pendingCameraUri
         if (success && uri != null) onCapturedFromCamera(uri)
+    }
+    // The app declares the CAMERA permission (the barcode scanner uses it), and Android then ends an app
+    // that opens the camera app without having been granted it: "Take a Photo" threw people out of the app.
+    val openCamera = { launchCamera(context, cameraLauncher::launch) { pendingCameraUri = it } }
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) openCamera() else toast(context, CAMERA_DENIED_MESSAGE)
     }
 
     if (showChooser) {
@@ -77,14 +92,19 @@ fun ProductPhotoField(
                 Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                     ChooserRow(icon = Icons.Default.CameraAlt, label = "Take a Photo") {
                         showChooser = false
-                        val file = com.kadaikutty.pos.core.common.ProductImageStore.newTempFile(context)
-                        val uri = FileProvider.getUriForFile(context, "com.kadaikutty.pos.fileprovider", file)
-                        pendingCameraUri = uri
-                        cameraLauncher.launch(uri)
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+                            openCamera()
+                        } else {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
                     }
                     ChooserRow(icon = Icons.Default.Photo, label = "Choose from Gallery") {
                         showChooser = false
-                        galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        try {
+                            galleryLauncher.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
+                        } catch (e: ActivityNotFoundException) {
+                            toast(context, "This phone has no gallery app to choose a photo from.")
+                        }
                     }
                 }
             },
@@ -175,6 +195,31 @@ fun ProductThumbnail(
                 modifier = Modifier.size(size).clip(RoundedCornerShape(10.dp))
             )
         }
+    }
+}
+
+private const val CAMERA_DENIED_MESSAGE =
+    "Camera permission is off, so a photo can't be taken. Choose from Gallery instead, or allow Camera for this app in the phone's Settings."
+
+private fun toast(context: Context, message: String) = Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+
+/**
+ * Opens the phone's camera app to take a photo into a new scratch file. [onFileReady] is told where the
+ * photo will land before the camera opens. A phone with no camera app, or a failure to set the file up,
+ * is explained on screen instead of ending the app.
+ */
+private fun launchCamera(context: Context, launch: (Uri) -> Unit, onFileReady: (Uri) -> Unit) {
+    try {
+        val file = com.kadaikutty.pos.core.common.ProductImageStore.newTempFile(context)
+        val uri = FileProvider.getUriForFile(context, "com.kadaikutty.pos.fileprovider", file)
+        onFileReady(uri)
+        launch(uri)
+    } catch (e: ActivityNotFoundException) {
+        toast(context, "This phone has no camera app. Choose from Gallery instead.")
+    } catch (e: SecurityException) {
+        toast(context, CAMERA_DENIED_MESSAGE)
+    } catch (e: IllegalArgumentException) {
+        toast(context, "Could not get the camera ready. Choose from Gallery instead.")
     }
 }
 

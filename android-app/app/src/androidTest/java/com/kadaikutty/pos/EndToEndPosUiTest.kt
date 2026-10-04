@@ -7,6 +7,7 @@ import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
@@ -50,10 +51,12 @@ class EndToEndPosUiTest {
         // Random suffix to prevent unique constraint errors during multiple test runs
         val randomSuffix = System.currentTimeMillis().toString().takeLast(4)
 
-        // 1. LOGIN FLOW
-        composeTestRule.waitUntilExactlyOneExists(hasText("Mobile Number"), timeoutMillis = 10000)
-        composeTestRule.onNodeWithText("Mobile Number").performTextInput("9789418144")
-        composeTestRule.onNodeWithText("Password (6-Digit PIN)").performTextInput("123456")
+        // 1. LOGIN FLOW - the login screen uses a plain mobile field plus a 6-box PIN grid. The
+        // boxes (login_pin_digit_0..5) are decorative only; real input goes to a single invisible
+        // field (login_pin_input) overlaid across them, so typing targets that field directly.
+        composeTestRule.waitUntilExactlyOneExists(hasText("Welcome Back"), timeoutMillis = 10000)
+        composeTestRule.onNodeWithTag("login_mobile_field").performTextInput("9789418144")
+        composeTestRule.onNodeWithTag("login_pin_input").performTextInput("123456")
         composeTestRule.onNodeWithText("Sign In").performClick()
 
         // Wait for Dashboard to load (look for "Point of Sale (POS)")

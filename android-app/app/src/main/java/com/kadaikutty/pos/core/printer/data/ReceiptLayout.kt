@@ -2,10 +2,13 @@ package com.kadaikutty.pos.core.printer.data
 
 /** Keeps every printable character; removes device-control characters from user input. */
 object ReceiptLayout {
+    /** The text with device-control characters removed (they could drive the printer) and tabs as spaces; line breaks stay. */
+    fun sanitize(value: String): String =
+        value.replace("\r\n", "\n").replace('\t', ' ').filter { it == '\n' || !it.isISOControl() }
+
     fun wrap(value: String, width: Int): List<String> {
         require(width in 24..64)
-        return value.replace("\r\n", "\n").replace('\t', ' ')
-            .filter { it == '\n' || !it.isISOControl() }
+        return sanitize(value)
             .split('\n').flatMap { paragraph ->
                 val result = mutableListOf<String>()
                 var remaining = paragraph

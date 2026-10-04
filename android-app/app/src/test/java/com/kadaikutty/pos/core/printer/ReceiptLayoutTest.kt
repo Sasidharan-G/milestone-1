@@ -8,8 +8,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ReceiptLayoutTest {
-    @Test fun longNamesAndAmountsArePreservedAtBothWidths() {
-        for (width in listOf(32, 48)) {
+    @Test fun longNamesAndAmountsArePreservedAtEveryPaperWidth() {
+        for (width in listOf(32, 48, 64)) {
             val name = "Premium extra long product description without losing any characters"
             val wrapped = ReceiptLayout.wrap(name, width)
             assertEquals(name, wrapped.joinToString(" "))

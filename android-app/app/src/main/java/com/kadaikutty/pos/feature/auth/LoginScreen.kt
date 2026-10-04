@@ -1,25 +1,33 @@
 package com.kadaikutty.pos.feature.auth
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -71,112 +79,99 @@ fun LoginScreenContent(
         }
     }
 
+        val accent = Color(0xFF3F3AC9)
+
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp)
+                .padding(top = 28.dp, bottom = 22.dp),
+            verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
-                Spacer(modifier = Modifier.height(2.dp))
-
-                Text(
-                    text = stringResource(com.kadaikutty.pos.R.string.welcome_back),
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    text = stringResource(com.kadaikutty.pos.R.string.sign_in_subtitle),
-                    fontSize = 13.sp,
-                    color = Color(0xFF94A3B8)
-                )
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                OutlinedTextField(
-                    value = state.mobileNumber,
-                    onValueChange = { viewModel.updateMobileNumber(com.kadaikutty.pos.core.common.InputRules.phone(it)) },
-                    label = { Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), color = Color.White.copy(alpha = 0.8f)) },
-                    placeholder = { Text(stringResource(com.kadaikutty.pos.R.string.enter_10_digit_mobile), color = Color.White.copy(alpha = 0.5f)) },
-                    leadingIcon = { Icon(Icons.Default.Phone, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
-                    shape = RoundedCornerShape(percent = 50),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color.White.copy(alpha = 0.15f),
-                        unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
-                        focusedBorderColor = Color.White,
-                        unfocusedBorderColor = Color.Transparent,
-                        cursorColor = Color.White
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                OutlinedTextField(
-                    value = state.password,
-                    onValueChange = { viewModel.updatePassword(it.filterNot(Char::isWhitespace).take(64)) },
-                    label = { Text("Password (6-Digit PIN)", color = Color.White.copy(alpha = 0.8f)) },
-                    placeholder = { Text("Enter 6-digit PIN or existing password", color = Color.White.copy(alpha = 0.5f)) },
-                    leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null, tint = Color.White.copy(alpha = 0.8f)) },
-                    trailingIcon = {
-                        if (state.password.isNotEmpty()) {
-                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                                Icon(
-                                    imageVector = if (passwordVisible) Icons.Default.Visibility else Icons.Default.VisibilityOff,
-                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
-                                    tint = Color.White.copy(alpha = 0.8f),
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                    },
-                    visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                    shape = RoundedCornerShape(percent = 50),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedContainerColor = Color.White.copy(alpha = 0.15f),
-                        unfocusedContainerColor = Color.White.copy(alpha = 0.1f),
-                        focusedBorderColor = Color.White,
-                        unfocusedBorderColor = Color.Transparent,
-                        cursorColor = Color.White
-                    ),
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.End,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
+                Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                     Text(
-                        text = "Forgot Password?",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                        modifier = Modifier.clickable {
-                            val phone = state.mobileNumber.trim()
-                            if (phone.isBlank()) {
-                                message = "Please enter your mobile number first."
-                            } else if (activity != null) {
-                                triggerAnimation {
-                                    viewModel.requestPasswordResetOtp(phone, activity, 
-                                        onCodeSent = { _ -> message = "Live SMS OTP sent to your mobile!" },
-                                        onError = { errMsg -> message = "Recovery failed: $errMsg" }
-                                    )
-                                }
-                            } else {
-                                message = "Activity context is missing."
-                            }
-                        }
+                        text = stringResource(com.kadaikutty.pos.R.string.welcome_back),
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF0E1733)
+                    )
+                    Text(
+                        text = stringResource(com.kadaikutty.pos.R.string.sign_in_subtitle),
+                        fontSize = 14.sp,
+                        color = Color(0xFF525D78)
                     )
                 }
 
+                // Mobile number - +91 prefix with a divider, matching the approved design
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(com.kadaikutty.pos.R.string.mobile_number), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF2B3553))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                            .background(Color(0xFFF6F7FB), RoundedCornerShape(14.dp))
+                            .border(1.5.dp, Color(0xFFD6DBE8), RoundedCornerShape(14.dp))
+                            .padding(horizontal = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Text("+91", fontSize = 15.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0E1733))
+                        Box(Modifier.width(1.dp).height(22.dp).background(Color(0xFFD0D5E2)))
+                        Box(Modifier.weight(1f)) {
+                            if (state.mobileNumber.isEmpty()) {
+                                Text(stringResource(com.kadaikutty.pos.R.string.enter_10_digit_mobile), fontSize = 16.sp, color = Color(0xFF8A93A8))
+                            }
+                            BasicTextField(
+                                value = state.mobileNumber,
+                                onValueChange = { viewModel.updateMobileNumber(com.kadaikutty.pos.core.common.InputRules.phone(it)) },
+                                singleLine = true,
+                                textStyle = androidx.compose.ui.text.TextStyle(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF0E1733), letterSpacing = 0.6.sp),
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Phone),
+                                cursorBrush = androidx.compose.ui.graphics.SolidColor(accent),
+                                modifier = Modifier.fillMaxWidth().testTag("login_mobile_field")
+                            )
+                        }
+                    }
+                }
+
+                // 6-digit PIN grid
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("6-Digit PIN", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF2B3553))
+                        Text(
+                            text = "Forgot PIN?",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = accent,
+                            modifier = Modifier.clickable(enabled = !state.loading) {
+                                val phone = state.mobileNumber.trim()
+                                if (phone.isBlank()) {
+                                    message = "Please enter your mobile number first."
+                                } else if (activity != null) {
+                                    triggerAnimation {
+                                        viewModel.requestPasswordResetOtp(phone, activity,
+                                            onCodeSent = { _ -> message = "Live SMS OTP sent to your mobile!" },
+                                            onError = { errMsg -> message = "Recovery failed: $errMsg" }
+                                        )
+                                    }
+                                } else {
+                                    message = "Activity context is missing."
+                                }
+                            }
+                        )
+                    }
+                    PinDigitsInput(
+                        value = state.password,
+                        onValueChange = { viewModel.updatePassword(it.take(64)) },
+                        length = 6,
+                        accentColor = accent
+                    )
+                }
 
                 Button(
                     onClick = {
@@ -187,69 +182,77 @@ fun LoginScreenContent(
                     },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(52.dp),
-                    shape = RoundedCornerShape(percent = 50),
+                        .height(54.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.buttonColors(
-                        containerColor = Color.White,
-                        contentColor = Color(0xFF1E3A8A)
+                        containerColor = accent,
+                        contentColor = Color.White
                     ),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 4.dp, pressedElevation = 0.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp, pressedElevation = 2.dp),
                     enabled = !state.loading
                 ) {
                     if (state.loading) {
                         CircularProgressIndicator(
                             modifier = Modifier.size(24.dp),
-                            color = Color(0xFF1E3A8A)
+                            color = Color.White
                         )
                     } else {
-                        Text("Sign In", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Sign In", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                            Icon(Icons.Default.ArrowForward, contentDescription = null, modifier = Modifier.size(18.dp))
+                        }
                     }
                 }
 
-                Text(
-                    text = "New business? Register here",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White,
-                    modifier = Modifier
-                        .clickable { onNavigateToRegister() }
-                        .padding(vertical = 4.dp)
-                )
-
-                HorizontalDivider(color = Color.White.copy(alpha = 0.2f), modifier = Modifier.padding(vertical = 4.dp))
-
-                // Super Master Access Button (Logo)
-                androidx.compose.foundation.Image(
-                    painter = androidx.compose.ui.res.painterResource(id = com.kadaikutty.pos.R.drawable.ic_master_logo),
-                    contentDescription = "Master Control",
-                    modifier = Modifier
-                        .padding(top = 8.dp)
-                        .size(36.dp)
-                        .clickable(
-                            interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
-                            indication = null,
-                            onClick = { triggerAnimation { showMasterPinDialog = true } }
-                        )
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.Center,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.VerifiedUser,
+                        contentDescription = null,
+                        tint = Color(0xFF1E8E5A),
+                        modifier = Modifier.size(14.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Verified & Secured", fontSize = 12.sp, fontWeight = FontWeight.SemiBold, color = Color(0xFF4A5572))
+                }
 
                 val errorMsg = state.error
                 if (!errorMsg.isNullOrBlank()) {
                     Text(
                         text = errorMsg,
-                        color = Color(0xFFFF6B6B),
+                        color = Color(0xFFDC2626),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.fillMaxWidth()
                     )
                 } else if (message.isNotBlank()) {
                     Text(
                         text = message,
-                        color = Color(0xFF69F0AE),
+                        color = Color(0xFF16A34A),
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Medium,
                         textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(top = 4.dp)
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+
+                // Super Master Access - kept reachable, styled small and subtle to match the new card
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(id = com.kadaikutty.pos.R.drawable.ic_master_logo),
+                        contentDescription = "Master Control",
+                        modifier = Modifier
+                            .size(26.dp)
+                            .graphicsLayer { alpha = 0.55f }
+                            .clickable(
+                                interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() },
+                                indication = null,
+                                onClick = { triggerAnimation { showMasterPinDialog = true } }
+                            )
                     )
                 }
             }
@@ -609,6 +612,77 @@ fun LoginScreenContent(
                         }
                     }
                 }
+        }
+    }
+}
+
+/**
+ * Six single-digit boxes for the login PIN. [value] is read as plain digits with no gaps,
+ * left-packed; it maps straight onto the same 6-digit password string the rest of the login flow
+ * already validates, so no ViewModel changes were needed for this visual.
+ *
+ * Earlier versions used one BasicTextField per box with manual focus-chaining on backspace. That
+ * relied on either onValueChange("") firing (some keyboards skip this on an already-empty field)
+ * or a raw KeyEvent reaching onKeyEvent (most software number pads never dispatch one at all -
+ * they call the IME's deleteSurroundingText directly) - so continuous backspacing across boxes was
+ * unreliable across real devices. This instead uses a single invisible BasicTextField holding the
+ * whole PIN string, with ordinary text-field backspace semantics (always reliable, same as every
+ * other text field in the app), and renders the boxes purely as a visual overlay on top of it.
+ */
+@Composable
+private fun PinDigitsInput(
+    value: String,
+    onValueChange: (String) -> Unit,
+    length: Int,
+    accentColor: Color,
+    modifier: Modifier = Modifier
+) {
+    val focusRequester = remember { FocusRequester() }
+    var isFocused by remember { mutableStateOf(false) }
+    val interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+
+    Box(modifier = modifier.fillMaxWidth()) {
+        BasicTextField(
+            value = value,
+            onValueChange = { newVal -> onValueChange(newVal.filter { it.isDigit() }.take(length)) },
+            singleLine = true,
+            textStyle = androidx.compose.ui.text.TextStyle(color = Color.Transparent, fontSize = 1.sp),
+            visualTransformation = VisualTransformation.None,
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
+            cursorBrush = androidx.compose.ui.graphics.SolidColor(Color.Transparent),
+            modifier = Modifier
+                .matchParentSize()
+                .testTag("login_pin_input")
+                .focusRequester(focusRequester)
+                .onFocusChanged { isFocused = it.isFocused }
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable(interactionSource = interactionSource, indication = null) { focusRequester.requestFocus() },
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            for (i in 0 until length) {
+                val digit = value.getOrNull(i)?.toString().orEmpty()
+                val isCursorHere = isFocused && i == value.length.coerceAtMost(length - 1)
+                val borderColor = if (isCursorHere) accentColor else Color(0xFFD6DBE8)
+                val bgColor = if (isCursorHere || digit.isNotEmpty()) Color.White else Color(0xFFF6F7FB)
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(52.dp)
+                        .testTag("login_pin_digit_$i")
+                        .background(bgColor, RoundedCornerShape(12.dp))
+                        .border(1.5.dp, borderColor, RoundedCornerShape(12.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (digit.isNotEmpty()) {
+                        Text("•", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color(0xFF0E1733))
+                    }
+                }
+            }
         }
     }
 }

@@ -70,7 +70,17 @@ class DefaultAuthRepository(
                 credentials.remove(normalizePhone(username))
                 LoginResult.Failure(e.message ?: "Invalid mobile number or password")
             } else {
-                LoginResult.Failure(e.message ?: "Unable to sign in", canTryOffline = true)
+                // Nothing here says "no internet" on its own: the person is shown what really happened.
+                // A failure after the server accepted the sign-in (this phone's database, storage or
+                // keystore) used to read as a connection problem; it is named, and logged, instead.
+                runCatching { android.util.Log.e("DefaultAuthRepository", "Sign-in did not complete", e) } // not available in plain JVM tests
+                val connection = isConnectionProblem(e)
+                val reason = when {
+                    e is com.kadaikutty.pos.core.network.BackendApiException -> e.message
+                    e is java.io.IOException -> com.kadaikutty.pos.core.network.friendlyNetworkError(e).message
+                    else -> "This phone could not finish signing in (${e.javaClass.simpleName}: ${e.message ?: "no details"}). Try again; if it keeps happening, contact support."
+                }
+                LoginResult.Failure(reason, canTryOffline = true, connectionProblem = connection)
             }
         }
     }
@@ -101,7 +111,7 @@ class DefaultAuthRepository(
             previousCompany?.let { tenantDatabaseManager?.setActiveCompany(it) }
             // The server did accept the password, so this is a connection problem and the
             // offline credential saved above may be used.
-            LoginResult.Failure("Signed in, but could not establish a device session. Check your connection and try again.", canTryOffline = true)
+            LoginResult.Failure("Signed in, but could not establish a device session. Check your connection and try again.", canTryOffline = true, connectionProblem = true)
         }
     }
 
@@ -114,11 +124,11 @@ class DefaultAuthRepository(
         sessionSecurityManager.resetSessionTermination()
         val normalized = normalizePhone(username)
         val credential = credentials.getCredential(normalized).first()
-            ?: return LoginResult.Failure("No internet, and this number has not signed in on this device before. Check the mobile number, or connect to the internet and sign in once.")
+            ?: return LoginResult.Failure(FIRST_SIGN_IN_NEEDS_INTERNET, neverSignedInHere = true)
         if (!verifier.matches(credential, password)) return LoginResult.Failure("Invalid mobile number or password")
         tenantDatabaseManager?.setActiveCompany(credential.companyId)
         val local = getDb(credential.companyId).userDao().getUserById(credential.userId)
-            ?: return LoginResult.Failure("No internet. Sign in once with internet on this device to use it offline.")
+            ?: return LoginResult.Failure(FIRST_SIGN_IN_NEEDS_INTERNET, neverSignedInHere = true)
         if (local.toPermissionsSet().contains(Permission.ACCOUNT_INACTIVE)) return LoginResult.Failure(DEACTIVATED_MESSAGE)
         // Keep this user's own tokens if they are still stored, so sync resumes on its own when the
         // network is back. Another user's tokens are never carried over.
@@ -142,6 +152,13 @@ class DefaultAuthRepository(
     private fun isServerRejection(e: Exception): Boolean =
         e is com.kadaikutty.pos.core.network.BackendApiException && e.statusCode in setOf(401, 403, 404)
 
+    /** The server could not be reached, or answered as a struggling server does (timeout, busy, outage). */
+    private fun isConnectionProblem(e: Exception): Boolean = when (e) {
+        is com.kadaikutty.pos.core.network.BackendApiException -> e.statusCode == 0 || e.statusCode == 408 || e.statusCode == 429 || e.statusCode >= 500
+        is java.io.IOException -> true
+        else -> false
+    }
+
     override suspend fun logout() {
         sessionSecurityManager.resetSessionTermination()
         // clearSession reads the tokens out of the store, so revoking has to happen before the
@@ -152,7 +169,7 @@ class DefaultAuthRepository(
         tenantDatabaseManager?.setActiveCompany("company_main")
     }
     override suspend fun registerMerchant(mobileNumber: String, password: CharArray, ownerName: String, businessName: String) = RegisterResult.Failure("Mobile OTP verification is required before registration")
-    override fun sendRegistrationOtp(mobileNumber: String, activity: Activity, onCodeSent: (String) -> Unit, onVerificationFailed: (String) -> Unit) = sendOtp(mobileNumber, onCodeSent, onVerificationFailed)
+    override fun sendRegistrationOtp(mobileNumber: String, activity: Activity, onCodeSent: (String) -> Unit, onVerificationFailed: (String) -> Unit) = sendOtp(mobileNumber, onCodeSent, onVerificationFailed, purpose = "REGISTER")
 
     override suspend fun verifyRegistrationOtpAndRegister(verificationId: String, otp: String, mobileNumber: String, password: CharArray, ownerName: String, businessName: String): RegisterResult = try {
         val phone = normalizePhone(mobileNumber)
@@ -180,8 +197,8 @@ class DefaultAuthRepository(
         RecoveryResult.Success
     } catch (e: Exception) { RecoveryResult.Failure(e.message ?: "Master PIN update failed") }
 
-    private fun sendOtp(mobile: String, ok: (String) -> Unit, failed: (String) -> Unit) {
-        scope.launch { runCatching { backend.sendOtp(normalizePhone(mobile)).getString("requestId") }.onSuccess(ok).onFailure { failed(it.message ?: "Unable to send OTP") } }
+    private fun sendOtp(mobile: String, ok: (String) -> Unit, failed: (String) -> Unit, purpose: String? = null) {
+        scope.launch { runCatching { backend.sendOtp(normalizePhone(mobile), purpose).getString("requestId") }.onSuccess(ok).onFailure { failed(it.message ?: "Unable to send OTP") } }
     }
 
     private suspend fun persistOnlineSession(response: JSONObject, password: CharArray): Session {

@@ -24,6 +24,13 @@ fun EditQuantityDialog(
         val isDec = line.unitType == "KG" || line.unitType == "LITER"
         mutableStateOf(if (isDec) String.format(Locale.US, "%.3f", line.quantity / 1000.0) else line.quantity.toString())
     }
+    val initialQty = remember(line) {
+        val isDec = line.unitType == "KG" || line.unitType == "LITER"
+        if (isDec) String.format(Locale.US, "%.3f", line.quantity / 1000.0) else line.quantity.toString()
+    }
+    // Stays off until the quantity is actually different from what the bill line already has.
+    val changed = inputQty != initialQty
+    var error by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -33,9 +40,14 @@ fun EditQuantityDialog(
                 Text("Unit Price: ${line.unitPrice}", fontSize = 13.sp, color = MaterialTheme.colorScheme.outline)
                 OutlinedTextField(
                     value = inputQty,
-                    onValueChange = { inputQty = com.kadaikutty.pos.core.common.InputRules.quantity(it, line.unitType == "KG" || line.unitType == "LITER") },
+                    onValueChange = {
+                        inputQty = com.kadaikutty.pos.core.common.InputRules.quantity(it, line.unitType == "KG" || line.unitType == "LITER")
+                        error = ""
+                    },
                     label = { Text(if (line.unitType == "KG" || line.unitType == "LITER") "Quantity (Kg/L)" else "Quantity (Pieces)") },
                     keyboardOptions = KeyboardOptions(keyboardType = if (line.unitType == "KG" || line.unitType == "LITER") KeyboardType.Decimal else KeyboardType.Number),
+                    isError = error.isNotBlank(),
+                    supportingText = if (error.isNotBlank()) { { Text(error, color = MaterialTheme.colorScheme.error) } } else null,
                     shape = RoundedCornerShape(12.dp),
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
@@ -60,6 +72,7 @@ fun EditQuantityDialog(
         },
         confirmButton = {
             Button(
+                enabled = changed,
                 onClick = {
                     val isDec = line.unitType == "KG" || line.unitType == "LITER"
                     val parsed = if (isDec) {
@@ -71,6 +84,8 @@ fun EditQuantityDialog(
                         onUpdateQuantity(line.productId, parsed)
                     } else if (parsed == 0L) {
                         onRemoveLine(line.productId)
+                    } else {
+                        error = "Enter a valid quantity"
                     }
                 }
             ) {

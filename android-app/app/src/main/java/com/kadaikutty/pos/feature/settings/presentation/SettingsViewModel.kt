@@ -49,6 +49,7 @@ class SettingsViewModel @Inject constructor(
     private val shareManager: ShareManager,
     private val webSocketManager: com.kadaikutty.pos.core.network.WebSocketManager,
     connectivityMonitor: com.kadaikutty.pos.core.network.ConnectivityMonitor,
+    private val shopLogoSyncer: com.kadaikutty.pos.core.branding.ShopLogoSyncer,
 ) : ViewModel() {
 
     /** Server reachable right now. Billing works either way; this gates the online-only actions. */
@@ -220,6 +221,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun clearAllDatabase(clearCloudToo: Boolean, onResult: (Boolean) -> Unit) {
+        // Unlike its sibling backup/restore operations (all sharing this same _isRestoreRunning
+        // flag), this one had no reentrancy guard at all - a fast double-tap on "Yes, Clear Data"
+        // could fire two concurrent wipes of the local (and possibly cloud) database.
+        if (_isRestoreRunning.value || _isBackupRunning.value) return
         requireBiometricAuth {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 _isRestoreRunning.value = true
@@ -371,6 +376,16 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch { appPreferences.saveAutoPrintReceipt(enabled) }
     }
 
+    val printLogoOnReceipt: StateFlow<Boolean> = appPreferences.printLogoOnReceipt.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = true
+    )
+
+    fun setPrintLogoOnReceipt(enabled: Boolean) {
+        viewModelScope.launch { appPreferences.savePrintLogoOnReceipt(enabled) }
+    }
+
     val layoutMode: StateFlow<String> = appPreferences.layoutMode.stateIn(
         scope = viewModelScope,
         started = SharingStarted.WhileSubscribed(5000),
@@ -512,6 +527,14 @@ class SettingsViewModel @Inject constructor(
             val savedName = profile?.optString("shopName").orEmpty().ifBlank { name }
             val savedOwner = profile?.optString("ownerName").orEmpty().ifBlank { owner }
             appPreferences.saveShopDetails(savedName, savedOwner, profile?.optString("gstNumber") ?: gst, profile?.optString("address") ?: address, profile?.optString("phone") ?: phone, profile?.optString("email") ?: email, logoPath)
+            // The logo is kept in the cloud as well (a new one is uploaded, a removed one is removed). If that cannot
+            // happen right now the details are still saved; the logo stays pending and is retried on the next refresh.
+            val logoWarning = try {
+                shopLogoSyncer.sync(profile)
+                null
+            } catch (e: Exception) {
+                "Saved. The logo could not reach the cloud yet (${e.message ?: "no connection"}); it will retry by itself."
+            }
             val companyId = session?.companyId ?: "company_main"
             val targetDb = tenantDatabaseManager.getDatabase(companyId)
             val lic = targetDb.licenseDao().getLicense(companyId) ?: database.licenseDao().getActiveLicense()
@@ -529,40 +552,12 @@ class SettingsViewModel @Inject constructor(
                 targetDb.licenseDao().saveLicense(newLic)
                 database.licenseDao().saveLicense(newLic)
             }
-            withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(true, null) }
+            withContext(kotlinx.coroutines.Dispatchers.Main) { onResult(true, logoWarning) }
         }
     }
 
-    fun processAndSaveLogo(context: android.content.Context, uri: android.net.Uri): String? {
-        return try {
-            val contentResolver = context.contentResolver
-            val inputStream = contentResolver.openInputStream(uri) ?: return null
-            val originalBitmap = android.graphics.BitmapFactory.decodeStream(inputStream) ?: return null
-            inputStream.close()
-
-            val width = originalBitmap.width
-            val height = originalBitmap.height
-            val maxSize = 512
-            val scale = Math.min(maxSize.toFloat() / width, maxSize.toFloat() / height)
-
-            val newWidth = (width * scale).toInt()
-            val newHeight = (height * scale).toInt()
-            val scaledBitmap = android.graphics.Bitmap.createScaledBitmap(originalBitmap, newWidth, newHeight, true)
-
-            val dir = java.io.File(context.filesDir, "logos")
-            if (!dir.exists()) dir.mkdirs()
-            val file = java.io.File(dir, "shop_logo_${System.currentTimeMillis()}.png")
-
-            java.io.FileOutputStream(file).use { out ->
-                scaledBitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, out)
-            }
-
-            file.absolutePath
-        } catch (e: Exception) {
-            e.printStackTrace()
-            null
-        }
-    }
+    fun processAndSaveLogo(context: android.content.Context, uri: android.net.Uri): String? =
+        com.kadaikutty.pos.core.branding.LogoImages.saveScaled(context, uri)
 
     private val _bluetoothDevices = MutableStateFlow<List<BluetoothDeviceInfo>>(emptyList())
     val bluetoothDevices: StateFlow<List<BluetoothDeviceInfo>> = _bluetoothDevices.asStateFlow()
@@ -606,6 +601,13 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
+    /** The paper size alone, when no printer has been chosen yet. */
+    fun savePaperWidth(paperWidth: Int) {
+        viewModelScope.launch {
+            appPreferences.savePaperWidth(paperWidth)
+        }
+    }
+
     fun clearPrintStatus() {
         _printStatus.value = null
     }
@@ -636,17 +638,23 @@ class SettingsViewModel @Inject constructor(
             val pType = PrinterManager.PrinterType.fromSetting(typeStr)
 
             _printStatus.value = "Printing test receipt..."
+            // The saved paper size and logo, exactly as a real bill uses them: a test page that ignored the
+            // paper size printed a narrow strip on an 80 mm printer and proved nothing about the real bill.
+            val paperWidth = appPreferences.printerPaperWidth.first()
+            val logoPath = if (appPreferences.printLogoOnReceipt.first()) appPreferences.shopLogoPath.first() else ""
             val testDoc = PrintDocument(
-                title = "TEST RECEIPT",
-                headers = listOf("Description", "Total"),
+                title = appPreferences.shopName.first().ifBlank { "TEST RECEIPT" },
+                headers = listOf("TEST RECEIPT", "Paper: ${com.kadaikutty.pos.core.printer.domain.PaperWidth.label(paperWidth)}"),
                 lines = listOf(
-                    PrintLine("Test Thermal Output", 1, "0.00", "0.00"),
-                    PrintLine("EscPos Formatter Line", 2, "10.00", "20.00")
+                    PrintLine("Test Thermal Output", 1, "₹0.00", "₹0.00"),
+                    PrintLine("A long product name to check that long lines wrap neatly on this paper", 2, "₹10.00", "₹20.00")
                 ),
                 totals = listOf(
-                    "TOTAL AMOUNT" to "20.00"
+                    "TOTAL AMOUNT" to "₹20.00"
                 ),
-                footer = "Thank you for verifying!"
+                footer = "Thank you for verifying!",
+                paperWidth = paperWidth,
+                logoPath = logoPath
             )
 
             // printJob holds PrinterJobLock and always disconnects in its finally block. The old
@@ -729,6 +737,7 @@ class SettingsViewModel @Inject constructor(
     // WhatsApp/USB/Drive/email etc. with no folder setup and no internet dependency — the one
     // backup path that works standalone, independent of Auto Backup or the cloud.
     fun exportBackupNow(onFinished: (Boolean) -> Unit = {}) {
+        if (_isBackupRunning.value || _isRestoreRunning.value) return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isBackupRunning.value = true
             _backupStatus.value = "Preparing backup to share..."
@@ -757,6 +766,7 @@ class SettingsViewModel @Inject constructor(
     val requireRestart: StateFlow<Boolean> = _requireRestart.asStateFlow()
 
     fun runRestore(uri: android.net.Uri, onFinished: (Boolean) -> Unit) {
+        if (_isRestoreRunning.value || _isBackupRunning.value) return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isRestoreRunning.value = true
             _restoreStatus.value = "Restoring database backup..."
@@ -833,40 +843,63 @@ class SettingsViewModel @Inject constructor(
         return false
     }
 
+    // Guards the actual cloud upload specifically (distinct from _isBackupRunning, which also covers
+    // the local-setup step of setupLiveBackup) so the upload itself can't run twice concurrently no
+    // matter which caller triggers it.
+    private val _isCloudUploadRunning = MutableStateFlow(false)
+
     fun runCloudBackup(onFinished: (Boolean) -> Unit = {}) {
+        if (_isBackupRunning.value || _isRestoreRunning.value) return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isBackupRunning.value = true
-            _backupStatus.value = "Creating backup package..."
             try {
-                val token = resolveActiveToken()
-                if (token.isNullOrBlank()) {
-                    _backupStatus.value = "Backup failed: User not logged in."
-                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
-                    return@launch
-                }
-                when (val result = backupManager.createBackup()) {
-                    is BackupResult.Success -> {
-                        _backupStatus.value = "Uploading backup to cloud..."
-                        backendApi.uploadBackup(token, "billing_backup_${System.currentTimeMillis()}.zip", result.schemaVersion, result.zipBytes)
-                        appPreferences.saveLastBackupTimestamp(System.currentTimeMillis())
-                        _backupStatus.value = "Cloud backup created successfully!"
-                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
-                    }
-                    is BackupResult.Failure -> {
-                        _backupStatus.value = "Backup failed: ${result.exception.message}"
-                        withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
-                    }
-                }
-            } catch (e: Exception) {
-                _backupStatus.value = "Cloud backup failed: ${e.message}"
-                withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                runCloudBackupBody(onFinished)
             } finally {
                 _isBackupRunning.value = false
             }
         }
     }
 
+    // The actual upload. setupLiveBackup() fires this as a separate fire-and-forget launch (matching
+    // its original non-blocking behavior) rather than through the guarded runCloudBackup() above, so
+    // this has its own _isCloudUploadRunning guard to still prevent two concurrent uploads.
+    private suspend fun runCloudBackupBody(onFinished: (Boolean) -> Unit) {
+        if (_isCloudUploadRunning.value) {
+            withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+            return
+        }
+        _isCloudUploadRunning.value = true
+        _backupStatus.value = "Creating backup package..."
+        try {
+            val token = resolveActiveToken()
+            if (token.isNullOrBlank()) {
+                _backupStatus.value = "Backup failed: User not logged in."
+                withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                return
+            }
+            when (val result = backupManager.createBackup()) {
+                is BackupResult.Success -> {
+                    _backupStatus.value = "Uploading backup to cloud..."
+                    backendApi.uploadBackup(token, "billing_backup_${System.currentTimeMillis()}.zip", result.schemaVersion, result.zipBytes)
+                    appPreferences.saveLastBackupTimestamp(System.currentTimeMillis())
+                    _backupStatus.value = "Cloud backup created successfully!"
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(true) }
+                }
+                is BackupResult.Failure -> {
+                    _backupStatus.value = "Backup failed: ${result.exception.message}"
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+                }
+            }
+        } catch (e: Exception) {
+            _backupStatus.value = "Cloud backup failed: ${e.message}"
+            withContext(kotlinx.coroutines.Dispatchers.Main) { onFinished(false) }
+        } finally {
+            _isCloudUploadRunning.value = false
+        }
+    }
+
     fun runCloudRestore(onFinished: (Boolean) -> Unit) {
+        if (_isRestoreRunning.value || _isBackupRunning.value) return
         requireBiometricAuth {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 _isRestoreRunning.value = true
@@ -917,6 +950,7 @@ class SettingsViewModel @Inject constructor(
     )
 
     fun setupLiveBackup(treeUri: android.net.Uri, onFinished: (Boolean) -> Unit) {
+        if (_isBackupRunning.value || _isRestoreRunning.value) return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
             _isBackupRunning.value = true
             _backupStatus.value = "Setting up live local backup..."
@@ -926,7 +960,7 @@ class SettingsViewModel @Inject constructor(
                 // Live local backup alone still leaves a single-device risk (phone lost/damaged), so
                 // every setup also takes an immediate cloud snapshot and registers a daily one.
                 syncScheduler.schedulePeriodicBackup()
-                runCloudBackup()
+                viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) { runCloudBackupBody {} }
             } else {
                 _backupStatus.value = "Live local backup setup failed: ${result.exceptionOrNull()?.message}"
             }
@@ -939,6 +973,7 @@ class SettingsViewModel @Inject constructor(
     // Backup folder — e.g. one shared from another phone — without ever adopting or overwriting it.
     // Omit it to restore from the folder this device already has set up.
     fun restoreFromLiveBackup(folderUri: android.net.Uri? = null, onFinished: (Boolean) -> Unit) {
+        if (_isRestoreRunning.value || _isBackupRunning.value) return
         requireBiometricAuth {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 _isRestoreRunning.value = true
@@ -972,6 +1007,7 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun undoLastRestore(onFinished: (Boolean) -> Unit) {
+        if (_isRestoreRunning.value || _isBackupRunning.value) return
         requireBiometricAuth {
             viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
                 _isRestoreRunning.value = true

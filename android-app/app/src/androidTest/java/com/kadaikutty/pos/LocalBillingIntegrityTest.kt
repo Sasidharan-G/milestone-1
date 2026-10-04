@@ -34,7 +34,8 @@ class LocalBillingIntegrityTest {
         db = Room.inMemoryDatabaseBuilder(context, BillingDatabase::class.java).build()
         scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val prefs = PreferenceDataStoreFactory.create(scope = scope) { File(context.cacheDir, "test-${UUID.randomUUID()}.preferences_pb") }
-        val sessions = SessionStore(prefs)
+        val securePrefs = context.getSharedPreferences("test-secure-${UUID.randomUUID()}", android.content.Context.MODE_PRIVATE)
+        val sessions = SessionStore(prefs, securePrefs)
         sessions.save(Session("owner", "Owner", Permission.ALL_ACTIVE, companyId = "shop", role = "ADMIN"))
         val appPrefs = AppPreferences(prefs)
         val manager = SyncManager(db, SyncScheduler(context), sessions, scheduleEnabled = false)
@@ -92,7 +93,11 @@ class LocalBillingIntegrityTest {
         val old = db.saleDao().getSales("shop").first().single()
         assertTrue(sales.deleteSale(old.id, old.billNumber) is AppResult.Success)
         sales.save(draft())
-        assertNotEquals(old.billNumber, db.saleDao().getSales("shop").first().single().billNumber)
+        // A cancelled bill stays in history as VOID, so the list now holds it and the new bill.
+        val numbers = db.saleDao().getSales("shop").first().map { it.billNumber }
+        assertEquals(2, numbers.size)
+        assertEquals("the new bill must not reuse the cancelled bill's number", 2, numbers.toSet().size)
+        assertTrue(old.billNumber in numbers)
     }
     @Test fun ledgerDeletionUsesReferenceNotInvoiceSubstring() = runBlocking {
         db.masterDao().insertSupplierCredit(SupplierCreditEntity("a", "shop", "supplier", 100, "Purchase Bill #12 (CREDIT)", 0, 0, "purchase-12", SyncStatus.LOCAL_ONLY))

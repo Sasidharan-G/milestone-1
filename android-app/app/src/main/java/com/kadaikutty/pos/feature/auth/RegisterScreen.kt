@@ -393,16 +393,12 @@ fun RegisterScreenContent(
                         }
                     }
                 }
-
-                Text(
-                    text = "Already have an account? Sign In",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White,
-                    modifier = Modifier
-                        .clickable { onNavigateBackToLogin() }
-                        .padding(vertical = 4.dp)
-                )
+                // "Already have an account? Sign In" now lives outside this flipping card, in
+                // AuthScreen's outer (non-rotated) footer - a link on the *rotated* back face of a
+                // 3D flip card was found to not reliably receive real touch input (confirmed via
+                // the accessibility tree: the tap coordinate matched the reported bounds exactly,
+                // but the click handler never fired), even though fields on the same face focus
+                // correctly. Moving navigation off the rotated subtree sidesteps that entirely.
         }
 
         // OTP Dialog for Registration

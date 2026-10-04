@@ -35,6 +35,7 @@ class LicenseManager @Inject constructor(
     private val sessionStore: SessionStore,
     private val appPreferences: AppPreferences,
     private val webSocketManager: com.kadaikutty.pos.core.network.WebSocketManager,
+    private val shopLogoSyncer: com.kadaikutty.pos.core.branding.ShopLogoSyncer,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val prefs: SharedPreferences = context.getSharedPreferences("license_prefs", Context.MODE_PRIVATE)
@@ -73,7 +74,8 @@ class LicenseManager @Inject constructor(
                     val (companyId, userId) = identity
                     if (lastCompanyId != companyId) {
                         lastCompanyId = companyId
-                        appPreferences.clearShopDetails()
+                        // Not clearShopDetails(): that ran on every app start and wiped the logo.
+                        appPreferences.claimShopDetailsFor(companyId)
                     }
                     coroutineScope {
                     launch {
@@ -147,8 +149,11 @@ class LicenseManager @Inject constructor(
                     profile.optString("address"),
                     profile.optString("phone"),
                     profile.optString("email"),
-                    appPreferences.shopLogoPath.firstOrNull().orEmpty()
+                    null
                 )
+                // The logo lives in the cloud too: fetch it on a new phone, send one chosen here. A failure
+                // (offline, server busy) is retried on the next refresh and must not spoil the license check.
+                runCatching { shopLogoSyncer.sync(profile) }
             }
             // Only this phone's own clock goes into the rollback check below. Feeding it the server's
             // time locked any shop whose phone ran more than ten minutes slow as "clock tampered".

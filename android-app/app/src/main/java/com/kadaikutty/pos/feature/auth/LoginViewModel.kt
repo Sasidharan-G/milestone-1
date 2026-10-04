@@ -128,6 +128,7 @@ data class LoginUiState(
 
     fun login() {
         val current = state.value
+        if (current.loading) return
         val cleanPhone = current.mobileNumber.trim()
         if (cleanPhone.isBlank() || current.password.isBlank()) {
             mutableState.update { it.copy(error = "Mobile Number and password are required") }
@@ -147,7 +148,17 @@ data class LoginUiState(
             // never falls through — see DefaultAuthRepository.isServerRejection.
             val online = authRepository.loginOnline(cleanPhone, password)
             val result = if (online is LoginResult.Failure && online.canTryOffline) {
-                authRepository.loginOffline(cleanPhone, password)
+                val offline = authRepository.loginOffline(cleanPhone, password)
+                if (offline is LoginResult.Failure && offline.neverSignedInHere) {
+                    // Nothing saved on this phone to fall back on. Say what really went wrong (no internet,
+                    // wrong date, blocked network, busy server, or this phone failing to finish a sign-in
+                    // the server accepted) instead of only the fallback's own complaint, which used to read
+                    // as "no internet" every time. The "first sign-in needs the internet" line only makes
+                    // sense when the connection was the problem.
+                    LoginResult.Failure(if (online.connectionProblem) "${online.message} ${offline.message}" else online.message)
+                } else {
+                    offline
+                }
             } else {
                 online
             }
@@ -170,6 +181,7 @@ data class LoginUiState(
         onCodeSent: (String) -> Unit,
         onError: (String) -> Unit
     ) {
+        if (state.value.loading) return
         val cleanPhone = mobileNumber.trim().replace(" ", "").replace("-", "")
         if (cleanPhone.length < 10 || !cleanPhone.all { it.isDigit() || it == '+' }) {
             onError("Please provide a valid mobile number")
