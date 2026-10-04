@@ -28,6 +28,14 @@ jobs:
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
 
+    # android-app/gradle.properties is git-ignored (it is a local file), so a fresh checkout has none and the
+    # build stops at "contains AndroidX dependencies, but android.useAndroidX is not enabled". These are its
+    # settings; none of them is a secret.
+    - name: Create gradle.properties
+      run: |
+        printf '%s
+' 'org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8' 'android.useAndroidX=true' 'kotlin.code.style=official' 'android.nonTransitiveRClass=true' > gradle.properties
+
     # The release variant is what ships (R8, resource shrinking, release-only checks), so CI
     # lints, tests and builds that - not debug. Without a keystore secret the APK is unsigned.
     - name: Run Lint (release)
