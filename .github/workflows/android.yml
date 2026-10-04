@@ -33,8 +33,12 @@ jobs:
     # settings; none of them is a secret.
     - name: Create gradle.properties
       run: |
-        printf '%s
-' 'org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8' 'android.useAndroidX=true' 'kotlin.code.style=official' 'android.nonTransitiveRClass=true' > gradle.properties
+        {
+          echo 'org.gradle.jvmargs=-Xmx3g -Dfile.encoding=UTF-8'
+          echo 'android.useAndroidX=true'
+          echo 'kotlin.code.style=official'
+          echo 'android.nonTransitiveRClass=true'
+        } > gradle.properties
 
     # The release variant is what ships (R8, resource shrinking, release-only checks), so CI
     # lints, tests and builds that - not debug. Without a keystore secret the APK is unsigned.
